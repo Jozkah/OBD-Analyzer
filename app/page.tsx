@@ -346,68 +346,68 @@ export default function AutomotiveAnalyzer() {
           "Fuel system 2 status": "Fuel Sys 2",
           "Calculated load value": "Load Val",
           "Engine coolant temperature": "Coolant Temp",
-          "Short term fuel % trim - Bank 1": "STFT B1",
-          "Short term fuel % trim - Bank 3": "STFT B3",
-          "Long term fuel % trim - Bank 1": "LTFT B1",
-          "Long term fuel % trim - Bank 3": "LTFT B3",
+          "Short term fuel % trim - Bank 1": "Short term fuel B1",
+          "Short term fuel % trim - Bank 3": "Short term fuel B3",
+          "Long term fuel % trim - Bank 1": "Long term fuel B1",
+          "Long term fuel % trim - Bank 3": "Long term fuel B3",
           "Intake manifold absolute pressure": "MAP",
           "Engine RPM": "RPM",
           "Vehicle speed": "Speed",
-          "Ignition timing advance for #1 cylinder": "Ignition Adv",
+          "Ignition timing advance for #1 cylinder": "Ignition Advance",
           "Intake air temperature": "Intake Temp",
           "Mass air flow rate": "MAF",
           "Absolute throttle position": "Throttle",
           "Absolute throttle position B": "Throttle B",
           "Location of oxygen sensors": "O2 Sens Loc",
-          "O2 voltage (Bank 1 Sensor 2)": "O2V B1S2",
-          "O2 voltage Bank 1 Sensor 2": "O2V B1S2",
-          "Short term fuel trim (Bank 1 Sensor 2)": "STFT B1S2",
-          "Short term fuel trim Bank 1 Sensor 2": "STFT B1S2",
+          "O2 voltage (Bank 1 Sensor 2)": "O2 Voltage",
+          "O2 voltage Bank 1 Sensor 2": "O2 Voltage",
+          "Short term fuel trim (Bank 1 Sensor 2)": "Short term fuel B1S2",
+          "Short term fuel trim Bank 1 Sensor 2": "Short term fuel B1S2",
           "OBD requirements to which vehicle or engine is certified": "OBD Cert",
-          "Time since engine start": "Eng Run Time",
-          "Distance traveled while MIL is activated": "MIL Dist",
-          "Fuel rail pressure": "Fuel Press",
+          "Time since engine start": "Engine Run Time",
+          "Distance traveled while MIL is activated": "Distance with CEL",
+          "Fuel rail pressure": "Fuel Pressure",
           "Commanded evaporative purge": "Evap Purge",
-          "Number of warm-ups since DTCs cleared": "Warmups",
-          "Distance traveled since DTCs cleared": "DTC Dist",
+          "Number of warm-ups since DTCs cleared": "Warmups since DTCs cleared",
+          "Distance traveled since DTCs cleared": "Distance since DTCs cleared",
           "Barometric pressure": "Baro Press",
           "O2 sensor lambda wide range (current probe) (Bank 1 Sensor 1)": "O2 Lambda B1S1",
           "O2 sensor lambda wide range Bank 1 Sensor 1": "O2 Lambda B1S1",
-          "O2 sensor current wide range (Bank 1 Sensor 1)": "O2 Curr B1S1",
-          "O2 sensor current wide range Bank 1 Sensor 1": "O2 Curr B1S1",
+          "O2 sensor current wide range (Bank 1 Sensor 1)": "O2 Sensor Current B1S1",
+          "O2 sensor current wide range Bank 1 Sensor 1": "O2 Sensor Current B1S1",
           "Catalyst temperature (Bank 1 Sensor 1)": "Cat Temp B1S1",
           "Catalyst temperature Bank 1 Sensor 1": "Cat Temp B1S1",
-          "Control module voltage": "Battery",
-          "Fuel/Air commanded equivalence ratio": "Fuel/Air Cmd",
+          "Control module voltage": "Battery Voltage",
+          "Fuel/Air commanded equivalence ratio": "Fuel/Air Ratio", 
           "Accelerator pedal position D": "Pedal D",
           "Accelerator pedal position E": "Pedal E",
           "Commanded throttle actuator control": "Cmd Throttle Act",
           "Engine run time run while MIL is activated": "MIL Run Time",
           "Engine run time while MIL is activated": "MIL Run Time",
           "Engine run time since DTCs cleared": "DTC Run Time",
-          "Instant fuel economy": "Inst FE",
-          "Total fuel economy": "Total FE",
+          "Instant fuel economy": "Instant Fuel Economy",
+          "Total fuel economy": "Total Fuel Economy",
           "Fuel rate": "Fuel Rate",
-          "Instant CO2 rate": "Inst CO2",
+          "Instant CO2 rate": "Instant CO2",
           "Total CO2": "Total CO2",
           "CO2 flow": "CO2 Flow",
           "Trip Distance": "Trip Dist",
           "Trip Fuel": "Trip Fuel",
-          "Trip Fuel Economy": "Trip FE",
+          "Trip Fuel Economy": "Trip Fuel Economy",
           "Trip Duration": "Trip Time",
           "Hard Brake Count": "Hard Brakes",
           "Hard Accel Count": "Hard Accels",
           "Idling Count": "Idle Count",
           "Seconds Idling": "Idle Time",
           "Max Speed": "Max Speed",
-          Boost: "Boost",
+          "Boost": "Boost",
           "Engine Power": "Power",
           "Engine Torque": "Torque",
           "Fuel Remaining": "Fuel Left",
           "Distance to empty": "Range",
-          Latitude: "Lat",
-          Longitude: "Lng",
-          Altitude: "Alt",
+          "Latitude": "Latitude",
+          "Longitude": "Longitude",
+          "Altitude": "Altitude",
           "GPS Speed": "GPS Speed",
           "Adapter voltage": "Adapter V",
           "Engine Oil Pressure": "Oil Press",
@@ -443,7 +443,7 @@ export default function AutomotiveAnalyzer() {
           "oil pressure": "Oil Press",
           "oil temperature": "Oil Temp",
           "transmission temp": "Trans Temp",
-          barometric: "Baro",
+          barometric: "Bar",
           evaporative: "Evap",
           equivalence: "Equiv",
           commanded: "Cmd",
@@ -578,6 +578,61 @@ export default function AutomotiveAnalyzer() {
         if (!dataPoint.brake && dataPoint.throttle)
           dataPoint.brake = Math.max(0, (100 - dataPoint.throttle) * Math.random() * 0.3)
         if (!dataPoint.gear && dataPoint.speed) dataPoint.gear = Math.floor(dataPoint.speed / 25) + 1
+        // Calculate speed for each gear using the formula:
+        // Speed (km/h) = (RPM × Tyre Circumference × 60) ÷ (Gear Ratio × Final Drive × 1000000)
+
+        const GEAR_RATIOS = {
+          1: 3.538,
+          2: 1.92,
+          3: 1.323,
+          4: 1.026,
+          5: 0.822,
+          6: 0.681
+        }
+        const FINAL_DRIVE = 4.35
+        const TYRE_DIAMETER_MM = 647
+        const TYRE_CIRCUMFERENCE = Math.PI * TYRE_DIAMETER_MM / 1000 // Convert to meters
+        const SHIFT_RPM = 6900
+
+        function calculateGear(speed: number, rpm: number): number {
+          if (!speed || !rpm) return 1
+          
+          // If RPM exceeds shift point, suggest next gear (if available)
+          if (rpm > SHIFT_RPM) {
+            // Calculate theoretical speeds for next gear
+            const currentGear = Object.entries(GEAR_RATIOS).find(([_, ratio]) => {
+              const theoreticalSpeed = (rpm * TYRE_CIRCUMFERENCE * 60) / (ratio * FINAL_DRIVE * 1000000) * 3600
+              return Math.abs(theoreticalSpeed - speed) < 5 // 5 km/h tolerance
+            })
+            
+            if (currentGear && parseInt(currentGear[0]) < 6) {
+              return parseInt(currentGear[0]) + 1
+            }
+          }
+
+          // Standard gear calculation
+          const gearSpeeds = Object.entries(GEAR_RATIOS).map(([gear, ratio]) => {
+            const theoreticalSpeed = (rpm * TYRE_CIRCUMFERENCE * 60) / (ratio * FINAL_DRIVE * 1000000) * 3600
+            return {
+              gear: parseInt(gear),
+              speed: theoreticalSpeed,
+              diff: Math.abs(theoreticalSpeed - speed)
+            }
+          })
+
+          const bestMatch = gearSpeeds.reduce((prev, curr) => 
+            curr.diff < prev.diff ? curr : prev
+          )
+
+          return bestMatch.gear
+        }
+
+        if (!dataPoint.gear && dataPoint.speed && dataPoint.rpm) {
+          dataPoint.gear = calculateGear(dataPoint.speed, dataPoint.rpm)
+        } else if (!dataPoint.gear && dataPoint.speed) {
+          // Limit to 6 gears in the fallback calculation
+          dataPoint.gear = Math.min(Math.floor(dataPoint.speed / 25) + 1, 6)
+        }
         parsedData.push(dataPoint)
       }
       setMetrics(detectedMetrics)
@@ -694,13 +749,13 @@ export default function AutomotiveAnalyzer() {
 
   const stats = useMemo(() => {
     if (data.length === 0)
-      return { maxRPM: 0, maxSpeed: 0, avgThrottle: 0, maxBoost: 0, avgCoolant: 0, maxPower: 0, maxTorque: 0 }
+      return { maxRPM: 0, maxSpeed: 0, maxBoost: 0, avgCoolant: 0, avgIntakeTemp: 0, maxPower: 0, maxTorque: 0 }
     return {
       maxRPM: Math.max(0, ...data.map((d) => d.rpm || 0)),
       maxSpeed: Math.max(0, ...data.map((d) => d.speed || 0)),
-      avgThrottle: data.length > 0 ? data.reduce((sum, d) => sum + (d.throttle || 0), 0) / data.length : 0,
       maxBoost: Math.max(0, ...data.map((d) => d.boost || 0)),
       avgCoolant: data.length > 0 ? data.reduce((sum, d) => sum + (d.coolantTemp || 0), 0) / data.length : 0,
+      avgIntakeTemp: data.length > 0 ? data.reduce((sum, d) => sum + (d.intakeTemp || 0), 0) / data.length : 0,
       maxPower: Math.max(0, ...data.map((d) => d.enginePower || 0)),
       maxTorque: Math.max(0, ...data.map((d) => d.engineTorque || 0)),
     }
@@ -819,12 +874,12 @@ export default function AutomotiveAnalyzer() {
                 <div className="col-span-2">
                   <Card className="bg-gray-800 border-gray-700 h-full flex flex-col">
                     <div className="p-4 pb-2 flex-shrink-0">
-                      <h3 className="font-semibold mb-3">Metrics ({metrics.length})</h3>
+                      <h3 className="font-semibold mb-3">Available PIDs ({metrics.length})</h3>
                       <div className="flex gap-2 mb-3">
                         <div className="relative flex-1">
                           <Search className="absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
                           <Input
-                            placeholder="Search metrics..."
+                            placeholder="Search PIDs..."
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
                             className="pl-8 bg-gray-700 border-gray-600 text-white placeholder:text-gray-400 h-8"
@@ -928,7 +983,7 @@ export default function AutomotiveAnalyzer() {
                 <div className="col-span-7">
                   <Card className="bg-gray-800 border-gray-700 p-4 h-full">
                     <div className="flex items-center justify-between mb-4">
-                      <h3 className="font-semibold">Time Series Analysis</h3>
+                      <h3 className="font-semibold">General Overview</h3>
                       <Button variant="ghost" size="sm">
                         <BarChart3 className="w-4 h-4" />
                       </Button>
@@ -973,27 +1028,27 @@ export default function AutomotiveAnalyzer() {
                         <span className="text-green-400 font-bold">{stats.maxSpeed.toFixed(1)} km/h</span>
                       </div>
                       <div className="flex justify-between">
-                        <span>Avg Throttle:</span>
-                        <span className="text-yellow-400 font-bold">{stats.avgThrottle.toFixed(1)}%</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span>Max Boost:</span>
+                        <span>Max Boost Pressure:</span>
                         <span className="text-blue-400 font-bold">{stats.maxBoost.toFixed(2)} bar</span>
                       </div>
                       <div className="flex justify-between">
-                        <span>Avg Coolant:</span>
-                        <span className="text-purple-400 font-bold">{stats.avgCoolant.toFixed(1)}°C</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span>Max Power:</span>
+                        <span>Max Calculated Power:</span>
                         <span className="text-pink-400 font-bold">{stats.maxPower.toFixed(0)} hp</span>
                       </div>
                       <div className="flex justify-between">
-                        <span>Max Torque:</span>
+                        <span>Max Calculated Torque:</span>
                         <span className="text-lime-400 font-bold">{stats.maxTorque.toFixed(0)} N•m</span>
                       </div>
                       <div className="flex justify-between">
-                        <span>Duration:</span>
+                        <span>Average Coolant Temp:</span>
+                        <span className="text-purple-400 font-bold">{stats.avgCoolant.toFixed(1)}°C</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Average Intake Temp:</span>
+                        <span className="text-orange-400 font-bold">{stats.avgIntakeTemp.toFixed(1)}°C</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Trip Duration:</span>
                         <span className="text-gray-300">{(data.length / 10).toFixed(1)}s</span>
                       </div>
                     </div>
@@ -1081,6 +1136,63 @@ export default function AutomotiveAnalyzer() {
                   </div>
                 </Card>
                 <Card className="bg-gray-800 border-gray-700 p-4 flex flex-col">
+                  <h3 className="font-semibold mb-4 flex-shrink-0">Gearbox Usage</h3>
+                  <div className="flex-grow">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <ComposedChart data={finalChartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                        <XAxis dataKey="time" stroke="#9CA3AF" fontSize={12} />
+                        <YAxis 
+                          yAxisId="gear"
+                          stroke="#22c55e" 
+                          fontSize={12} 
+                          domain={[0.5, 6.5]} 
+                          ticks={[1, 2, 3, 4, 5, 6]} 
+                          allowDataOverflow={true}
+                          orientation="right"
+                        />
+                        <YAxis
+                          yAxisId="speed"
+                          stroke="#f59e0b"
+                          fontSize={12}
+                          orientation="left"
+                        />
+                        <Tooltip
+                          contentStyle={{
+                            backgroundColor: "#1F2937",
+                            border: "1px solid #374151",
+                            borderRadius: "6px",
+                          }}
+                          formatter={(value, name) => {
+                            if (name === "gear") {
+                              const gear = Math.min(6, Math.max(1, Number(value)));
+                              return [`${gear}`, "Gear"];
+                            }
+                            return [`${value} km/h`, "Speed"];
+                          }}
+                        />
+                        <Line
+                          yAxisId="gear"
+                          dataKey={(data) => Math.min(6, Math.max(1, data.gear || 1))}
+                          stroke="#22c55e"
+                          strokeWidth={2}
+                          dot={false}
+                          name="gear"
+                          connectNulls
+                        />
+                        <Line
+                          yAxisId="speed"
+                          dataKey="speed"
+                          stroke="#f59e0b"
+                          strokeWidth={2}
+                          dot={false}
+                          name="speed"
+                        />
+                      </ComposedChart>
+                    </ResponsiveContainer>
+                  </div>
+                </Card>
+                <Card className="bg-gray-800 border-gray-700 p-4 flex flex-col">
                   <h3 className="font-semibold mb-4 flex-shrink-0">Gear Distribution</h3>
                   <div className="flex-grow">
                     <ResponsiveContainer width="100%" height="100%">
@@ -1088,10 +1200,14 @@ export default function AutomotiveAnalyzer() {
                         data={
                           finalChartData.length > 0
                             ? Array.from(
-                                { length: Math.max(1, ...finalChartData.map((d) => d.gear || 0)) },
+                                { length: Math.min(6, Math.max(1, ...finalChartData.map((d) => d.gear || 0))) },
                                 (_, i) => i + 1,
                               )
-                                .map((g) => ({ gear: g, count: finalChartData.filter((d) => d.gear === g).length }))
+                                .map((g) => ({ 
+                                  gear: g, 
+                                  count: finalChartData.filter((d) => d.gear === g).length,
+                                  percentage: (finalChartData.filter((d) => d.gear === g).length / finalChartData.length * 100).toFixed(1)
+                                }))
                                 .filter((item) => item.count > 0)
                             : []
                         }
@@ -1106,6 +1222,7 @@ export default function AutomotiveAnalyzer() {
                             border: "1px solid #374151",
                             borderRadius: "6px",
                           }}
+                          formatter={(value, name, props) => [`${value} samples (${props.payload.percentage}%)`, `Gear ${props.payload.gear}`]}
                         />
                         <Bar dataKey="count" fill="#22c55e" />
                       </BarChart>
@@ -1380,9 +1497,9 @@ export default function AutomotiveAnalyzer() {
                                   variant="ghost"
                                   onClick={() => addPID(metric.key as string)}
                                   disabled={selectedPIDs.includes(metric.key as string)}
-                                  className="h-6 w-6 p-0 flex-shrink-0"
+                                  className="h-8 w-8 p-0"
                                 >
-                                  <Plus className="h-3 w-3" />
+                                  <Plus className="h-4 w-4" />
                                 </Button>
                               </div>
                             )
@@ -1445,8 +1562,8 @@ export default function AutomotiveAnalyzer() {
                           <div className="text-center">
                             <BarChart3 className="w-12 h-12 mx-auto mb-2 opacity-50" />
                             <p>Select PIDs from the left panel to start analysis</p>
-                            <p className="text-sm">Click the + button to add PIDs to your analysis</p>
-                          </div>
+                            <p className="text-sm">Click the + button to add PIDs to your analysis</p>              
+                          </div>                          
                         </div>
                       ) : (
                         <div
