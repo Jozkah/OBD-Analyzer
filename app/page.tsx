@@ -301,6 +301,54 @@ function GPSTrackMap({ data, currentTime }: { data: DataPoint[]; currentTime: nu
   )
 }
 
+// Calculate speed for each gear using the formula:
+// Speed (km/h) = (RPM × Tyre Circumference × 60) ÷ (Gear Ratio × Final Drive × 1000000)
+const GEAR_RATIOS = {
+  1: 3.538,
+  2: 1.92,
+  3: 1.323,
+  4: 1.026,
+  5: 0.822,
+  6: 0.681
+}
+const FINAL_DRIVE = 4.35
+const TYRE_DIAMETER_MM = 647
+const TYRE_CIRCUMFERENCE = Math.PI * TYRE_DIAMETER_MM / 1000 // Convert to meters
+const SHIFT_RPM = 6900
+
+function calculateGear(speed: number, rpm: number): number {
+  if (!speed || !rpm) return 1
+  
+  // If RPM exceeds shift point, suggest next gear (if available)
+  if (rpm > SHIFT_RPM) {
+    // Calculate theoretical speeds for next gear
+    const currentGear = Object.entries(GEAR_RATIOS).find(([_, ratio]) => {
+      const theoreticalSpeed = (rpm * TYRE_CIRCUMFERENCE * 60) / (ratio * FINAL_DRIVE * 1000000) * 3600
+      return Math.abs(theoreticalSpeed - speed) < 5 // 5 km/h tolerance
+    })
+    
+    if (currentGear && parseInt(currentGear[0]) < 6) {
+      return parseInt(currentGear[0]) + 1
+    }
+  }
+
+  // Standard gear calculation
+  const gearSpeeds = Object.entries(GEAR_RATIOS).map(([gear, ratio]) => {
+    const theoreticalSpeed = (rpm * TYRE_CIRCUMFERENCE * 60) / (ratio * FINAL_DRIVE * 1000000) * 3600
+    return {
+      gear: parseInt(gear),
+      speed: theoreticalSpeed,
+      diff: Math.abs(theoreticalSpeed - speed)
+    }
+  })
+
+  const bestMatch = gearSpeeds.reduce((prev, curr) => 
+    curr.diff < prev.diff ? curr : prev
+  )
+
+  return bestMatch.gear
+}
+
 export default function AutomotiveAnalyzer() {
   const [data, setData] = useState<DataPoint[]>([])
   const [metrics, setMetrics] = useState<MetricConfig[]>(defaultMetrics)
@@ -443,21 +491,21 @@ export default function AutomotiveAnalyzer() {
           "oil pressure": "Oil Press",
           "oil temperature": "Oil Temp",
           "transmission temp": "Trans Temp",
-          barometric: "Bar",
-          evaporative: "Evap",
-          equivalence: "Equiv",
-          commanded: "Cmd",
-          absolute: "Abs",
-          temperature: "Temp",
-          pressure: "Press",
-          voltage: "Volt",
-          current: "Curr",
-          lambda: "Lambda",
-          sensor: "Sens",
-          distance: "Dist",
-          duration: "Time",
+          "barometric": "Bar",
+          "evaporative": "Evap",
+          "equivalence": "Equiv",
+          "commanded": "Cmd",
+          "absolute": "Abs",
+          "temperature": "Temp",
+          "pressure": "Press",
+          "voltage": "Volt",
+          "current": "Curr",
+          "lambda": "Lambda",
+          "sensor": "Sens",
+          "distance": "Dist",
+          "duration": "Time",
           "air/fuel": "AFR",
-          ignition: "Ignition",
+          "ignition": "Ignition",
         }
         const lowerName = nameWithoutUnits.toLowerCase()
         for (const [pattern, replacement] of Object.entries(partialMatches)) {
@@ -578,54 +626,6 @@ export default function AutomotiveAnalyzer() {
         if (!dataPoint.brake && dataPoint.throttle)
           dataPoint.brake = Math.max(0, (100 - dataPoint.throttle) * Math.random() * 0.3)
         if (!dataPoint.gear && dataPoint.speed) dataPoint.gear = Math.floor(dataPoint.speed / 25) + 1
-        // Calculate speed for each gear using the formula:
-        // Speed (km/h) = (RPM × Tyre Circumference × 60) ÷ (Gear Ratio × Final Drive × 1000000)
-
-        const GEAR_RATIOS = {
-          1: 3.538,
-          2: 1.92,
-          3: 1.323,
-          4: 1.026,
-          5: 0.822,
-          6: 0.681
-        }
-        const FINAL_DRIVE = 4.35
-        const TYRE_DIAMETER_MM = 647
-        const TYRE_CIRCUMFERENCE = Math.PI * TYRE_DIAMETER_MM / 1000 // Convert to meters
-        const SHIFT_RPM = 6900
-
-        function calculateGear(speed: number, rpm: number): number {
-          if (!speed || !rpm) return 1
-          
-          // If RPM exceeds shift point, suggest next gear (if available)
-          if (rpm > SHIFT_RPM) {
-            // Calculate theoretical speeds for next gear
-            const currentGear = Object.entries(GEAR_RATIOS).find(([_, ratio]) => {
-              const theoreticalSpeed = (rpm * TYRE_CIRCUMFERENCE * 60) / (ratio * FINAL_DRIVE * 1000000) * 3600
-              return Math.abs(theoreticalSpeed - speed) < 5 // 5 km/h tolerance
-            })
-            
-            if (currentGear && parseInt(currentGear[0]) < 6) {
-              return parseInt(currentGear[0]) + 1
-            }
-          }
-
-          // Standard gear calculation
-          const gearSpeeds = Object.entries(GEAR_RATIOS).map(([gear, ratio]) => {
-            const theoreticalSpeed = (rpm * TYRE_CIRCUMFERENCE * 60) / (ratio * FINAL_DRIVE * 1000000) * 3600
-            return {
-              gear: parseInt(gear),
-              speed: theoreticalSpeed,
-              diff: Math.abs(theoreticalSpeed - speed)
-            }
-          })
-
-          const bestMatch = gearSpeeds.reduce((prev, curr) => 
-            curr.diff < prev.diff ? curr : prev
-          )
-
-          return bestMatch.gear
-        }
 
         if (!dataPoint.gear && dataPoint.speed && dataPoint.rpm) {
           dataPoint.gear = calculateGear(dataPoint.speed, dataPoint.rpm)
@@ -973,7 +973,7 @@ export default function AutomotiveAnalyzer() {
                           </div>
                           <div className="flex justify-between">
                             <span>Gear:</span>
-                            <span className="text-blue-400">{currentDataPoint.gear || "N/A"}</span>
+                            <span className="text-blue-400">{currentDataPoint ? calculateGear(currentDataPoint.speed, currentDataPoint.rpm) : "N/A"}</span>
                           </div>
                         </div>
                       </div>
@@ -1063,10 +1063,11 @@ export default function AutomotiveAnalyzer() {
                   <h3 className="font-semibold mb-4 flex-shrink-0">RPM vs Speed Analysis</h3>
                   <div className="flex-grow">
                     <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={finalChartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+                      <ComposedChart data={finalChartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                        <XAxis dataKey="speed" stroke="#9CA3AF" fontSize={12} />
-                        <YAxis dataKey="rpm" stroke="#9CA3AF" fontSize={12} />
+                        <XAxis dataKey="time" stroke="#9CA3AF" fontSize={12} />
+                        <YAxis yAxisId="rpm" stroke="#ef4444" fontSize={12} orientation="left" />
+                        <YAxis yAxisId="speed" stroke="#22c55e" fontSize={12} orientation="right" />
                         <Tooltip
                           contentStyle={{
                             backgroundColor: "#1F2937",
@@ -1074,8 +1075,9 @@ export default function AutomotiveAnalyzer() {
                             borderRadius: "6px",
                           }}
                         />
-                        <Line dataKey="rpm" stroke="#ef4444" strokeWidth={2} dot={false} name="RPM" />
-                      </LineChart>
+                        <Line yAxisId="rpm" dataKey="rpm" stroke="#ef4444" strokeWidth={2} dot={false} name="RPM" />
+                        <Line yAxisId="speed" dataKey="speed" stroke="#22c55e" strokeWidth={2} dot={false} name="Speed (km/h)" />
+                      </ComposedChart>
                     </ResponsiveContainer>
                   </div>
                 </Card>
@@ -1083,10 +1085,11 @@ export default function AutomotiveAnalyzer() {
                   <h3 className="font-semibold mb-4 flex-shrink-0">Throttle vs Speed</h3>
                   <div className="flex-grow">
                     <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={finalChartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+                      <ComposedChart data={finalChartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                        <XAxis dataKey="speed" stroke="#9CA3AF" fontSize={12} />
-                        <YAxis dataKey="throttle" stroke="#9CA3AF" fontSize={12} />
+                        <XAxis dataKey="time" stroke="#9CA3AF" fontSize={12} />
+                        <YAxis yAxisId="throttle" stroke="#eab308" fontSize={12} orientation="left" />
+                        <YAxis yAxisId="speed" stroke="#22c55e" fontSize={12} orientation="right" />
                         <Tooltip
                           contentStyle={{
                             backgroundColor: "#1F2937",
@@ -1094,8 +1097,9 @@ export default function AutomotiveAnalyzer() {
                             borderRadius: "6px",
                           }}
                         />
-                        <Line dataKey="throttle" stroke="#eab308" strokeWidth={2} dot={false} name="Throttle (%)" />
-                      </LineChart>
+                        <Line yAxisId="throttle" dataKey="throttle" stroke="#eab308" strokeWidth={2} dot={false} name="Throttle" />
+                        <Line yAxisId="speed" dataKey="speed" stroke="#22c55e" strokeWidth={2} dot={false} name="Speed (km/h)" />
+                      </ComposedChart>
                     </ResponsiveContainer>
                   </div>
                 </Card>
@@ -1144,7 +1148,7 @@ export default function AutomotiveAnalyzer() {
                         <XAxis dataKey="time" stroke="#9CA3AF" fontSize={12} />
                         <YAxis 
                           yAxisId="gear"
-                          stroke="#22c55e" 
+                          stroke="#b666d2" 
                           fontSize={12} 
                           domain={[0.5, 6.5]} 
                           ticks={[1, 2, 3, 4, 5, 6]} 
@@ -1153,7 +1157,7 @@ export default function AutomotiveAnalyzer() {
                         />
                         <YAxis
                           yAxisId="speed"
-                          stroke="#f59e0b"
+                          stroke="#22c55e"
                           fontSize={12}
                           orientation="left"
                         />
@@ -1174,16 +1178,18 @@ export default function AutomotiveAnalyzer() {
                         <Line
                           yAxisId="gear"
                           dataKey={(data) => Math.min(6, Math.max(1, data.gear || 1))}
-                          stroke="#22c55e"
+                          stroke="#b666d2"
                           strokeWidth={2}
                           dot={false}
                           name="gear"
                           connectNulls
                         />
-                        <Line
+                        <Area
                           yAxisId="speed"
                           dataKey="speed"
-                          stroke="#f59e0b"
+                          fill="#22c55e"
+                          fillOpacity={0.3}
+                          stroke="#22c55e"
                           strokeWidth={2}
                           dot={false}
                           name="speed"
@@ -1290,6 +1296,7 @@ export default function AutomotiveAnalyzer() {
                               fillOpacity={0.3}
                               stroke={sensor.color}
                               name={`${sensor.label} (°C)`}
+                              strokeWidth={2}
                             />
                           )
                         })}
@@ -1384,6 +1391,7 @@ export default function AutomotiveAnalyzer() {
                           fillOpacity={0.3}
                           stroke="#f59e0b"
                           name="Fuel Rate (l/hr)"
+                          strokeWidth={2}
                         />
                       </AreaChart>
                     </ResponsiveContainer>
