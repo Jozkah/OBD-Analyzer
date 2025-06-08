@@ -351,15 +351,23 @@ function calculateGear(speed: number, rpm: number, config: any): number {
   // Find the gear with the closest theoretical speed to actual speed
   const bestMatch = gearSpeeds.reduce((prev, curr) => (curr.diff < prev.diff ? curr : prev))
 
-  // Add some tolerance - if we're very close to the shift point, consider next gear
-  if (rpm > config.shiftRpm * 0.95 && bestMatch.gear < config.numberOfGears) {
-    const nextGear = bestMatch.gear + 1
-    if (config.gearRatios[nextGear]) {
-      const nextGearSpeed =
-        ((rpm * tyreCircumference * 60) / (config.gearRatios[nextGear] * config.finalDrive * 1000000)) * 3600
-      if (Math.abs(nextGearSpeed - speed) < bestMatch.diff * 1.5) {
-        return nextGear
-      }
+  // Improved gear selection logic
+  const tolerance = speed * 0.15 // 15% tolerance
+
+  // Check if we should consider adjacent gears
+  const validGears = gearSpeeds.filter((g) => g.diff <= tolerance).sort((a, b) => a.diff - b.diff)
+
+  if (validGears.length > 0) {
+    // If we're close to shift point, prefer higher gear
+    if (rpm > config.shiftRpm * 0.85 && validGears.some((g) => g.gear > bestMatch.gear)) {
+      const higherGear = validGears.find((g) => g.gear > bestMatch.gear)
+      if (higherGear) return Math.min(higherGear.gear, config.numberOfGears)
+    }
+
+    // If we're at low RPM, prefer lower gear
+    if (rpm < config.shiftRpm * 0.3 && validGears.some((g) => g.gear < bestMatch.gear)) {
+      const lowerGear = validGears.find((g) => g.gear < bestMatch.gear)
+      if (lowerGear) return Math.max(lowerGear.gear, 1)
     }
   }
 
@@ -487,6 +495,34 @@ function importTransmissionConfig(file: File, callback: (config: any) => void): 
   reader.readAsText(file)
 }
 
+function calculateTireDiameter(width: number, aspectRatio: number, rimSize: number): number {
+  // Calculate sidewall height: (width * aspect ratio) / 100
+  const sidewallHeight = (width * aspectRatio) / 100
+
+  // Convert rim size from inches to mm
+  const rimDiameterMm = rimSize * 25.4
+
+  // Total diameter = rim diameter + (2 * sidewall height)
+  const totalDiameter = rimDiameterMm + 2 * sidewallHeight
+
+  return Math.round(totalDiameter)
+}
+
+function parseTireSize(tireSize: string): { width: number; aspectRatio: number; rimSize: number } | null {
+  // Match patterns like "235/35R19", "235 35 R19", "235-35-19", etc.
+  const match = tireSize.match(/(\d{3})\s*[/\-\s]\s*(\d{2})\s*[rR]?\s*(\d{2})/)
+
+  if (match) {
+    return {
+      width: Number.parseInt(match[1]),
+      aspectRatio: Number.parseInt(match[2]),
+      rimSize: Number.parseInt(match[3]),
+    }
+  }
+
+  return null
+}
+
 export default function AutomotiveAnalyzer() {
   const [data, setData] = useState<DataPoint[]>([])
   const [metrics, setMetrics] = useState<MetricConfig[]>(defaultMetrics)
@@ -519,6 +555,26 @@ export default function AutomotiveAnalyzer() {
     numberOfGears: 6,
   })
   const [transmissionPresets] = useState([
+        {
+      name: "Peugeot 308 GTi (T9 EA71)",
+      config: {
+        gearRatios: { 1: 3.358, 2: 1.92, 3: 1.433, 4: 1.103, 5: 0.881, 6: 0.745 },
+        finalDrive: 4.176,
+        tyreDiameterMm: 647,
+        shiftRpm: 6700,
+        numberOfGears: 6,
+      },
+    },
+    {
+      name: "Peugeot 308 GT (T9 EA65)",
+      config: {
+        gearRatios: { 1: 3.538, 2: 1.92, 3: 1.323, 4: 1.026, 5: 0.822, 6: 0.681 },
+        finalDrive: 4.35,
+        tyreDiameterMm: 647,
+        shiftRpm: 6900,
+        numberOfGears: 6,
+      },
+    },
     {
       name: "Honda Civic Type R (FK8)",
       config: {
@@ -573,6 +629,10 @@ export default function AutomotiveAnalyzer() {
   const [autoDetectionResults, setAutoDetectionResults] = useState<any>(null)
   const [showAutoDetection, setShowAutoDetection] = useState(false)
   const [showTransmissionDialog, setShowTransmissionDialog] = useState(false)
+  const [tireWidth, setTireWidth] = useState(235)
+  const [tireAspectRatio, setTireAspectRatio] = useState(35)
+  const [tireRimSize, setTireRimSize] = useState(19)
+  const [tireSizeInput, setTireSizeInput] = useState("235/35R19")
 
   useEffect(() => {
     if (!isPlaying || data.length === 0) return
@@ -855,8 +915,13 @@ export default function AutomotiveAnalyzer() {
           if (!dataPoint.gear && dataPoint.speed && dataPoint.rpm) {
             dataPoint.gear = calculateGear(dataPoint.speed, dataPoint.rpm, transmissionConfig)
           } else if (!dataPoint.gear && dataPoint.speed) {
-            // Fallback calculation
-            dataPoint.gear = Math.min(Math.floor(dataPoint.speed / 25) + 1, transmissionConfig.numberOfGears)
+            // Improved fallback calculation based on speed ranges
+            if (dataPoint.speed < 15) dataPoint.gear = 1
+            else if (dataPoint.speed < 35) dataPoint.gear = 2
+            else if (dataPoint.speed < 55) dataPoint.gear = 3
+            else if (dataPoint.speed < 80) dataPoint.gear = 4
+            else if (dataPoint.speed < 110) dataPoint.gear = 5
+            else dataPoint.gear = Math.min(6, transmissionConfig.numberOfGears)
           }
           parsedData.push(dataPoint)
         }
@@ -1044,7 +1109,8 @@ export default function AutomotiveAnalyzer() {
             onClick={() => setShowTransmissionDialog(true)}
             variant="outline"
             size="sm"
-            className="bg-gray-800 border-gray-600 hover:bg-gray-700"
+            className={`bg-gray-800 border-gray-600 hover:bg-gray-700 ${data.length === 0 ? "opacity-50 cursor-not-allowed" : ""}`}
+            disabled={data.length === 0}
           >
             <Settings className="w-4 h-4 mr-2" />
             Transmission
@@ -2131,6 +2197,84 @@ export default function AutomotiveAnalyzer() {
                           />
                         </div>
                       ))}
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-white mb-3">Tire Size Calculator</label>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs text-gray-400 mb-1">Tire Size (e.g., 235/35R19)</label>
+                        <Input
+                          type="text"
+                          value={tireSizeInput}
+                          onChange={(e) => {
+                            setTireSizeInput(e.target.value)
+                            const parsed = parseTireSize(e.target.value)
+                            if (parsed) {
+                              setTireWidth(parsed.width)
+                              setTireAspectRatio(parsed.aspectRatio)
+                              setTireRimSize(parsed.rimSize)
+                              const diameter = calculateTireDiameter(parsed.width, parsed.aspectRatio, parsed.rimSize)
+                              setTransmissionConfig((prev) => ({ ...prev, tyreDiameterMm: diameter }))
+                            }
+                          }}
+                          placeholder="235/35R19"
+                          className="bg-gray-700 border-gray-600 text-white text-sm"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-gray-400 mb-1">Calculated Diameter</label>
+                        <div className="bg-gray-700 border border-gray-600 rounded px-3 py-2 text-sm text-white">
+                          {calculateTireDiameter(tireWidth, tireAspectRatio, tireRimSize)} mm
+                        </div>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-3 gap-3 mt-2">
+                      <div>
+                        <label className="block text-xs text-gray-400 mb-1">Width (mm)</label>
+                        <Input
+                          type="number"
+                          value={tireWidth}
+                          onChange={(e) => {
+                            const width = Number.parseInt(e.target.value) || 235
+                            setTireWidth(width)
+                            setTireSizeInput(`${width}/${tireAspectRatio}R${tireRimSize}`)
+                            const diameter = calculateTireDiameter(width, tireAspectRatio, tireRimSize)
+                            setTransmissionConfig((prev) => ({ ...prev, tyreDiameterMm: diameter }))
+                          }}
+                          className="bg-gray-700 border-gray-600 text-white text-xs"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-gray-400 mb-1">Aspect Ratio (%)</label>
+                        <Input
+                          type="number"
+                          value={tireAspectRatio}
+                          onChange={(e) => {
+                            const aspect = Number.parseInt(e.target.value) || 35
+                            setTireAspectRatio(aspect)
+                            setTireSizeInput(`${tireWidth}/${aspect}R${tireRimSize}`)
+                            const diameter = calculateTireDiameter(tireWidth, aspect, tireRimSize)
+                            setTransmissionConfig((prev) => ({ ...prev, tyreDiameterMm: diameter }))
+                          }}
+                          className="bg-gray-700 border-gray-600 text-white text-xs"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-gray-400 mb-1">Rim Size (inches)</label>
+                        <Input
+                          type="number"
+                          value={tireRimSize}
+                          onChange={(e) => {
+                            const rim = Number.parseInt(e.target.value) || 19
+                            setTireRimSize(rim)
+                            setTireSizeInput(`${tireWidth}/${tireAspectRatio}R${rim}`)
+                            const diameter = calculateTireDiameter(tireWidth, tireAspectRatio, rim)
+                            setTransmissionConfig((prev) => ({ ...prev, tyreDiameterMm: diameter }))
+                          }}
+                          className="bg-gray-700 border-gray-600 text-white text-xs"
+                        />
+                      </div>
                     </div>
                   </div>
                 </TabsContent>
