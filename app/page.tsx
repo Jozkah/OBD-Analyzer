@@ -12,20 +12,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Slider } from "@/components/ui/slider"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Input } from "@/components/ui/input"
-import {
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  AreaChart,
-  Area,
-  BarChart,
-  Bar,
-  ComposedChart,
-} from "recharts"
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area, BarChart, Bar, ComposedChart, } from "recharts"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 
 interface DataPoint {
@@ -389,15 +376,15 @@ export default function AutomotiveAnalyzer() {
       const shortenColumnName = (name: string): string => {
         const cleanName = name.replace(/[()]/g, "").replace(/\s+/g, " ").trim()
         const abbreviations: { [key: string]: string } = {
-          Time: "Time",
-          "Fuel system 1 status": "Fuel Sys 1",
-          "Fuel system 2 status": "Fuel Sys 2",
-          "Calculated load value": "Load Val",
+          "Time": "Time",
+          "Fuel system 1 status": "Fuel 1 Status",
+          "Fuel system 2 status": "Fuel 2 Status",
+          "Calculated load value": "Calculated Load",
           "Engine coolant temperature": "Coolant Temp",
-          "Short term fuel % trim - Bank 1": "Short term fuel B1",
-          "Short term fuel % trim - Bank 3": "Short term fuel B3",
-          "Long term fuel % trim - Bank 1": "Long term fuel B1",
-          "Long term fuel % trim - Bank 3": "Long term fuel B3",
+          "Short term fuel % trim - Bank 1": "Short term fuel",
+          "Short term fuel % trim - Bank 3": "Short term fuel",
+          "Long term fuel % trim - Bank 1": "Long term fuel",
+          "Long term fuel % trim - Bank 3": "Long term fuel",
           "Intake manifold absolute pressure": "MAP",
           "Engine RPM": "RPM",
           "Vehicle speed": "Speed",
@@ -406,47 +393,47 @@ export default function AutomotiveAnalyzer() {
           "Mass air flow rate": "MAF",
           "Absolute throttle position": "Throttle",
           "Absolute throttle position B": "Throttle B",
-          "Location of oxygen sensors": "O2 Sens Loc",
+          "Location of oxygen sensors": "O2 Sens Location",
           "O2 voltage (Bank 1 Sensor 2)": "O2 Voltage",
           "O2 voltage Bank 1 Sensor 2": "O2 Voltage",
-          "Short term fuel trim (Bank 1 Sensor 2)": "Short term fuel B1S2",
-          "Short term fuel trim Bank 1 Sensor 2": "Short term fuel B1S2",
+          "Short term fuel trim (Bank 1 Sensor 2)": "Short term fuel",
+          "Short term fuel trim Bank 1 Sensor 2": "Short term fuel",
           "OBD requirements to which vehicle or engine is certified": "OBD Cert",
-          "Time since engine start": "Engine Run Time",
+          "Time since engine start (sec)": "Engine Run Time",
           "Distance traveled while MIL is activated": "Distance with CEL",
           "Fuel rail pressure": "Fuel Pressure",
           "Commanded evaporative purge": "Evap Purge",
           "Number of warm-ups since DTCs cleared": "Warmups since DTCs cleared",
           "Distance traveled since DTCs cleared": "Distance since DTCs cleared",
-          "Barometric pressure": "Baro Press",
-          "O2 sensor lambda wide range (current probe) (Bank 1 Sensor 1)": "O2 Lambda B1S1",
-          "O2 sensor lambda wide range Bank 1 Sensor 1": "O2 Lambda B1S1",
-          "O2 sensor current wide range (Bank 1 Sensor 1)": "O2 Sensor Current B1S1",
-          "O2 sensor current wide range Bank 1 Sensor 1": "O2 Sensor Current B1S1",
-          "Catalyst temperature (Bank 1 Sensor 1)": "Cat Temp B1S1",
-          "Catalyst temperature Bank 1 Sensor 1": "Cat Temp B1S1",
+          "Barometric pressure": "Barometric pressure",
+          "O2 sensor lambda wide range": "O2 Lambda",
+          "O2 sensor lambda wide range Bank 1 Sensor 1": "O2 Lambda",
+          "O2 sensor current wide range (Bank 1 Sensor 1)": "O2 Sensor Current",
+          "O2 sensor current wide range Bank 1 Sensor 1": "O2 Sensor Current",
+          "Catalyst temperature (Bank 1 Sensor 1)": "Cat Temp",
+          "Catalyst temperature Bank 1 Sensor 1": "Cat Temp",
           "Control module voltage": "Battery Voltage",
           "Fuel/Air commanded equivalence ratio": "Fuel/Air Ratio", 
           "Accelerator pedal position D": "Pedal D",
           "Accelerator pedal position E": "Pedal E",
           "Commanded throttle actuator control": "Cmd Throttle Act",
-          "Engine run time run while MIL is activated": "MIL Run Time",
-          "Engine run time while MIL is activated": "MIL Run Time",
-          "Engine run time since DTCs cleared": "DTC Run Time",
+          "Engine run time run while MIL is activated": "Run Time with CEL",
+          "Engine run time while MIL is activated": "Run Time with CEL",
+          "Engine run time since DTCs cleared": "Run Time since DTCs cleared",
           "Instant fuel economy": "Instant Fuel Economy",
           "Total fuel economy": "Total Fuel Economy",
           "Fuel rate": "Fuel Rate",
           "Instant CO2 rate": "Instant CO2",
           "Total CO2": "Total CO2",
           "CO2 flow": "CO2 Flow",
-          "Trip Distance": "Trip Dist",
-          "Trip Fuel": "Trip Fuel",
+          "Trip Distance": "Trip Distance",
           "Trip Fuel Economy": "Trip Fuel Economy",
-          "Trip Duration": "Trip Time",
+          "Trip Duration": "Trip Duration",
+          "Trip Fuel": "Trip Fuel",
           "Hard Brake Count": "Hard Brakes",
           "Hard Accel Count": "Hard Accels",
           "Idling Count": "Idle Count",
-          "Seconds Idling": "Idle Time",
+          "Seconds Idling": "Time Idling",
           "Max Speed": "Max Speed",
           "Boost": "Boost",
           "Engine Power": "Power",
@@ -545,7 +532,14 @@ export default function AutomotiveAnalyzer() {
         if (lower.includes("fuel") && lower.includes("economy")) return "l/100km"
         if (lower.includes("mass") && lower.includes("air")) return "g/s"
         if (lower.includes("air/fuel") || lower.includes("afr")) return "AFR"
+        if (lower.includes("fuel/air") || lower.includes("afr")) return "AFR"
         if (lower.includes("ignition") && lower.includes("advance")) return "°"
+        if (lower.includes("(hr)")) return "hr"
+        if (lower.includes("(min)")) return "min"
+        if (lower.includes("(sec)")) return "sec"
+        if (lower.includes("(%)")) return "%"    
+        if (lower.includes("(l)")) return "l"
+        if (lower.includes("(bar)")) return "bar"
         return ""
       }
       const generateColor = (index: number): string => {
@@ -616,7 +610,7 @@ export default function AutomotiveAnalyzer() {
           if (lowerHeader.includes("longitude")) dataPoint.longitude = value
           if (lowerHeader.includes("fuel") && lowerHeader.includes("rate")) dataPoint.fuelRate = value
           if (lowerHeader.includes("intake") && lowerHeader.includes("temp")) dataPoint.intakeTemp = value
-          if (lowerHeader.includes("air/fuel") || lowerHeader.includes("afr")) dataPoint.afr = value
+          if (lowerHeader.includes("air/fuel") || lowerHeader.includes("fuel/air") || lowerHeader.includes("afr")) dataPoint.afr = value
           if (lowerHeader.includes("ignition") && lowerHeader.includes("advance")) dataPoint.ignitionAdvance = value
           if (lowerHeader.includes("catalyst") && lowerHeader.includes("temp")) dataPoint.catTemp = value
           if (lowerHeader.includes("oil") && lowerHeader.includes("temp")) dataPoint.oilTemp = value
@@ -773,7 +767,7 @@ export default function AutomotiveAnalyzer() {
   }, [])
 
   // Static height for all tabs - no more dynamic calculations
-  const STATIC_HEIGHT = 600
+  const STATIC_HEIGHT = 1000
   const metricsListHeight = Math.min(400, filteredMetrics.length * 35 + 100)
   const pidAnalysisHeight =
     selectedPIDs.length > 6 ? STATIC_HEIGHT + (Math.ceil(selectedPIDs.length / 2) - 3) * 250 : STATIC_HEIGHT
@@ -784,7 +778,7 @@ export default function AutomotiveAnalyzer() {
     <div className="min-h-screen bg-gray-900 text-white p-4">
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-4">
-          <h1 className="text-2xl font-bold">Automotive Data Analyzer</h1>
+          <h1 className="text-2xl font-bold">OBD Data Analyzer</h1>
           <input ref={fileInputRef} type="file" accept=".csv" onChange={handleFileUpload} className="hidden" />
           <Button
             onClick={() => fileInputRef.current?.click()}
@@ -866,7 +860,7 @@ export default function AutomotiveAnalyzer() {
               <TabsTrigger value="performance">Performance</TabsTrigger>
               <TabsTrigger value="engine">Engine</TabsTrigger>
               <TabsTrigger value="analysis">PID Analysis</TabsTrigger>
-              <TabsTrigger value="gps">GPS Track</TabsTrigger>
+              <TabsTrigger value="gps">GPS Track (WIP)</TabsTrigger>
             </TabsList>
 
             <TabsContent value="overview" className="space-y-4">
@@ -973,6 +967,7 @@ export default function AutomotiveAnalyzer() {
                           </div>
                           <div className="flex justify-between">
                             <span>Gear:</span>
+                            <span className="text-blue-400">"please_fix_me"</span>
                             <span className="text-blue-400">{currentDataPoint ? calculateGear(currentDataPoint.speed, currentDataPoint.rpm) : "N/A"}</span>
                           </div>
                         </div>
@@ -1049,6 +1044,7 @@ export default function AutomotiveAnalyzer() {
                       </div>
                       <div className="flex justify-between">
                         <span>Trip Duration:</span>
+                        <span className="text-gray-300">"please_fix_me"</span>
                         <span className="text-gray-300">{(data.length / 10).toFixed(1)}s</span>
                       </div>
                     </div>
@@ -1351,7 +1347,7 @@ export default function AutomotiveAnalyzer() {
                   </div>
                 </Card>
                 <Card className="bg-gray-800 border-gray-700 p-4 flex flex-col">
-                  <h3 className="font-semibold mb-4 flex-shrink-0">Boost Pressure</h3>
+                  <h3 className="font-semibold mb-30 flex-shrink-0">Boost Pressure</h3>
                   <div className="flex-grow">
                     <ResponsiveContainer width="100%" height="100%">
                       <LineChart data={finalChartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
