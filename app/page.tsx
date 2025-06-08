@@ -38,6 +38,10 @@ interface DataPoint {
   oilTemp?: number
   transTemp?: number
   exhaustTemp?: number
+  tripDuration?: number;
+  tripDistance?: number;
+  tripFuel?: number;
+  tripFuelEconomy?: number;
   // Allow dynamic col_X properties
   [key: string]: any
 }
@@ -616,6 +620,10 @@ export default function AutomotiveAnalyzer() {
           if (lowerHeader.includes("oil") && lowerHeader.includes("temp")) dataPoint.oilTemp = value
           if (lowerHeader.includes("transmission") && lowerHeader.includes("temp")) dataPoint.transTemp = value
           if (lowerHeader.includes("exhaust") && lowerHeader.includes("temp")) dataPoint.exhaustTemp = value
+          if (lowerHeader.includes("trip") && lowerHeader.includes("duration")) dataPoint.tripDuration = value
+          if (lowerHeader.includes("trip") && lowerHeader.includes("distance")) dataPoint.tripDistance = value
+          if (lowerHeader.includes("trip") && lowerHeader.includes("fuel") && !lowerHeader.includes("economy")) dataPoint.tripFuel = value
+          if (lowerHeader.includes("trip") && lowerHeader.includes("fuel") && lowerHeader.includes("economy")) dataPoint.tripFuelEconomy = value
         })
         if (!dataPoint.brake && dataPoint.throttle)
           dataPoint.brake = Math.max(0, (100 - dataPoint.throttle) * Math.random() * 0.3)
@@ -1034,6 +1042,7 @@ export default function AutomotiveAnalyzer() {
                         <span>Max Calculated Torque:</span>
                         <span className="text-lime-400 font-bold">{stats.maxTorque.toFixed(0)} N•m</span>
                       </div>
+                      <div className="h-px bg-gray-700 my-2"></div>
                       <div className="flex justify-between">
                         <span>Average Coolant Temp:</span>
                         <span className="text-purple-400 font-bold">{stats.avgCoolant.toFixed(1)}°C</span>
@@ -1042,10 +1051,40 @@ export default function AutomotiveAnalyzer() {
                         <span>Average Intake Temp:</span>
                         <span className="text-orange-400 font-bold">{stats.avgIntakeTemp.toFixed(1)}°C</span>
                       </div>
+                      <div className="h-px bg-gray-700 my-2"></div>
                       <div className="flex justify-between">
                         <span>Trip Duration:</span>
-                        <span className="text-gray-300">"please_fix_me"</span>
-                        <span className="text-gray-300">{(data.length / 10).toFixed(1)}s</span>
+                        <span className="text-gray-300">
+                          {data.length > 0 && data[data.length - 1].tripDuration 
+                            ? data[data.length - 1].tripDuration >= 60
+                            ? `${Math.floor(data[data.length - 1].tripDuration / 60)}h ${Math.floor(data[data.length - 1].tripDuration % 60)}min`
+                            : `${Math.floor(data[data.length - 1].tripDuration)}min`
+                          : "N/A"}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Trip Distance:</span>
+                        <span className="text-gray-300">
+                          {data.length > 0 && data[data.length - 1].tripDistance 
+                            ? `${data[data.length - 1].tripDistance.toFixed(1)} km`
+                            : "N/A"}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Trip Fuel Used:</span>
+                        <span className="text-gray-300">
+                          {data.length > 0 && data[data.length - 1].tripFuel 
+                            ? `${data[data.length - 1].tripFuel.toFixed(1)} L`
+                            : "N/A"}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Trip Fuel Economy:</span>
+                        <span className="text-gray-300">
+                          {data.length > 0 && data[data.length - 1].tripFuelEconomy 
+                            ? `${data[data.length - 1].tripFuelEconomy.toFixed(1)} L/100km`
+                            : "N/A"}
+                        </span>
                       </div>
                     </div>
                   </Card>
@@ -1300,7 +1339,7 @@ export default function AutomotiveAnalyzer() {
                     </ResponsiveContainer>
                   </div>
                 </Card>
-                <Card className="bg-gray-800 border-gray-700 p-4 flex flex-col">
+                {/* <Card className="bg-gray-800 border-gray-700 p-4 flex flex-col">
                   <h3 className="font-semibold mb-4 flex-shrink-0">Air/Fuel Ratio (AFR)</h3>
                   <div className="flex-grow">
                     <ResponsiveContainer width="100%" height="100%">
@@ -1319,7 +1358,7 @@ export default function AutomotiveAnalyzer() {
                       </LineChart>
                     </ResponsiveContainer>
                   </div>
-                </Card>
+                </Card> */}
                 <Card className="bg-gray-800 border-gray-700 p-4 flex flex-col">
                   <h3 className="font-semibold mb-4 flex-shrink-0">Ignition Advance</h3>
                   <div className="flex-grow">
@@ -1347,7 +1386,7 @@ export default function AutomotiveAnalyzer() {
                   </div>
                 </Card>
                 <Card className="bg-gray-800 border-gray-700 p-4 flex flex-col">
-                  <h3 className="font-semibold mb-30 flex-shrink-0">Boost Pressure</h3>
+                  <h3 className="font-semibold mb-4 flex-shrink-0">Boost Pressure</h3>
                   <div className="flex-grow">
                     <ResponsiveContainer width="100%" height="100%">
                       <LineChart data={finalChartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
