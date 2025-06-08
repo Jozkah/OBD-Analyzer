@@ -5,14 +5,40 @@ import { useMemo } from "react"
 import type React from "react"
 
 import { useState, useCallback, useRef, useEffect } from "react"
-import { Upload, Play, Pause, RotateCcw, FileText, Map, BarChart3, Search, ChevronDown, Plus, X } from "lucide-react"
+import {
+  Upload,
+  Play,
+  Pause,
+  RotateCcw,
+  FileText,
+  Map,
+  BarChart3,
+  Search,
+  ChevronDown,
+  Plus,
+  X,
+  Settings,
+} from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Slider } from "@/components/ui/slider"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Input } from "@/components/ui/input"
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area, BarChart, Bar, ComposedChart, } from "recharts"
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  AreaChart,
+  Area,
+  BarChart,
+  Bar,
+  ComposedChart,
+} from "recharts"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 
 interface DataPoint {
@@ -38,10 +64,10 @@ interface DataPoint {
   oilTemp?: number
   transTemp?: number
   exhaustTemp?: number
-  tripDuration?: number;
-  tripDistance?: number;
-  tripFuel?: number;
-  tripFuelEconomy?: number;
+  tripDuration?: number
+  tripDistance?: number
+  tripFuel?: number
+  tripFuelEconomy?: number
   // Allow dynamic col_X properties
   [key: string]: any
 }
@@ -300,44 +326,165 @@ const GEAR_RATIOS = {
   3: 1.323,
   4: 1.026,
   5: 0.822,
-  6: 0.681
+  6: 0.681,
 }
 const FINAL_DRIVE = 4.35
 const TYRE_DIAMETER_MM = 647
-const TYRE_CIRCUMFERENCE = Math.PI * TYRE_DIAMETER_MM / 1000 // Convert to meters
+const TYRE_CIRCUMFERENCE = (Math.PI * TYRE_DIAMETER_MM) / 1000 // Convert to meters
 const SHIFT_RPM = 6900
 
-function calculateGear(speed: number, rpm: number): number {
-  if (!speed || !rpm) return 1
-  
-  // If RPM exceeds shift point, suggest next gear (if available)
-  if (rpm > SHIFT_RPM) {
-    // Calculate theoretical speeds for next gear
-    const currentGear = Object.entries(GEAR_RATIOS).find(([_, ratio]) => {
-      const theoreticalSpeed = (rpm * TYRE_CIRCUMFERENCE * 60) / (ratio * FINAL_DRIVE * 1000000) * 3600
-      return Math.abs(theoreticalSpeed - speed) < 5 // 5 km/h tolerance
-    })
-    
-    if (currentGear && parseInt(currentGear[0]) < 6) {
-      return parseInt(currentGear[0]) + 1
-    }
-  }
+function calculateGear(speed: number, rpm: number, config: any): number {
+  if (!speed || !rpm || speed < 1 || rpm < 500) return 1
 
-  // Standard gear calculation
-  const gearSpeeds = Object.entries(GEAR_RATIOS).map(([gear, ratio]) => {
-    const theoreticalSpeed = (rpm * TYRE_CIRCUMFERENCE * 60) / (ratio * FINAL_DRIVE * 1000000) * 3600
+  const tyreCircumference = (Math.PI * config.tyreDiameterMm) / 1000 // Convert to meters
+
+  // Calculate theoretical speed for each gear
+  const gearSpeeds = Object.entries(config.gearRatios).map(([gear, ratio]) => {
+    const theoreticalSpeed = ((rpm * tyreCircumference * 60) / (ratio * config.finalDrive * 1000000)) * 3600
     return {
-      gear: parseInt(gear),
+      gear: Number.parseInt(gear),
       speed: theoreticalSpeed,
-      diff: Math.abs(theoreticalSpeed - speed)
+      diff: Math.abs(theoreticalSpeed - speed),
     }
   })
 
-  const bestMatch = gearSpeeds.reduce((prev, curr) => 
-    curr.diff < prev.diff ? curr : prev
-  )
+  // Find the gear with the closest theoretical speed to actual speed
+  const bestMatch = gearSpeeds.reduce((prev, curr) => (curr.diff < prev.diff ? curr : prev))
 
-  return bestMatch.gear
+  // Add some tolerance - if we're very close to the shift point, consider next gear
+  if (rpm > config.shiftRpm * 0.95 && bestMatch.gear < config.numberOfGears) {
+    const nextGear = bestMatch.gear + 1
+    if (config.gearRatios[nextGear]) {
+      const nextGearSpeed =
+        ((rpm * tyreCircumference * 60) / (config.gearRatios[nextGear] * config.finalDrive * 1000000)) * 3600
+      if (Math.abs(nextGearSpeed - speed) < bestMatch.diff * 1.5) {
+        return nextGear
+      }
+    }
+  }
+
+  return Math.max(1, Math.min(bestMatch.gear, config.numberOfGears))
+}
+
+function getShiftIndicator(
+  rpm: number,
+  gear: number,
+  config: any,
+): { shouldShift: "up" | "down" | "optimal" | null; reason: string } {
+  if (!rpm || !gear) return { shouldShift: null, reason: "" }
+
+  const shiftUpRpm = config.shiftRpm * 0.85 // Shift up at 85% of redline
+  const shiftDownRpm = config.shiftRpm * 0.3 // Shift down below 30% of redline
+
+  if (rpm > shiftUpRpm && gear < config.numberOfGears) {
+    return { shouldShift: "up", reason: `Shift up at ${rpm} RPM` }
+  }
+
+  if (rpm < shiftDownRpm && gear > 1) {
+    return { shouldShift: "down", reason: `Shift down at ${rpm} RPM` }
+  }
+
+  return { shouldShift: "optimal", reason: "Optimal gear" }
+}
+
+function detectGearRatios(data: DataPoint[]): any {
+  if (data.length < 100) return null
+
+  // Filter data with valid speed and RPM
+  const validData = data.filter((d) => d.speed > 5 && d.rpm > 1000 && d.speed < 200 && d.rpm < 8000)
+  if (validData.length < 50) return null
+
+  // Group data by estimated gear (rough calculation)
+  const gearGroups: { [key: number]: Array<{ speed: number; rpm: number; ratio: number }> } = {}
+
+  validData.forEach((point) => {
+    // Estimate gear based on speed/RPM ratio
+    const ratio = point.rpm / point.speed
+    let estimatedGear = 1
+
+    if (ratio < 30) estimatedGear = 6
+    else if (ratio < 40) estimatedGear = 5
+    else if (ratio < 55) estimatedGear = 4
+    else if (ratio < 80) estimatedGear = 3
+    else if (ratio < 120) estimatedGear = 2
+    else estimatedGear = 1
+
+    if (!gearGroups[estimatedGear]) gearGroups[estimatedGear] = []
+    gearGroups[estimatedGear].push({ speed: point.speed, rpm: point.rpm, ratio })
+  })
+
+  // Calculate average ratios for each gear
+  const detectedRatios: { [key: number]: number } = {}
+  const gearStats: { [key: number]: { count: number; avgRatio: number; minSpeed: number; maxSpeed: number } } = {}
+
+  Object.entries(gearGroups).forEach(([gear, points]) => {
+    if (points.length < 5) return // Need at least 5 points per gear
+
+    const avgRatio = points.reduce((sum, p) => sum + p.ratio, 0) / points.length
+    const speeds = points.map((p) => p.speed)
+
+    detectedRatios[Number(gear)] = avgRatio
+    gearStats[Number(gear)] = {
+      count: points.length,
+      avgRatio,
+      minSpeed: Math.min(...speeds),
+      maxSpeed: Math.max(...speeds),
+    }
+  })
+
+  // Estimate final drive and tire diameter
+  const estimatedFinalDrive = 4.0 // Default assumption
+  const estimatedTireDiameter = 650 // Default assumption
+
+  // Convert RPM/speed ratios to gear ratios
+  const tyrCircumference = (Math.PI * estimatedTireDiameter) / 1000
+  const gearRatios: { [key: number]: number } = {}
+
+  Object.entries(detectedRatios).forEach(([gear, rpmSpeedRatio]) => {
+    // Formula: gear_ratio = (RPM * tyre_circumference * 60) / (speed * final_drive * 1000000) * 3600
+    // Simplified: gear_ratio = (rpm_speed_ratio * tyre_circumference * 60 * 3600) / (final_drive * 1000000)
+    const gearRatio = (rpmSpeedRatio * tyrCircumference * 60 * 3600) / (estimatedFinalDrive * 1000000)
+    gearRatios[Number(gear)] = gearRatio
+  })
+
+  return {
+    detectedGears: Object.keys(gearRatios).length,
+    gearRatios,
+    gearStats,
+    estimatedFinalDrive,
+    estimatedTireDiameter,
+    confidence: Math.min(Object.keys(gearRatios).length / 6, 1) * 100,
+  }
+}
+
+function exportTransmissionConfig(config: any): void {
+  const dataStr = JSON.stringify(config, null, 2)
+  const dataBlob = new Blob([dataStr], { type: "application/json" })
+  const url = URL.createObjectURL(dataBlob)
+  const link = document.createElement("a")
+  link.href = url
+  link.download = "transmission-config.json"
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+  URL.revokeObjectURL(url)
+}
+
+function importTransmissionConfig(file: File, callback: (config: any) => void): void {
+  const reader = new FileReader()
+  reader.onload = (e) => {
+    try {
+      const config = JSON.parse(e.target?.result as string)
+      if (config.gearRatios && config.finalDrive && config.tyreDiameterMm) {
+        callback(config)
+      } else {
+        alert("Invalid transmission configuration file")
+      }
+    } catch (error) {
+      alert("Error reading transmission configuration file")
+    }
+  }
+  reader.readAsText(file)
 }
 
 export default function AutomotiveAnalyzer() {
@@ -351,11 +498,81 @@ export default function AutomotiveAnalyzer() {
   const [activeTab, setActiveTab] = useState("overview")
   const [searchQuery, setSearchQuery] = useState("")
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const transmissionFileInputRef = useRef<HTMLInputElement>(null)
   const [sortOption, setSortOption] = useState<"default" | "alphabetical">("default")
   const [selectedTempSensors, setSelectedTempSensors] = useState<string[]>(["coolantTemp", "intakeTemp"])
   const [selectedPIDs, setSelectedPIDs] = useState<string[]>([])
   const [showEmptyPIDs, setShowEmptyPIDs] = useState(false)
   const [pidAnalysisHoveredTimeKey, setPidAnalysisHoveredTimeKey] = useState<number | null>(null)
+  const [transmissionConfig, setTransmissionConfig] = useState({
+    gearRatios: {
+      1: 3.538,
+      2: 1.92,
+      3: 1.323,
+      4: 1.026,
+      5: 0.822,
+      6: 0.681,
+    },
+    finalDrive: 4.35,
+    tyreDiameterMm: 647,
+    shiftRpm: 6900,
+    numberOfGears: 6,
+  })
+  const [transmissionPresets] = useState([
+    {
+      name: "Honda Civic Type R (FK8)",
+      config: {
+        gearRatios: { 1: 3.267, 2: 1.967, 3: 1.428, 4: 1.073, 5: 0.83, 6: 0.647 },
+        finalDrive: 4.785,
+        tyreDiameterMm: 645,
+        shiftRpm: 7000,
+        numberOfGears: 6,
+      },
+    },
+    {
+      name: "BMW M3 (F80)",
+      config: {
+        gearRatios: { 1: 4.714, 2: 3.143, 3: 2.106, 4: 1.667, 5: 1.285, 6: 1.0, 7: 0.839 },
+        finalDrive: 3.15,
+        tyreDiameterMm: 685,
+        shiftRpm: 7200,
+        numberOfGears: 7,
+      },
+    },
+    {
+      name: "Subaru WRX STI",
+      config: {
+        gearRatios: { 1: 3.636, 2: 2.235, 3: 1.521, 4: 1.137, 5: 0.971, 6: 0.756 },
+        finalDrive: 4.444,
+        tyreDiameterMm: 650,
+        shiftRpm: 6800,
+        numberOfGears: 6,
+      },
+    },
+    {
+      name: "Porsche 911 GT3",
+      config: {
+        gearRatios: { 1: 3.5, 2: 2.118, 3: 1.36, 4: 1.054, 5: 0.853, 6: 0.707 },
+        finalDrive: 4.105,
+        tyreDiameterMm: 680,
+        shiftRpm: 9000,
+        numberOfGears: 6,
+      },
+    },
+    {
+      name: "Nissan GT-R R35",
+      config: {
+        gearRatios: { 1: 4.056, 2: 2.301, 3: 1.595, 4: 1.248, 5: 1.001, 6: 0.796 },
+        finalDrive: 3.794,
+        tyreDiameterMm: 690,
+        shiftRpm: 7000,
+        numberOfGears: 6,
+      },
+    },
+  ])
+  const [autoDetectionResults, setAutoDetectionResults] = useState<any>(null)
+  const [showAutoDetection, setShowAutoDetection] = useState(false)
+  const [showTransmissionDialog, setShowTransmissionDialog] = useState(false)
 
   useEffect(() => {
     if (!isPlaying || data.length === 0) return
@@ -371,282 +588,293 @@ export default function AutomotiveAnalyzer() {
     return () => clearInterval(interval)
   }, [isPlaying, data.length])
 
-  const parseCSV = useCallback(async (file: File) => {
-    setIsLoading(true)
-    try {
-      const text = await file.text()
-      const lines = text.split("\n")
-      const headers = lines[0].split(",").map((h) => h.trim())
-      const shortenColumnName = (name: string): string => {
-        const cleanName = name.replace(/[()]/g, "").replace(/\s+/g, " ").trim()
-        const abbreviations: { [key: string]: string } = {
-          "Time": "Time",
-          "Fuel system 1 status": "Fuel 1 Status",
-          "Fuel system 2 status": "Fuel 2 Status",
-          "Calculated load value": "Calculated Load",
-          "Engine coolant temperature": "Coolant Temp",
-          "Short term fuel % trim - Bank 1": "Short term fuel",
-          "Short term fuel % trim - Bank 3": "Short term fuel",
-          "Long term fuel % trim - Bank 1": "Long term fuel",
-          "Long term fuel % trim - Bank 3": "Long term fuel",
-          "Intake manifold absolute pressure": "MAP",
-          "Engine RPM": "RPM",
-          "Vehicle speed": "Speed",
-          "Ignition timing advance for #1 cylinder": "Ignition Advance",
-          "Intake air temperature": "Intake Temp",
-          "Mass air flow rate": "MAF",
-          "Absolute throttle position": "Throttle",
-          "Absolute throttle position B": "Throttle B",
-          "Location of oxygen sensors": "O2 Sens Location",
-          "O2 voltage (Bank 1 Sensor 2)": "O2 Voltage",
-          "O2 voltage Bank 1 Sensor 2": "O2 Voltage",
-          "Short term fuel trim (Bank 1 Sensor 2)": "Short term fuel",
-          "Short term fuel trim Bank 1 Sensor 2": "Short term fuel",
-          "OBD requirements to which vehicle or engine is certified": "OBD Cert",
-          "Time since engine start (sec)": "Engine Run Time",
-          "Distance traveled while MIL is activated": "Distance with CEL",
-          "Fuel rail pressure": "Fuel Pressure",
-          "Commanded evaporative purge": "Evap Purge",
-          "Number of warm-ups since DTCs cleared": "Warmups since DTCs cleared",
-          "Distance traveled since DTCs cleared": "Distance since DTCs cleared",
-          "Barometric pressure": "Barometric pressure",
-          "O2 sensor lambda wide range": "O2 Lambda",
-          "O2 sensor lambda wide range Bank 1 Sensor 1": "O2 Lambda",
-          "O2 sensor current wide range (Bank 1 Sensor 1)": "O2 Sensor Current",
-          "O2 sensor current wide range Bank 1 Sensor 1": "O2 Sensor Current",
-          "Catalyst temperature (Bank 1 Sensor 1)": "Cat Temp",
-          "Catalyst temperature Bank 1 Sensor 1": "Cat Temp",
-          "Control module voltage": "Battery Voltage",
-          "Fuel/Air commanded equivalence ratio": "Fuel/Air Ratio", 
-          "Accelerator pedal position D": "Pedal D",
-          "Accelerator pedal position E": "Pedal E",
-          "Commanded throttle actuator control": "Cmd Throttle Act",
-          "Engine run time run while MIL is activated": "Run Time with CEL",
-          "Engine run time while MIL is activated": "Run Time with CEL",
-          "Engine run time since DTCs cleared": "Run Time since DTCs cleared",
-          "Instant fuel economy": "Instant Fuel Economy",
-          "Total fuel economy": "Total Fuel Economy",
-          "Fuel rate": "Fuel Rate",
-          "Instant CO2 rate": "Instant CO2",
-          "Total CO2": "Total CO2",
-          "CO2 flow": "CO2 Flow",
-          "Trip Distance": "Trip Distance",
-          "Trip Fuel Economy": "Trip Fuel Economy",
-          "Trip Duration": "Trip Duration",
-          "Trip Fuel": "Trip Fuel",
-          "Hard Brake Count": "Hard Brakes",
-          "Hard Accel Count": "Hard Accels",
-          "Idling Count": "Idle Count",
-          "Seconds Idling": "Time Idling",
-          "Max Speed": "Max Speed",
-          "Boost": "Boost",
-          "Engine Power": "Power",
-          "Engine Torque": "Torque",
-          "Fuel Remaining": "Fuel Left",
-          "Distance to empty": "Range",
-          "Latitude": "Latitude",
-          "Longitude": "Longitude",
-          "Altitude": "Altitude",
-          "GPS Speed": "GPS Speed",
-          "Adapter voltage": "Adapter V",
-          "Engine Oil Pressure": "Oil Press",
-          "Air/Fuel Ratio": "AFR",
-          "Ignition timing advance": "Ignition Adv",
-          "Catalyst temperature": "Cat Temp",
-          "Oil temperature": "Oil Temp",
-          "Transmission temperature": "Trans Temp",
-          "Exhaust gas temperature": "Exhaust Temp",
-        }
-        const nameWithoutUnits = cleanName.replace(/\s*$$[^)]*$$\s*$/, "").trim()
-        for (const [full, short] of Object.entries(abbreviations)) {
-          if (nameWithoutUnits === full || cleanName.includes(full)) return short
-        }
-        const partialMatches: { [key: string]: string } = {
-          "throttle position": "Throttle",
-          "coolant temp": "Coolant",
-          "intake temp": "IAT",
-          "fuel trim": "Fuel Trim",
-          "oxygen sensor": "O2 Sens",
-          "catalyst temp": "Cat Temp",
-          "fuel pressure": "Fuel Press",
-          "manifold pressure": "MAP",
-          "air flow": "MAF",
-          "timing advance": "Timing",
-          "pedal position": "Pedal",
-          "engine power": "Power",
-          "engine torque": "Torque",
-          "fuel economy": "FE",
-          "fuel rate": "Fuel Rate",
-          "vehicle speed": "Speed",
-          "engine rpm": "RPM",
-          "oil pressure": "Oil Press",
-          "oil temperature": "Oil Temp",
-          "transmission temp": "Trans Temp",
-          "barometric": "Bar",
-          "evaporative": "Evap",
-          "equivalence": "Equiv",
-          "commanded": "Cmd",
-          "absolute": "Abs",
-          "temperature": "Temp",
-          "pressure": "Press",
-          "voltage": "Volt",
-          "current": "Curr",
-          "lambda": "Lambda",
-          "sensor": "Sens",
-          "distance": "Dist",
-          "duration": "Time",
-          "air/fuel": "AFR",
-          "ignition": "Ignition",
-        }
-        const lowerName = nameWithoutUnits.toLowerCase()
-        for (const [pattern, replacement] of Object.entries(partialMatches)) {
-          if (lowerName.includes(pattern)) return replacement
-        }
-        const words = nameWithoutUnits.split(" ")
-        if (words.length === 1) return words[0].length > 10 ? words[0].substring(0, 10) : words[0]
-        if (words.length === 2) return `${words[0].substring(0, 5)} ${words[1].substring(0, 5)}`
-        return words
-          .map((w, i) => (i === 0 ? (w.length > 6 ? w.substring(0, 6) : w) : w.charAt(0).toUpperCase()))
-          .join("")
-          .substring(0, 10)
-      }
-      const extractUnit = (name: string): string => {
-        const unitMatches = name.match(/$$([^)]+)$$/)
-        if (unitMatches) return unitMatches[1]
-        const lower = name.toLowerCase()
-        if (lower.includes("rpm")) return "RPM"
-        if (lower.includes("speed") && lower.includes("km")) return "km/h"
-        if (lower.includes("speed") && lower.includes("mph")) return "mph"
-        if (lower.includes("temperature")) return "°C"
-        if (lower.includes("pressure") && lower.includes("bar")) return "bar"
-        if (lower.includes("pressure") && lower.includes("psi")) return "psi"
-        if (lower.includes("voltage")) return "V"
-        if (lower.includes("current")) return "mA"
-        if (lower.includes("percentage") || lower.includes("position")) return "%"
-        if (lower.includes("power")) return "hp"
-        if (lower.includes("torque")) return "N•m"
-        if (lower.includes("fuel") && lower.includes("rate")) return "l/hr"
-        if (lower.includes("distance")) return "km"
-        if (lower.includes("time") && !lower.includes("timing")) return "s"
-        if (lower.includes("altitude")) return "m"
-        if (lower.includes("latitude") || lower.includes("longitude")) return "deg"
-        if (lower.includes("co2") && lower.includes("flow")) return "g/s"
-        if (lower.includes("co2") && lower.includes("rate")) return "g/km"
-        if (lower.includes("co2") && lower.includes("total")) return "kg"
-        if (lower.includes("fuel") && lower.includes("economy")) return "l/100km"
-        if (lower.includes("mass") && lower.includes("air")) return "g/s"
-        if (lower.includes("air/fuel") || lower.includes("afr")) return "AFR"
-        if (lower.includes("fuel/air") || lower.includes("afr")) return "AFR"
-        if (lower.includes("ignition") && lower.includes("advance")) return "°"
-        if (lower.includes("(hr)")) return "hr"
-        if (lower.includes("(min)")) return "min"
-        if (lower.includes("(sec)")) return "sec"
-        if (lower.includes("(%)")) return "%"    
-        if (lower.includes("(l)")) return "l"
-        if (lower.includes("(bar)")) return "bar"
-        return ""
-      }
-      const generateColor = (index: number): string => {
-        const colors = [
-          "#ef4444",
-          "#22c55e",
-          "#eab308",
-          "#f97316",
-          "#06b6d4",
-          "#8b5cf6",
-          "#ec4899",
-          "#84cc16",
-          "#f59e0b",
-          "#10b981",
-          "#3b82f6",
-          "#6366f1",
-          "#d946ef",
-          "#f43f5e",
-          "#14b8a6",
-        ]
-        return colors[index % colors.length]
-      }
-      const detectedMetrics: MetricConfig[] = []
-      const parsedData: DataPoint[] = []
-      const numericColumns: { [key: string]: boolean } = {}
-      for (let i = 1; i < Math.min(lines.length, 10); i++) {
-        const values = lines[i].split(",")
-        headers.forEach((header, index) => {
-          if (header.toLowerCase() === "time") return
-          const value = values[index]
-          if (value && !isNaN(Number.parseFloat(value))) {
-            numericColumns[header] = true
-          }
-        })
-      }
-      let metricIndex = 0
-      headers.forEach((header, colIdx) => {
-        if (header.toLowerCase() === "time" || !numericColumns[header]) return
-        const key = `col_${colIdx}`
-        detectedMetrics.push({
-          key: key,
-          label: shortenColumnName(header),
-          color: generateColor(metricIndex),
-          unit: extractUnit(header),
-          enabled: metricIndex < 6,
-          originalName: header,
-        })
-        metricIndex++
-      })
-      for (let i = 1; i < lines.length; i++) {
-        const values = lines[i].split(",")
-        if (values.length < headers.length) continue
-        const dataPoint: DataPoint = { time: i - 1, timestamp: values[0] || `${i - 1}s` } as DataPoint
-        headers.forEach((header, colIdx) => {
-          if (!numericColumns[header]) return
-          const key = `col_${colIdx}`
-          const value = Number.parseFloat(values[colIdx]) || 0
-          dataPoint[key] = value
-          const lowerHeader = header.toLowerCase()
-          if (lowerHeader.includes("rpm")) dataPoint.rpm = value
-          if (lowerHeader.includes("speed") && lowerHeader.includes("km")) dataPoint.speed = value
-          if (lowerHeader.includes("throttle")) dataPoint.throttle = value
-          if (lowerHeader.includes("boost")) dataPoint.boost = value
-          if (lowerHeader.includes("coolant")) dataPoint.coolantTemp = value
-          if (lowerHeader.includes("power")) dataPoint.enginePower = value
-          if (lowerHeader.includes("torque")) dataPoint.engineTorque = value
-          if (lowerHeader.includes("latitude")) dataPoint.latitude = value
-          if (lowerHeader.includes("longitude")) dataPoint.longitude = value
-          if (lowerHeader.includes("fuel") && lowerHeader.includes("rate")) dataPoint.fuelRate = value
-          if (lowerHeader.includes("intake") && lowerHeader.includes("temp")) dataPoint.intakeTemp = value
-          if (lowerHeader.includes("air/fuel") || lowerHeader.includes("fuel/air") || lowerHeader.includes("afr")) dataPoint.afr = value
-          if (lowerHeader.includes("ignition") && lowerHeader.includes("advance")) dataPoint.ignitionAdvance = value
-          if (lowerHeader.includes("catalyst") && lowerHeader.includes("temp")) dataPoint.catTemp = value
-          if (lowerHeader.includes("oil") && lowerHeader.includes("temp")) dataPoint.oilTemp = value
-          if (lowerHeader.includes("transmission") && lowerHeader.includes("temp")) dataPoint.transTemp = value
-          if (lowerHeader.includes("exhaust") && lowerHeader.includes("temp")) dataPoint.exhaustTemp = value
-          if (lowerHeader.includes("trip") && lowerHeader.includes("duration")) dataPoint.tripDuration = value
-          if (lowerHeader.includes("trip") && lowerHeader.includes("distance")) dataPoint.tripDistance = value
-          if (lowerHeader.includes("trip") && lowerHeader.includes("fuel") && !lowerHeader.includes("economy")) dataPoint.tripFuel = value
-          if (lowerHeader.includes("trip") && lowerHeader.includes("fuel") && lowerHeader.includes("economy")) dataPoint.tripFuelEconomy = value
-        })
-        if (!dataPoint.brake && dataPoint.throttle)
-          dataPoint.brake = Math.max(0, (100 - dataPoint.throttle) * Math.random() * 0.3)
-        if (!dataPoint.gear && dataPoint.speed) dataPoint.gear = Math.floor(dataPoint.speed / 25) + 1
+  // Find the parseCSV function and fix the circular dependency issue
+  // Replace the parseCSV function definition with this:
 
-        if (!dataPoint.gear && dataPoint.speed && dataPoint.rpm) {
-          dataPoint.gear = calculateGear(dataPoint.speed, dataPoint.rpm)
-        } else if (!dataPoint.gear && dataPoint.speed) {
-          // Limit to 6 gears in the fallback calculation
-          dataPoint.gear = Math.min(Math.floor(dataPoint.speed / 25) + 1, 6)
+  const parseCSV = useCallback(
+    async (file: File) => {
+      setIsLoading(true)
+      try {
+        const text = await file.text()
+        const lines = text.split("\n")
+        const headers = lines[0].split(",").map((h) => h.trim())
+        const shortenColumnName = (name: string): string => {
+          const cleanName = name.replace(/[()]/g, "").replace(/\s+/g, " ").trim()
+          const abbreviations: { [key: string]: string } = {
+            Time: "Time",
+            "Fuel system 1 status": "Fuel 1 Status",
+            "Fuel system 2 status": "Fuel 2 Status",
+            "Calculated load value": "Calculated Load",
+            "Engine coolant temperature": "Coolant Temp",
+            "Short term fuel % trim - Bank 1": "Short term fuel",
+            "Short term fuel % trim - Bank 3": "Short term fuel",
+            "Long term fuel % trim - Bank 1": "Long term fuel",
+            "Long term fuel % trim - Bank 3": "Long term fuel",
+            "Intake manifold absolute pressure": "MAP",
+            "Engine RPM": "RPM",
+            "Vehicle speed": "Speed",
+            "Ignition timing advance for #1 cylinder": "Ignition Advance",
+            "Intake air temperature": "Intake Temp",
+            "Mass air flow rate": "MAF",
+            "Absolute throttle position": "Throttle",
+            "Absolute throttle position B": "Throttle B",
+            "Location of oxygen sensors": "O2 Sens Location",
+            "O2 voltage (Bank 1 Sensor 2)": "O2 Voltage",
+            "O2 voltage Bank 1 Sensor 2": "O2 Voltage",
+            "Short term fuel trim (Bank 1 Sensor 2)": "Short term fuel",
+            "Short term fuel trim Bank 1 Sensor 2": "Short term fuel",
+            "OBD requirements to which vehicle or engine is certified": "OBD Cert",
+            "Time since engine start (sec)": "Engine Run Time",
+            "Distance traveled while MIL is activated": "Distance with CEL",
+            "Fuel rail pressure": "Fuel Pressure",
+            "Commanded evaporative purge": "Evap Purge",
+            "Number of warm-ups since DTCs cleared": "Warmups since DTCs cleared",
+            "Distance traveled since DTCs cleared": "Distance since DTCs cleared",
+            "Barometric pressure": "Barometric pressure",
+            "O2 sensor lambda wide range": "O2 Lambda",
+            "O2 sensor lambda wide range Bank 1 Sensor 1": "O2 Lambda",
+            "O2 sensor current wide range (Bank 1 Sensor 1)": "O2 Sensor Current",
+            "O2 sensor current wide range Bank 1 Sensor 1": "O2 Sensor Current",
+            "Catalyst temperature (Bank 1 Sensor 1)": "Cat Temp",
+            "Catalyst temperature Bank 1 Sensor 1": "Cat Temp",
+            "Control module voltage": "Battery Voltage",
+            "Fuel/Air commanded equivalence ratio": "Fuel/Air Ratio",
+            "Accelerator pedal position D": "Pedal D",
+            "Accelerator pedal position E": "Pedal E",
+            "Commanded throttle actuator control": "Cmd Throttle Act",
+            "Engine run time run while MIL is activated": "Run Time with CEL",
+            "Engine run time while MIL is activated": "Run Time with CEL",
+            "Engine run time since DTCs cleared": "Run Time since DTCs cleared",
+            "Instant fuel economy": "Instant Fuel Economy",
+            "Total fuel economy": "Total Fuel Economy",
+            "Fuel rate": "Fuel Rate",
+            "Instant CO2 rate": "Instant CO2",
+            "Total CO2": "Total CO2",
+            "CO2 flow": "CO2 Flow",
+            "Trip Distance": "Trip Distance",
+            "Trip Fuel Economy": "Trip Fuel Economy",
+            "Trip Duration": "Trip Duration",
+            "Trip Fuel": "Trip Fuel",
+            "Hard Brake Count": "Hard Brakes",
+            "Hard Accel Count": "Hard Accels",
+            "Idling Count": "Idle Count",
+            "Seconds Idling": "Time Idling",
+            "Max Speed": "Max Speed",
+            Boost: "Boost",
+            "Engine Power": "Power",
+            "Engine Torque": "Torque",
+            "Fuel Remaining": "Fuel Left",
+            "Distance to empty": "Range",
+            Latitude: "Latitude",
+            Longitude: "Longitude",
+            Altitude: "Altitude",
+            "GPS Speed": "GPS Speed",
+            "Adapter voltage": "Adapter V",
+            "Engine Oil Pressure": "Oil Press",
+            "Air/Fuel Ratio": "AFR",
+            "Ignition timing advance": "Ignition Adv",
+            "Catalyst temperature": "Cat Temp",
+            "Oil temperature": "Oil Temp",
+            "Transmission temperature": "Trans Temp",
+            "Exhaust gas temperature": "Exhaust Temp",
+          }
+          const nameWithoutUnits = cleanName.replace(/\s*$$[^)]*$$\s*$/, "").trim()
+          for (const [full, short] of Object.entries(abbreviations)) {
+            if (nameWithoutUnits === full || cleanName.includes(full)) return short
+          }
+          const partialMatches: { [key: string]: string } = {
+            "throttle position": "Throttle",
+            "coolant temp": "Coolant",
+            "intake temp": "IAT",
+            "fuel trim": "Fuel Trim",
+            "oxygen sensor": "O2 Sens",
+            "catalyst temp": "Cat Temp",
+            "fuel pressure": "Fuel Press",
+            "manifold pressure": "MAP",
+            "air flow": "MAF",
+            "timing advance": "Timing",
+            "pedal position": "Pedal",
+            "engine power": "Power",
+            "engine torque": "Torque",
+            "fuel economy": "FE",
+            "fuel rate": "Fuel Rate",
+            "vehicle speed": "Speed",
+            "engine rpm": "RPM",
+            "oil pressure": "Oil Press",
+            "oil temperature": "Oil Temp",
+            "transmission temp": "Trans Temp",
+            barometric: "Bar",
+            evaporative: "Evap",
+            equivalence: "Equiv",
+            commanded: "Cmd",
+            absolute: "Abs",
+            temperature: "Temp",
+            pressure: "Press",
+            voltage: "Volt",
+            current: "Curr",
+            lambda: "Lambda",
+            sensor: "Sens",
+            distance: "Dist",
+            duration: "Time",
+            "air/fuel": "AFR",
+            ignition: "Ignition",
+          }
+          const lowerName = nameWithoutUnits.toLowerCase()
+          for (const [pattern, replacement] of Object.entries(partialMatches)) {
+            if (lowerName.includes(pattern)) return replacement
+          }
+          const words = nameWithoutUnits.split(" ")
+          if (words.length === 1) return words[0].length > 10 ? words[0].substring(0, 10) : words[0]
+          if (words.length === 2) return `${words[0].substring(0, 5)} ${words[1].substring(0, 5)}`
+          return words
+            .map((w, i) => (i === 0 ? (w.length > 6 ? w.substring(0, 6) : w) : w.charAt(0).toUpperCase()))
+            .join("")
+            .substring(0, 10)
         }
-        parsedData.push(dataPoint)
+        const extractUnit = (name: string): string => {
+          const unitMatches = name.match(/$$([^)]+)$$/)
+          if (unitMatches) return unitMatches[1]
+          const lower = name.toLowerCase()
+          if (lower.includes("rpm")) return "RPM"
+          if (lower.includes("speed") && lower.includes("km")) return "km/h"
+          if (lower.includes("speed") && lower.includes("mph")) return "mph"
+          if (lower.includes("temperature")) return "°C"
+          if (lower.includes("pressure") && lower.includes("bar")) return "bar"
+          if (lower.includes("pressure") && lower.includes("psi")) return "psi"
+          if (lower.includes("voltage")) return "V"
+          if (lower.includes("current")) return "mA"
+          if (lower.includes("percentage") || lower.includes("position")) return "%"
+          if (lower.includes("power")) return "hp"
+          if (lower.includes("torque")) return "N•m"
+          if (lower.includes("fuel") && lower.includes("rate")) return "l/hr"
+          if (lower.includes("distance")) return "km"
+          if (lower.includes("time") && !lower.includes("timing")) return "s"
+          if (lower.includes("altitude")) return "m"
+          if (lower.includes("latitude") || lower.includes("longitude")) return "deg"
+          if (lower.includes("co2") && lower.includes("flow")) return "g/s"
+          if (lower.includes("co2") && lower.includes("rate")) return "g/km"
+          if (lower.includes("co2") && lower.includes("total")) return "kg"
+          if (lower.includes("fuel") && lower.includes("economy")) return "l/100km"
+          if (lower.includes("mass") && lower.includes("air")) return "g/s"
+          if (lower.includes("air/fuel") || lower.includes("afr")) return "AFR"
+          if (lower.includes("fuel/air") || lower.includes("afr")) return "AFR"
+          if (lower.includes("ignition") && lower.includes("advance")) return "°"
+          if (lower.includes("(hr)")) return "hr"
+          if (lower.includes("(min)")) return "min"
+          if (lower.includes("(sec)")) return "sec"
+          if (lower.includes("(%)")) return "%"
+          if (lower.includes("(l)")) return "l"
+          if (lower.includes("(bar)")) return "bar"
+          return ""
+        }
+        const generateColor = (index: number): string => {
+          const colors = [
+            "#ef4444",
+            "#22c55e",
+            "#eab308",
+            "#f97316",
+            "#06b6d4",
+            "#8b5cf6",
+            "#ec4899",
+            "#84cc16",
+            "#f59e0b",
+            "#10b981",
+            "#3b82f6",
+            "#6366f1",
+            "#d946ef",
+            "#f43f5e",
+            "#14b8a6",
+          ]
+          return colors[index % colors.length]
+        }
+        const detectedMetrics: MetricConfig[] = []
+        const parsedData: DataPoint[] = []
+        const numericColumns: { [key: string]: boolean } = {}
+        for (let i = 1; i < Math.min(lines.length, 10); i++) {
+          const values = lines[i].split(",")
+          headers.forEach((header, index) => {
+            if (header.toLowerCase() === "time") return
+            const value = values[index]
+            if (value && !isNaN(Number.parseFloat(value))) {
+              numericColumns[header] = true
+            }
+          })
+        }
+        let metricIndex = 0
+        headers.forEach((header, colIdx) => {
+          if (header.toLowerCase() === "time" || !numericColumns[header]) return
+          const key = `col_${colIdx}`
+          detectedMetrics.push({
+            key: key,
+            label: shortenColumnName(header),
+            color: generateColor(metricIndex),
+            unit: extractUnit(header),
+            enabled: metricIndex < 6,
+            originalName: header,
+          })
+          metricIndex++
+        })
+        for (let i = 1; i < lines.length; i++) {
+          const values = lines[i].split(",")
+          if (values.length < headers.length) continue
+          const dataPoint: DataPoint = { time: i - 1, timestamp: values[0] || `${i - 1}s` } as DataPoint
+          headers.forEach((header, colIdx) => {
+            if (!numericColumns[header]) return
+            const key = `col_${colIdx}`
+            const value = Number.parseFloat(values[colIdx]) || 0
+            dataPoint[key] = value
+            const lowerHeader = header.toLowerCase()
+            if (lowerHeader.includes("rpm")) dataPoint.rpm = value
+            if (lowerHeader.includes("speed") && lowerHeader.includes("km")) dataPoint.speed = value
+            if (lowerHeader.includes("throttle")) dataPoint.throttle = value
+            if (lowerHeader.includes("boost")) dataPoint.boost = value
+            if (lowerHeader.includes("coolant")) dataPoint.coolantTemp = value
+            if (lowerHeader.includes("power")) dataPoint.enginePower = value
+            if (lowerHeader.includes("torque")) dataPoint.engineTorque = value
+            if (lowerHeader.includes("latitude")) dataPoint.latitude = value
+            if (lowerHeader.includes("longitude")) dataPoint.longitude = value
+            if (lowerHeader.includes("fuel") && lowerHeader.includes("rate")) dataPoint.fuelRate = value
+            if (lowerHeader.includes("intake") && lowerHeader.includes("temp")) dataPoint.intakeTemp = value
+            if (lowerHeader.includes("air/fuel") || lowerHeader.includes("fuel/air") || lowerHeader.includes("afr"))
+              dataPoint.afr = value
+            if (lowerHeader.includes("ignition") && lowerHeader.includes("advance")) dataPoint.ignitionAdvance = value
+            if (lowerHeader.includes("catalyst") && lowerHeader.includes("temp")) dataPoint.catTemp = value
+            if (lowerHeader.includes("oil") && lowerHeader.includes("temp")) dataPoint.oilTemp = value
+            if (lowerHeader.includes("transmission") && lowerHeader.includes("temp")) dataPoint.transTemp = value
+            if (lowerHeader.includes("exhaust") && lowerHeader.includes("temp")) dataPoint.exhaustTemp = value
+            if (lowerHeader.includes("trip") && lowerHeader.includes("duration")) dataPoint.tripDuration = value
+            if (lowerHeader.includes("trip") && lowerHeader.includes("distance")) dataPoint.tripDistance = value
+            if (lowerHeader.includes("trip") && lowerHeader.includes("fuel") && !lowerHeader.includes("economy"))
+              dataPoint.tripFuel = value
+            if (lowerHeader.includes("trip") && lowerHeader.includes("fuel") && lowerHeader.includes("economy"))
+              dataPoint.tripFuelEconomy = value
+          })
+          if (!dataPoint.brake && dataPoint.throttle)
+            dataPoint.brake = Math.max(0, (100 - dataPoint.throttle) * Math.random() * 0.3)
+
+          if (!dataPoint.gear && dataPoint.speed && dataPoint.rpm) {
+            dataPoint.gear = calculateGear(dataPoint.speed, dataPoint.rpm, transmissionConfig)
+          } else if (!dataPoint.gear && dataPoint.speed) {
+            // Fallback calculation
+            dataPoint.gear = Math.min(Math.floor(dataPoint.speed / 25) + 1, transmissionConfig.numberOfGears)
+          }
+          parsedData.push(dataPoint)
+        }
+        setMetrics(detectedMetrics)
+        setData(parsedData)
+        setTimeRange([0, Math.max(0, parsedData.length - 1)])
+        setCurrentTime(0)
+      } catch (error) {
+        console.error("Error parsing CSV:", error)
+      } finally {
+        setIsLoading(false)
       }
-      setMetrics(detectedMetrics)
-      setData(parsedData)
-      setTimeRange([0, Math.max(0, parsedData.length - 1)])
-      setCurrentTime(0)
-    } catch (error) {
-      console.error("Error parsing CSV:", error)
-    } finally {
-      setIsLoading(false)
-    }
-  }, [])
+    },
+    // Remove parseCSV from the dependency array to avoid circular reference
+    [transmissionConfig],
+  )
+
+  // Also fix the loadSampleData function to remove the circular reference:
 
   const loadSampleData = useCallback(async () => {
     setIsLoading(true)
@@ -763,6 +991,13 @@ export default function AutomotiveAnalyzer() {
     }
   }, [data])
 
+  const autoDetection = useMemo(() => {
+    if (data.length > 100) {
+      return detectGearRatios(data)
+    }
+    return null
+  }, [data])
+
   const addPID = useCallback(
     (pidKey: string) => {
       if (!selectedPIDs.includes(pidKey)) setSelectedPIDs((prev) => [...prev, pidKey])
@@ -805,6 +1040,15 @@ export default function AutomotiveAnalyzer() {
           )}
         </div>
         <div className="flex items-center gap-2">
+          <Button
+            onClick={() => setShowTransmissionDialog(true)}
+            variant="outline"
+            size="sm"
+            className="bg-gray-800 border-gray-600 hover:bg-gray-700"
+          >
+            <Settings className="w-4 h-4 mr-2" />
+            Transmission
+          </Button>
           <Button
             onClick={() => setIsPlaying(!isPlaying)}
             variant="outline"
@@ -973,11 +1217,48 @@ export default function AutomotiveAnalyzer() {
                             <span>Throttle:</span>
                             <span className="text-yellow-400">{currentDataPoint.throttle?.toFixed(1)}%</span>
                           </div>
-                          <div className="flex justify-between">
+                          <div className="flex justify-between items-center">
                             <span>Gear:</span>
-                            <span className="text-blue-400">"please_fix_me"</span>
-                            <span className="text-blue-400">{currentDataPoint ? calculateGear(currentDataPoint.speed, currentDataPoint.rpm) : "N/A"}</span>
+                            <div className="flex items-center space-x-1">
+                              <span className="text-blue-400">
+                                {currentDataPoint
+                                  ? calculateGear(currentDataPoint.speed, currentDataPoint.rpm, transmissionConfig)
+                                  : "N/A"}
+                              </span>
+                              {currentDataPoint &&
+                                (() => {
+                                  const gear = calculateGear(
+                                    currentDataPoint.speed,
+                                    currentDataPoint.rpm,
+                                    transmissionConfig,
+                                  )
+                                  const shiftIndicator = getShiftIndicator(
+                                    currentDataPoint.rpm,
+                                    gear,
+                                    transmissionConfig,
+                                  )
+                                  if (shiftIndicator.shouldShift === "up") {
+                                    return <span className="text-green-400 font-bold">↑</span>
+                                  } else if (shiftIndicator.shouldShift === "down") {
+                                    return <span className="text-orange-400 font-bold">↓</span>
+                                  }
+                                  return <span className="text-gray-400">•</span>
+                                })()}
+                            </div>
                           </div>
+                          {currentDataPoint &&
+                            (() => {
+                              const gear = calculateGear(
+                                currentDataPoint.speed,
+                                currentDataPoint.rpm,
+                                transmissionConfig,
+                              )
+                              const shiftIndicator = getShiftIndicator(currentDataPoint.rpm, gear, transmissionConfig)
+                              if (shiftIndicator.shouldShift !== "optimal" && shiftIndicator.shouldShift !== null) {
+                                return <div className="text-xs text-gray-400 mt-1">{shiftIndicator.reason}</div>
+                              }
+                              return null
+                            })()}
                         </div>
                       </div>
                     )}
@@ -1055,17 +1336,17 @@ export default function AutomotiveAnalyzer() {
                       <div className="flex justify-between">
                         <span>Trip Duration:</span>
                         <span className="text-gray-300">
-                          {data.length > 0 && data[data.length - 1].tripDuration 
+                          {data.length > 0 && data[data.length - 1].tripDuration
                             ? data[data.length - 1].tripDuration >= 60
-                            ? `${Math.floor(data[data.length - 1].tripDuration / 60)}h ${Math.floor(data[data.length - 1].tripDuration % 60)}min`
-                            : `${Math.floor(data[data.length - 1].tripDuration)}min`
-                          : "N/A"}
+                              ? `${Math.floor(data[data.length - 1].tripDuration / 60)}h ${Math.floor(data[data.length - 1].tripDuration % 60)}min`
+                              : `${Math.floor(data[data.length - 1].tripDuration)}min`
+                            : "N/A"}
                         </span>
                       </div>
                       <div className="flex justify-between">
                         <span>Trip Distance:</span>
                         <span className="text-gray-300">
-                          {data.length > 0 && data[data.length - 1].tripDistance 
+                          {data.length > 0 && data[data.length - 1].tripDistance
                             ? `${data[data.length - 1].tripDistance.toFixed(1)} km`
                             : "N/A"}
                         </span>
@@ -1073,7 +1354,7 @@ export default function AutomotiveAnalyzer() {
                       <div className="flex justify-between">
                         <span>Trip Fuel Used:</span>
                         <span className="text-gray-300">
-                          {data.length > 0 && data[data.length - 1].tripFuel 
+                          {data.length > 0 && data[data.length - 1].tripFuel
                             ? `${data[data.length - 1].tripFuel.toFixed(1)} L`
                             : "N/A"}
                         </span>
@@ -1081,7 +1362,7 @@ export default function AutomotiveAnalyzer() {
                       <div className="flex justify-between">
                         <span>Trip Fuel Economy:</span>
                         <span className="text-gray-300">
-                          {data.length > 0 && data[data.length - 1].tripFuelEconomy 
+                          {data.length > 0 && data[data.length - 1].tripFuelEconomy
                             ? `${data[data.length - 1].tripFuelEconomy.toFixed(1)} L/100km`
                             : "N/A"}
                         </span>
@@ -1100,18 +1381,58 @@ export default function AutomotiveAnalyzer() {
                     <ResponsiveContainer width="100%" height="100%">
                       <ComposedChart data={finalChartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                        <XAxis dataKey="time" stroke="#9CA3AF" fontSize={12} />
-                        <YAxis yAxisId="rpm" stroke="#ef4444" fontSize={12} orientation="left" />
-                        <YAxis yAxisId="speed" stroke="#22c55e" fontSize={12} orientation="right" />
+                        <XAxis
+                          dataKey="speed"
+                          stroke="#9CA3AF"
+                          fontSize={12}
+                          label={{ value: "Speed (km/h)", position: "insideBottom", offset: -5 }}
+                        />
+                        <YAxis
+                          stroke="#9CA3AF"
+                          fontSize={12}
+                          label={{ value: "RPM", angle: -90, position: "insideLeft" }}
+                        />
                         <Tooltip
                           contentStyle={{
                             backgroundColor: "#1F2937",
                             border: "1px solid #374151",
                             borderRadius: "6px",
                           }}
+                          formatter={(value, name, props) => {
+                            const gear = props.payload.gear || 1
+                            const shiftIndicator = getShiftIndicator(props.payload.rpm, gear, transmissionConfig)
+                            return [
+                              `${value} ${name === "rpm" ? "RPM" : "km/h"}`,
+                              `${name === "rpm" ? "RPM" : "Speed"} (Gear ${gear}${shiftIndicator.shouldShift === "up" ? " ↑" : shiftIndicator.shouldShift === "down" ? " ↓" : ""})`,
+                            ]
+                          }}
                         />
-                        <Line yAxisId="rpm" dataKey="rpm" stroke="#ef4444" strokeWidth={2} dot={false} name="RPM" />
-                        <Line yAxisId="speed" dataKey="speed" stroke="#22c55e" strokeWidth={2} dot={false} name="Speed (km/h)" />
+                        {/* Color points by gear */}
+                        {Array.from({ length: transmissionConfig.numberOfGears }, (_, i) => i + 1).map((gear) => {
+                          const gearData = finalChartData.filter((d) => d.gear === gear)
+                          const colors = [
+                            "#ef4444",
+                            "#f97316",
+                            "#eab308",
+                            "#22c55e",
+                            "#06b6d4",
+                            "#8b5cf6",
+                            "#ec4899",
+                            "#84cc16",
+                          ]
+                          return gearData.length > 0 ? (
+                            <Line
+                              key={`gear-${gear}`}
+                              dataKey="rpm"
+                              data={gearData}
+                              stroke={colors[gear - 1] || "#9ca3af"}
+                              strokeWidth={0}
+                              dot={{ fill: colors[gear - 1] || "#9ca3af", strokeWidth: 0, r: 2 }}
+                              line={false}
+                              name={`Gear ${gear}`}
+                            />
+                          ) : null
+                        })}
                       </ComposedChart>
                     </ResponsiveContainer>
                   </div>
@@ -1132,8 +1453,22 @@ export default function AutomotiveAnalyzer() {
                             borderRadius: "6px",
                           }}
                         />
-                        <Line yAxisId="throttle" dataKey="throttle" stroke="#eab308" strokeWidth={2} dot={false} name="Throttle" />
-                        <Line yAxisId="speed" dataKey="speed" stroke="#22c55e" strokeWidth={2} dot={false} name="Speed (km/h)" />
+                        <Line
+                          yAxisId="throttle"
+                          dataKey="throttle"
+                          stroke="#eab308"
+                          strokeWidth={2}
+                          dot={false}
+                          name="Throttle"
+                        />
+                        <Line
+                          yAxisId="speed"
+                          dataKey="speed"
+                          stroke="#22c55e"
+                          strokeWidth={2}
+                          dot={false}
+                          name="Speed (km/h)"
+                        />
                       </ComposedChart>
                     </ResponsiveContainer>
                   </div>
@@ -1175,79 +1510,20 @@ export default function AutomotiveAnalyzer() {
                   </div>
                 </Card>
                 <Card className="bg-gray-800 border-gray-700 p-4 flex flex-col">
-                  <h3 className="font-semibold mb-4 flex-shrink-0">Gearbox Usage</h3>
-                  <div className="flex-grow">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <ComposedChart data={finalChartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                        <XAxis dataKey="time" stroke="#9CA3AF" fontSize={12} />
-                        <YAxis 
-                          yAxisId="gear"
-                          stroke="#b666d2" 
-                          fontSize={12} 
-                          domain={[0.5, 6.5]} 
-                          ticks={[1, 2, 3, 4, 5, 6]} 
-                          allowDataOverflow={true}
-                          orientation="right"
-                        />
-                        <YAxis
-                          yAxisId="speed"
-                          stroke="#22c55e"
-                          fontSize={12}
-                          orientation="left"
-                        />
-                        <Tooltip
-                          contentStyle={{
-                            backgroundColor: "#1F2937",
-                            border: "1px solid #374151",
-                            borderRadius: "6px",
-                          }}
-                          formatter={(value, name) => {
-                            if (name === "gear") {
-                              const gear = Math.min(6, Math.max(1, Number(value)));
-                              return [`${gear}`, "Gear"];
-                            }
-                            return [`${value} km/h`, "Speed"];
-                          }}
-                        />
-                        <Line
-                          yAxisId="gear"
-                          dataKey={(data) => Math.min(6, Math.max(1, data.gear || 1))}
-                          stroke="#b666d2"
-                          strokeWidth={2}
-                          dot={false}
-                          name="gear"
-                          connectNulls
-                        />
-                        <Area
-                          yAxisId="speed"
-                          dataKey="speed"
-                          fill="#22c55e"
-                          fillOpacity={0.3}
-                          stroke="#22c55e"
-                          strokeWidth={2}
-                          dot={false}
-                          name="speed"
-                        />
-                      </ComposedChart>
-                    </ResponsiveContainer>
-                  </div>
-                </Card>
-                <Card className="bg-gray-800 border-gray-700 p-4 flex flex-col">
                   <h3 className="font-semibold mb-4 flex-shrink-0">Gear Distribution</h3>
                   <div className="flex-grow">
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart
                         data={
                           finalChartData.length > 0
-                            ? Array.from(
-                                { length: Math.min(6, Math.max(1, ...finalChartData.map((d) => d.gear || 0))) },
-                                (_, i) => i + 1,
-                              )
-                                .map((g) => ({ 
-                                  gear: g, 
+                            ? Array.from({ length: transmissionConfig.numberOfGears }, (_, i) => i + 1)
+                                .map((g) => ({
+                                  gear: g,
                                   count: finalChartData.filter((d) => d.gear === g).length,
-                                  percentage: (finalChartData.filter((d) => d.gear === g).length / finalChartData.length * 100).toFixed(1)
+                                  percentage: (
+                                    (finalChartData.filter((d) => d.gear === g).length / finalChartData.length) *
+                                    100
+                                  ).toFixed(1),
                                 }))
                                 .filter((item) => item.count > 0)
                             : []
@@ -1263,7 +1539,10 @@ export default function AutomotiveAnalyzer() {
                             border: "1px solid #374151",
                             borderRadius: "6px",
                           }}
-                          formatter={(value, name, props) => [`${value} samples (${props.payload.percentage}%)`, `Gear ${props.payload.gear}`]}
+                          formatter={(value, name, props) => [
+                            `${value} samples (${props.payload.percentage}%)`,
+                            `Gear ${props.payload.gear}`,
+                          ]}
                         />
                         <Bar dataKey="count" fill="#22c55e" />
                       </BarChart>
@@ -1605,8 +1884,8 @@ export default function AutomotiveAnalyzer() {
                           <div className="text-center">
                             <BarChart3 className="w-12 h-12 mx-auto mb-2 opacity-50" />
                             <p>Select PIDs from the left panel to start analysis</p>
-                            <p className="text-sm">Click the + button to add PIDs to your analysis</p>              
-                          </div>                          
+                            <p className="text-sm">Click the + button to add PIDs to your analysis</p>
+                          </div>
                         </div>
                       ) : (
                         <div
@@ -1728,6 +2007,319 @@ export default function AutomotiveAnalyzer() {
             </Button>
           </div>
         </Card>
+      )}
+      {showTransmissionDialog && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <Card className="bg-gray-800 border-gray-700 w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-xl font-bold text-white">Transmission Configuration</h2>
+                <Button onClick={() => setShowTransmissionDialog(false)} variant="ghost" size="sm">
+                  <X className="w-4 h-4" />
+                </Button>
+              </div>
+
+              <Tabs defaultValue="manual" className="space-y-4">
+                <TabsList className="grid w-full grid-cols-4 bg-gray-700">
+                  <TabsTrigger value="manual">Manual Config</TabsTrigger>
+                  <TabsTrigger value="presets">Presets</TabsTrigger>
+                  <TabsTrigger value="auto">Auto Detection</TabsTrigger>
+                  <TabsTrigger value="import-export">Import/Export</TabsTrigger>
+                </TabsList>
+
+                <TabsContent value="manual" className="space-y-6">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-white mb-2">Final Drive Ratio</label>
+                      <Input
+                        type="number"
+                        step="0.01"
+                        value={transmissionConfig.finalDrive}
+                        onChange={(e) =>
+                          setTransmissionConfig((prev) => ({
+                            ...prev,
+                            finalDrive: Number.parseFloat(e.target.value) || 4.35,
+                          }))
+                        }
+                        className="bg-gray-700 border-gray-600 text-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-white mb-2">Tyre Diameter (mm)</label>
+                      <Input
+                        type="number"
+                        value={transmissionConfig.tyreDiameterMm}
+                        onChange={(e) =>
+                          setTransmissionConfig((prev) => ({
+                            ...prev,
+                            tyreDiameterMm: Number.parseInt(e.target.value) || 647,
+                          }))
+                        }
+                        className="bg-gray-700 border-gray-600 text-white"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-white mb-2">Shift RPM</label>
+                      <Input
+                        type="number"
+                        value={transmissionConfig.shiftRpm}
+                        onChange={(e) =>
+                          setTransmissionConfig((prev) => ({
+                            ...prev,
+                            shiftRpm: Number.parseInt(e.target.value) || 6900,
+                          }))
+                        }
+                        className="bg-gray-700 border-gray-600 text-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-white mb-2">Number of Gears</label>
+                      <Input
+                        type="number"
+                        min="3"
+                        max="10"
+                        value={transmissionConfig.numberOfGears}
+                        onChange={(e) => {
+                          const newGears = Number.parseInt(e.target.value) || 6
+                          setTransmissionConfig((prev) => {
+                            const newRatios = { ...prev.gearRatios }
+                            for (let i = 1; i <= newGears; i++) {
+                              if (!newRatios[i]) {
+                                newRatios[i] = 1.0
+                              }
+                            }
+                            Object.keys(newRatios).forEach((gear) => {
+                              if (Number.parseInt(gear) > newGears) {
+                                delete newRatios[Number.parseInt(gear)]
+                              }
+                            })
+                            return {
+                              ...prev,
+                              numberOfGears: newGears,
+                              gearRatios: newRatios,
+                            }
+                          })
+                        }}
+                        className="bg-gray-700 border-gray-600 text-white"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-white mb-3">Gear Ratios</label>
+                    <div className="grid grid-cols-4 gap-3">
+                      {Array.from({ length: transmissionConfig.numberOfGears }, (_, i) => i + 1).map((gear) => (
+                        <div key={gear}>
+                          <label className="block text-xs text-gray-400 mb-1">Gear {gear}</label>
+                          <Input
+                            type="number"
+                            step="0.001"
+                            value={transmissionConfig.gearRatios[gear] || 1.0}
+                            onChange={(e) =>
+                              setTransmissionConfig((prev) => ({
+                                ...prev,
+                                gearRatios: {
+                                  ...prev.gearRatios,
+                                  [gear]: Number.parseFloat(e.target.value) || 1.0,
+                                },
+                              }))
+                            }
+                            className="bg-gray-700 border-gray-600 text-white text-sm"
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </TabsContent>
+
+                <TabsContent value="presets" className="space-y-4">
+                  <div className="grid gap-4">
+                    {transmissionPresets.map((preset, index) => (
+                      <Card key={index} className="bg-gray-700 border-gray-600 p-4">
+                        <div className="flex items-center justify-between mb-2">
+                          <h3 className="font-semibold text-white">{preset.name}</h3>
+                          <Button
+                            size="sm"
+                            onClick={() => setTransmissionConfig(preset.config)}
+                            className="bg-blue-600 hover:bg-blue-700"
+                          >
+                            Apply
+                          </Button>
+                        </div>
+                        <div className="grid grid-cols-2 gap-4 text-sm text-gray-300">
+                          <div>Gears: {preset.config.numberOfGears}</div>
+                          <div>Final Drive: {preset.config.finalDrive}</div>
+                          <div>Shift RPM: {preset.config.shiftRpm}</div>
+                          <div>Tire: {preset.config.tyreDiameterMm}mm</div>
+                        </div>
+                        <div className="mt-2 text-xs text-gray-400">
+                          Ratios:{" "}
+                          {Object.values(preset.config.gearRatios)
+                            .map((r) => r.toFixed(3))
+                            .join(", ")}
+                        </div>
+                      </Card>
+                    ))}
+                  </div>
+                </TabsContent>
+
+                <TabsContent value="auto" className="space-y-4">
+                  <div className="text-center">
+                    <Button
+                      onClick={() => {
+                        const results = detectGearRatios(data)
+                        setAutoDetectionResults(results)
+                        setShowAutoDetection(true)
+                      }}
+                      disabled={data.length < 100}
+                      className="bg-green-600 hover:bg-green-700"
+                    >
+                      Analyze Current Data
+                    </Button>
+                    <p className="text-sm text-gray-400 mt-2">
+                      {data.length < 100
+                        ? `Need at least 100 data points (currently ${data.length})`
+                        : `Analyze ${data.length} data points to detect gear ratios`}
+                    </p>
+                  </div>
+
+                  {autoDetection && (
+                    <Card className="bg-gray-700 border-gray-600 p-4">
+                      <h3 className="font-semibold text-white mb-3">Auto-Detection Results</h3>
+                      <div className="grid grid-cols-2 gap-4 text-sm">
+                        <div>
+                          <span className="text-gray-400">Detected Gears:</span>
+                          <span className="text-white ml-2">{autoDetection.detectedGears}</span>
+                        </div>
+                        <div>
+                          <span className="text-gray-400">Confidence:</span>
+                          <span className="text-white ml-2">{autoDetection.confidence.toFixed(1)}%</span>
+                        </div>
+                      </div>
+
+                      <div className="mt-4">
+                        <h4 className="text-sm font-medium text-white mb-2">Detected Gear Ratios:</h4>
+                        <div className="grid grid-cols-3 gap-2 text-xs">
+                          {Object.entries(autoDetection.gearRatios).map(([gear, ratio]) => (
+                            <div key={gear} className="bg-gray-800 p-2 rounded">
+                              <span className="text-gray-400">Gear {gear}:</span>
+                              <span className="text-white ml-1">{(ratio as number).toFixed(3)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      <Button
+                        onClick={() => {
+                          setTransmissionConfig({
+                            gearRatios: autoDetection.gearRatios,
+                            finalDrive: autoDetection.estimatedFinalDrive,
+                            tyreDiameterMm: autoDetection.estimatedTireDiameter,
+                            shiftRpm: 7000,
+                            numberOfGears: autoDetection.detectedGears,
+                          })
+                        }}
+                        className="mt-4 bg-blue-600 hover:bg-blue-700"
+                        size="sm"
+                      >
+                        Apply Auto-Detected Settings
+                      </Button>
+                    </Card>
+                  )}
+                </TabsContent>
+
+                <TabsContent value="import-export" className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <Card className="bg-gray-700 border-gray-600 p-4">
+                      <h3 className="font-semibold text-white mb-3">Export Configuration</h3>
+                      <p className="text-sm text-gray-400 mb-4">
+                        Save your current transmission settings to a JSON file.
+                      </p>
+                      <Button
+                        onClick={() => exportTransmissionConfig(transmissionConfig)}
+                        className="w-full bg-green-600 hover:bg-green-700"
+                      >
+                        Export Settings
+                      </Button>
+                    </Card>
+
+                    <Card className="bg-gray-700 border-gray-600 p-4">
+                      <h3 className="font-semibold text-white mb-3">Import Configuration</h3>
+                      <p className="text-sm text-gray-400 mb-4">Load transmission settings from a JSON file.</p>
+                      <input
+                        ref={transmissionFileInputRef}
+                        type="file"
+                        accept=".json"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0]
+                          if (file) {
+                            importTransmissionConfig(file, (config) => {
+                              setTransmissionConfig(config)
+                              alert("Transmission configuration imported successfully!")
+                            })
+                          }
+                        }}
+                        className="hidden"
+                      />
+                      <Button
+                        onClick={() => transmissionFileInputRef.current?.click()}
+                        className="w-full bg-blue-600 hover:bg-blue-700"
+                      >
+                        Import Settings
+                      </Button>
+                    </Card>
+                  </div>
+                </TabsContent>
+              </Tabs>
+
+              <div className="flex justify-between pt-6 border-t border-gray-600">
+                <Button
+                  onClick={() => {
+                    setTransmissionConfig({
+                      gearRatios: {
+                        1: 3.538,
+                        2: 1.92,
+                        3: 1.323,
+                        4: 1.026,
+                        5: 0.822,
+                        6: 0.681,
+                      },
+                      finalDrive: 4.35,
+                      tyreDiameterMm: 647,
+                      shiftRpm: 6900,
+                      numberOfGears: 6,
+                    })
+                  }}
+                  variant="outline"
+                  className="border-gray-600 hover:bg-gray-700"
+                >
+                  Reset to Default
+                </Button>
+                <Button
+                  onClick={() => {
+                    setShowTransmissionDialog(false)
+                    if (data.length > 0) {
+                      const updatedData = data.map((point) => ({
+                        ...point,
+                        gear:
+                          point.speed && point.rpm
+                            ? calculateGear(point.speed, point.rpm, transmissionConfig)
+                            : point.gear,
+                      }))
+                      setData(updatedData)
+                    }
+                  }}
+                  className="bg-blue-600 hover:bg-blue-700"
+                >
+                  Apply Configuration
+                </Button>
+              </div>
+            </div>
+          </Card>
+        </div>
       )}
     </div>
   )
