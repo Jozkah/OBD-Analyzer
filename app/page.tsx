@@ -2330,7 +2330,7 @@ export default function AutomotiveAnalyzer() {
                     </div>
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
-                        <Button variant="outline" size="sm" className="bg-gray-700 border-gray-600">
+                        <Button variant="outline" size="sm" className="h-10 bg-gray-700 border-gray-600">
                           <ChevronDown className="h-4 w-4 mr-1" />
                           Sort
                         </Button>
