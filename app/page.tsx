@@ -340,38 +340,36 @@ function calculateGear(speed: number, rpm: number, config: any): number {
 
   // Calculate theoretical speed for each gear
   const gearSpeeds = Object.entries(config.gearRatios).map(([gear, ratio]) => {
-    const theoreticalSpeed = ((rpm * tyreCircumference * 60) / (ratio * config.finalDrive * 1000000)) * 3600
+    const theoreticalSpeed = ((rpm * tyreCircumference * 60) / (Number(ratio) * config.finalDrive * 1000000)) * 3600
     return {
       gear: Number.parseInt(gear),
       speed: theoreticalSpeed,
       diff: Math.abs(theoreticalSpeed - speed),
+      ratio: Number(ratio),
     }
   })
 
+  // Sort by closest match (smallest difference)
+  gearSpeeds.sort((a, b) => a.diff - b.diff)
+
   // Find the gear with the closest theoretical speed to actual speed
-  const bestMatch = gearSpeeds.reduce((prev, curr) => (curr.diff < prev.diff ? curr : prev))
+  const bestMatch = gearSpeeds[0]
 
-  // Improved gear selection logic
-  const tolerance = speed * 0.15 // 15% tolerance
+  // Add some hysteresis to prevent gear hunting
+  const tolerance = speed * 0.12 // 12% tolerance
 
-  // Check if we should consider adjacent gears
-  const validGears = gearSpeeds.filter((g) => g.diff <= tolerance).sort((a, b) => a.diff - b.diff)
-
-  if (validGears.length > 0) {
-    // If we're close to shift point, prefer higher gear
-    if (rpm > config.shiftRpm * 0.85 && validGears.some((g) => g.gear > bestMatch.gear)) {
-      const higherGear = validGears.find((g) => g.gear > bestMatch.gear)
-      if (higherGear) return Math.min(higherGear.gear, config.numberOfGears)
-    }
-
-    // If we're at low RPM, prefer lower gear
-    if (rpm < config.shiftRpm * 0.3 && validGears.some((g) => g.gear < bestMatch.gear)) {
-      const lowerGear = validGears.find((g) => g.gear < bestMatch.gear)
-      if (lowerGear) return Math.max(lowerGear.gear, 1)
-    }
+  // If we're within tolerance, use the best match
+  if (bestMatch.diff <= tolerance) {
+    return Math.max(1, Math.min(bestMatch.gear, config.numberOfGears))
   }
 
-  return Math.max(1, Math.min(bestMatch.gear, config.numberOfGears))
+  // Fallback to a simpler calculation based on speed ranges
+  if (speed < 15) return 1
+  else if (speed < 35) return 2
+  else if (speed < 55) return 3
+  else if (speed < 80) return 4
+  else if (speed < 110) return 5
+  else return Math.min(6, config.numberOfGears)
 }
 
 function getShiftIndicator(
@@ -555,7 +553,7 @@ export default function AutomotiveAnalyzer() {
     numberOfGears: 6,
   })
   const [transmissionPresets] = useState([
-        {
+    {
       name: "Peugeot 308 GTi (T9 EA71)",
       config: {
         gearRatios: { 1: 3.358, 2: 1.92, 3: 1.433, 4: 1.103, 5: 0.881, 6: 0.745 },
@@ -915,7 +913,7 @@ export default function AutomotiveAnalyzer() {
           if (!dataPoint.gear && dataPoint.speed && dataPoint.rpm) {
             dataPoint.gear = calculateGear(dataPoint.speed, dataPoint.rpm, transmissionConfig)
           } else if (!dataPoint.gear && dataPoint.speed) {
-            // Improved fallback calculation based on speed ranges
+            // Better fallback calculation based on speed ranges
             if (dataPoint.speed < 15) dataPoint.gear = 1
             else if (dataPoint.speed < 35) dataPoint.gear = 2
             else if (dataPoint.speed < 55) dataPoint.gear = 3
@@ -1084,27 +1082,33 @@ export default function AutomotiveAnalyzer() {
 
   return (
     <div className="min-h-screen bg-gray-900 text-white p-4">
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center gap-4">
+      <div className="flex flex-col md:flex-row items-start md:items-center justify-between mb-6 gap-2">
+        <div className="flex flex-wrap items-center gap-4 w-full md:w-auto">
           <h1 className="text-2xl font-bold">OBD Data Analyzer</h1>
-          <input ref={fileInputRef} type="file" accept=".csv" onChange={handleFileUpload} className="hidden" />
-          <Button
-            onClick={() => fileInputRef.current?.click()}
-            variant="outline"
-            className="bg-gray-800 border-gray-600 hover:bg-gray-700"
-          >
-            <Upload className="w-4 h-4 mr-2" /> Load CSV
-          </Button>
-          <Button onClick={loadSampleData} variant="outline" className="bg-gray-800 border-gray-600 hover:bg-gray-700">
-            <FileText className="w-4 h-4 mr-2" /> Load Sample
-          </Button>
+          <div className="flex gap-2">
+            <input ref={fileInputRef} type="file" accept=".csv" onChange={handleFileUpload} className="hidden" />
+            <Button
+              onClick={() => fileInputRef.current?.click()}
+              variant="outline"
+              className="bg-gray-800 border-gray-600 hover:bg-gray-700"
+            >
+              <Upload className="w-4 h-4 mr-2" /> Load CSV
+            </Button>
+            <Button
+              onClick={loadSampleData}
+              variant="outline"
+              className="bg-gray-800 border-gray-600 hover:bg-gray-700"
+            >
+              <FileText className="w-4 h-4 mr-2" /> Load Sample
+            </Button>
+          </div>
           {selectedFile && (
-            <span className="text-sm text-gray-400">
+            <span className="text-sm text-gray-400 block w-full md:w-auto mt-2 md:mt-0">
               {selectedFile.name} ({data.length} records)
             </span>
           )}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 mt-2 md:mt-0 w-full md:w-auto justify-end">
           <Button
             onClick={() => setShowTransmissionDialog(true)}
             variant="outline"
@@ -1173,17 +1177,23 @@ export default function AutomotiveAnalyzer() {
           </Card>
 
           <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-            <TabsList className="grid w-full grid-cols-5 bg-gray-800">
+            <TabsList className="grid w-full grid-cols-2 md:grid-cols-5 bg-gray-800">
               <TabsTrigger value="overview">Overview</TabsTrigger>
               <TabsTrigger value="performance">Performance</TabsTrigger>
-              <TabsTrigger value="engine">Engine</TabsTrigger>
-              <TabsTrigger value="analysis">PID Analysis</TabsTrigger>
-              <TabsTrigger value="gps">GPS Track (WIP)</TabsTrigger>
+              <TabsTrigger value="engine" className="hidden md:block">
+                Engine
+              </TabsTrigger>
+              <TabsTrigger value="analysis" className="hidden md:block">
+                PID Analysis
+              </TabsTrigger>
+              <TabsTrigger value="gps" className="hidden md:block">
+                GPS Track
+              </TabsTrigger>
             </TabsList>
 
             <TabsContent value="overview" className="space-y-4">
-              <div className="grid grid-cols-12 gap-4" style={{ height: `${STATIC_HEIGHT}px` }}>
-                <div className="col-span-2">
+              <div className="grid grid-cols-1 md:grid-cols-12 gap-4" style={{ height: `${STATIC_HEIGHT}px` }}>
+                <div className="col-span-1 md:col-span-2">
                   <Card className="bg-gray-800 border-gray-700 h-full flex flex-col">
                     <div className="p-4 pb-2 flex-shrink-0">
                       <h3 className="font-semibold mb-3">Available PIDs ({metrics.length})</h3>
@@ -1330,7 +1340,7 @@ export default function AutomotiveAnalyzer() {
                     )}
                   </Card>
                 </div>
-                <div className="col-span-7">
+                <div className="col-span-1 md:col-span-7">
                   <Card className="bg-gray-800 border-gray-700 p-4 h-full">
                     <div className="flex items-center justify-between mb-4">
                       <h3 className="font-semibold">General Overview</h3>
@@ -1365,7 +1375,7 @@ export default function AutomotiveAnalyzer() {
                     </ResponsiveContainer>
                   </Card>
                 </div>
-                <div className="col-span-3">
+                <div className="col-span-1 md:col-span-3">
                   <Card className="bg-gray-800 border-gray-700 p-4 h-full">
                     <h3 className="font-semibold mb-4">Session Statistics</h3>
                     <div className="space-y-3 text-sm">
@@ -1440,7 +1450,7 @@ export default function AutomotiveAnalyzer() {
             </TabsContent>
 
             <TabsContent value="performance" className="space-y-0">
-              <div className="grid grid-cols-2 gap-4" style={{ height: `${STATIC_HEIGHT}px` }}>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4" style={{ height: `${STATIC_HEIGHT}px` }}>
                 <Card className="bg-gray-800 border-gray-700 p-4 flex flex-col">
                   <h3 className="font-semibold mb-4 flex-shrink-0">RPM vs Speed Analysis</h3>
                   <div className="flex-grow">
@@ -1582,16 +1592,14 @@ export default function AutomotiveAnalyzer() {
                       <BarChart
                         data={
                           finalChartData.length > 0
-                            ? Array.from({ length: transmissionConfig.numberOfGears }, (_, i) => i + 1)
-                                .map((g) => ({
+                            ? Array.from({ length: transmissionConfig.numberOfGears }, (_, i) => i + 1).map((g) => {
+                                const count = finalChartData.filter((d) => d.gear === g).length
+                                return {
                                   gear: g,
-                                  count: finalChartData.filter((d) => d.gear === g).length,
-                                  percentage: (
-                                    (finalChartData.filter((d) => d.gear === g).length / finalChartData.length) *
-                                    100
-                                  ).toFixed(1),
-                                }))
-                                .filter((item) => item.count > 0)
+                                  count: count,
+                                  percentage: count > 0 ? ((count / finalChartData.length) * 100).toFixed(1) : "0.0",
+                                }
+                              })
                             : []
                         }
                         margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
@@ -1808,8 +1816,8 @@ export default function AutomotiveAnalyzer() {
             </TabsContent>
 
             <TabsContent value="analysis" className="space-y-0">
-              <div className="grid grid-cols-12 gap-4" style={{ height: `${pidAnalysisHeight}px` }}>
-                <div className="col-span-2">
+              <div className="grid grid-cols-1 md:grid-cols-12 gap-4" style={{ height: `${pidAnalysisHeight}px` }}>
+                <div className="col-span-1 md:col-span-2">
                   <Card className="bg-gray-800 border-gray-700 h-full flex flex-col">
                     <div className="p-4 pb-2 flex-shrink-0">
                       <h3 className="font-semibold mb-3">Available PIDs ({metrics.length})</h3>
@@ -1939,7 +1947,7 @@ export default function AutomotiveAnalyzer() {
                     </div>
                   </Card>
                 </div>
-                <div className="col-span-10">
+                <div className="col-span-1 md:col-span-10">
                   <Card className="bg-gray-800 border-gray-700 h-full flex flex-col">
                     <div className="p-4 pb-2 flex-shrink-0">
                       <h3 className="font-semibold">PID Analysis Charts</h3>
@@ -2076,7 +2084,7 @@ export default function AutomotiveAnalyzer() {
       )}
       {showTransmissionDialog && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <Card className="bg-gray-800 border-gray-700 w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+          <Card className="bg-gray-800 border-gray-700 w-full max-w-4xl max-h-[90vh] overflow-y-auto mx-4">
             <div className="p-6">
               <div className="flex items-center justify-between mb-6">
                 <h2 className="text-xl font-bold text-white">Transmission Configuration</h2>
@@ -2086,11 +2094,15 @@ export default function AutomotiveAnalyzer() {
               </div>
 
               <Tabs defaultValue="manual" className="space-y-4">
-                <TabsList className="grid w-full grid-cols-4 bg-gray-700">
-                  <TabsTrigger value="manual">Manual Config</TabsTrigger>
+                <TabsList className="grid w-full grid-cols-2 md:grid-cols-4 bg-gray-700">
+                  <TabsTrigger value="manual">Manual</TabsTrigger>
                   <TabsTrigger value="presets">Presets</TabsTrigger>
-                  <TabsTrigger value="auto">Auto Detection</TabsTrigger>
-                  <TabsTrigger value="import-export">Import/Export</TabsTrigger>
+                  <TabsTrigger value="auto" className="hidden md:block">
+                    Auto Detection
+                  </TabsTrigger>
+                  <TabsTrigger value="import-export" className="hidden md:block">
+                    Import/Export
+                  </TabsTrigger>
                 </TabsList>
 
                 <TabsContent value="manual" className="space-y-6">
@@ -2254,7 +2266,7 @@ export default function AutomotiveAnalyzer() {
                             const aspect = Number.parseInt(e.target.value) || 35
                             setTireAspectRatio(aspect)
                             setTireSizeInput(`${tireWidth}/${aspect}R${tireRimSize}`)
-                            const diameter = calculateTireDiameter(tireWidth, aspect, tireRimSize)
+                            const diameter = calculateTireDiameter(tireWidth, tireAspectRatio, tireRimSize)
                             setTransmissionConfig((prev) => ({ ...prev, tyreDiameterMm: diameter }))
                           }}
                           className="bg-gray-700 border-gray-600 text-white text-xs"
