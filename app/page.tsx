@@ -1484,58 +1484,18 @@ export default function AutomotiveAnalyzer() {
                     <ResponsiveContainer width="100%" height="100%">
                       <ComposedChart data={finalChartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                        <XAxis
-                          dataKey="speed"
-                          stroke="#9CA3AF"
-                          fontSize={12}
-                          label={{ value: "Speed (km/h)", position: "insideBottom", offset: -5 }}
-                        />
-                        <YAxis
-                          stroke="#9CA3AF"
-                          fontSize={12}
-                          label={{ value: "RPM", angle: -90, position: "insideLeft" }}
-                        />
+                        <XAxis dataKey="time" stroke="#9CA3AF" fontSize={12} />
+                        <YAxis yAxisId="rpm" stroke="#ef4444" fontSize={12} orientation="left" />
+                        <YAxis yAxisId="speed" stroke="#22c55e" fontSize={12} orientation="right" />
                         <Tooltip
                           contentStyle={{
                             backgroundColor: "#1F2937",
                             border: "1px solid #374151",
                             borderRadius: "6px",
                           }}
-                          formatter={(value, name, props) => {
-                            const gear = props.payload.gear || 1
-                            const shiftIndicator = getShiftIndicator(props.payload.rpm, gear, transmissionConfig)
-                            return [
-                              `${value} ${name === "rpm" ? "RPM" : "km/h"}`,
-                              `${name === "rpm" ? "RPM" : "Speed"} (Gear ${gear}${shiftIndicator.shouldShift === "up" ? " ↑" : shiftIndicator.shouldShift === "down" ? " ↓" : ""})`,
-                            ]
-                          }}
                         />
-                        {/* Color points by gear */}
-                        {Array.from({ length: transmissionConfig.numberOfGears }, (_, i) => i + 1).map((gear) => {
-                          const gearData = finalChartData.filter((d) => d.gear === gear)
-                          const colors = [
-                            "#ef4444",
-                            "#f97316",
-                            "#eab308",
-                            "#22c55e",
-                            "#06b6d4",
-                            "#8b5cf6",
-                            "#ec4899",
-                            "#84cc16",
-                          ]
-                          return gearData.length > 0 ? (
-                            <Line
-                              key={`gear-${gear}`}
-                              dataKey="rpm"
-                              data={gearData}
-                              stroke={colors[gear - 1] || "#9ca3af"}
-                              strokeWidth={0}
-                              dot={{ fill: colors[gear - 1] || "#9ca3af", strokeWidth: 0, r: 2 }}
-                              line={false}
-                              name={`Gear ${gear}`}
-                            />
-                          ) : null
-                        })}
+                        <Line yAxisId="rpm" dataKey="rpm" stroke="#ef4444" strokeWidth={2} dot={false} name="RPM" />
+                        <Line yAxisId="speed" dataKey="speed" stroke="#22c55e" strokeWidth={2} dot={false} name="Speed (km/h)" />
                       </ComposedChart>
                     </ResponsiveContainer>
                   </div>
@@ -1607,6 +1567,65 @@ export default function AutomotiveAnalyzer() {
                           strokeWidth={2}
                           dot={false}
                           name="Torque (N•m)"
+                        />
+                      </ComposedChart>
+                    </ResponsiveContainer>
+                  </div>
+                </Card>
+                <Card className="bg-gray-800 border-gray-700 p-4 flex flex-col">
+                  <h3 className="font-semibold mb-4 flex-shrink-0">Gearbox Usage</h3>
+                  <div className="flex-grow">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <ComposedChart data={finalChartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                        <XAxis dataKey="time" stroke="#9CA3AF" fontSize={12} />
+                        <YAxis 
+                          yAxisId="gear"
+                          stroke="#b666d2" 
+                          fontSize={12} 
+                          domain={[0.5, 6.5]} 
+                          ticks={[1, 2, 3, 4, 5, 6]} 
+                          allowDataOverflow={true}
+                          orientation="right"
+                        />
+                        <YAxis
+                          yAxisId="speed"
+                          stroke="#22c55e"
+                          fontSize={12}
+                          orientation="left"
+                        />
+                        <Tooltip
+                          contentStyle={{
+                            backgroundColor: "#1F2937",
+                            border: "1px solid #374151",
+                            borderRadius: "6px",
+                          }}
+                          formatter={(value, name) => {
+                            if (name === "gear") {
+                              const gear = Math.min(6, Math.max(1, Number(value)));
+                              return [`${gear}`, "Gear"];
+                            }
+                            return [`${value} km/h`, "Speed"];
+                          }}
+                        />
+                        <Line
+                          yAxisId="gear"
+                          dataKey={(data) => Math.min(6, Math.max(1, data.gear || 1))}
+                          stroke="#b666d2"
+                          strokeWidth={2}
+                          dot={false}
+                          name="gear"
+                          connectNulls
+                        />
+                        <Area
+                          yAxisId="speed"
+                          dataKey="speed"
+                          fill="#22c55e"
+                          fillOpacity={0.3}
+                          stroke="#22c55e"
+                          strokeWidth={2}
+                          dot={false}
+                          name="speed"
                         />
                       </ComposedChart>
                     </ResponsiveContainer>
