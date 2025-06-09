@@ -18,6 +18,7 @@ import {
   Plus,
   X,
   Settings,
+  History,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
@@ -40,6 +41,7 @@ import {
   ComposedChart,
 } from "recharts"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import Link from "next/link"
 
 interface DataPoint {
   time: number
@@ -631,6 +633,8 @@ export default function AutomotiveAnalyzer() {
   const [tireAspectRatio, setTireAspectRatio] = useState(35)
   const [tireRimSize, setTireRimSize] = useState(19)
   const [tireSizeInput, setTireSizeInput] = useState("235/35R19")
+  const [presetSearchQuery, setPresetSearchQuery] = useState("")
+  const [presetSortOption, setPresetSortOption] = useState<"default" | "alphabetical">("default")
 
   useEffect(() => {
     if (!isPlaying || data.length === 0) return
@@ -1072,6 +1076,23 @@ export default function AutomotiveAnalyzer() {
     setSelectedPIDs((prev) => prev.filter((pid) => pid !== pidKey))
   }, [])
 
+  // Filter and sort transmission presets
+  const filteredTransmissionPresets = useMemo(() => {
+    let result = transmissionPresets
+
+    // Filter by search query
+    if (presetSearchQuery) {
+      result = result.filter((preset) => preset.name.toLowerCase().includes(presetSearchQuery.toLowerCase()))
+    }
+
+    // Sort
+    if (presetSortOption === "alphabetical") {
+      result = [...result].sort((a, b) => a.name.localeCompare(b.name))
+    }
+
+    return result
+  }, [transmissionPresets, presetSearchQuery, presetSortOption])
+
   // Static height for all tabs - no more dynamic calculations
   const STATIC_HEIGHT = 1000
   const metricsListHeight = Math.min(400, filteredMetrics.length * 35 + 100)
@@ -1109,6 +1130,12 @@ export default function AutomotiveAnalyzer() {
           )}
         </div>
         <div className="flex items-center gap-2 mt-2 md:mt-0 w-full md:w-auto justify-end">
+          <Link href="/changelogs">
+            <Button variant="outline" size="sm" className="bg-gray-800 border-gray-600 hover:bg-gray-700">
+              <History className="w-4 h-4 mr-2" />
+              <span className="hidden sm:inline">Changelogs</span>
+            </Button>
+          </Link>
           <Button
             onClick={() => setShowTransmissionDialog(true)}
             variant="outline"
@@ -1117,7 +1144,7 @@ export default function AutomotiveAnalyzer() {
             disabled={data.length === 0}
           >
             <Settings className="w-4 h-4 mr-2" />
-            Transmission
+            <span className="hidden sm:inline">Transmission</span>
           </Button>
           <Button
             onClick={() => setIsPlaying(!isPlaying)}
@@ -1692,26 +1719,6 @@ export default function AutomotiveAnalyzer() {
                     </ResponsiveContainer>
                   </div>
                 </Card>
-                {/* <Card className="bg-gray-800 border-gray-700 p-4 flex flex-col">
-                  <h3 className="font-semibold mb-4 flex-shrink-0">Air/Fuel Ratio (AFR)</h3>
-                  <div className="flex-grow">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={finalChartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                        <XAxis dataKey="time" stroke="#9CA3AF" fontSize={12} />
-                        <YAxis stroke="#9CA3AF" fontSize={12} domain={["dataMin - 1", "dataMax + 1"]} />
-                        <Tooltip
-                          contentStyle={{
-                            backgroundColor: "#1F2937",
-                            border: "1px solid #374151",
-                            borderRadius: "6px",
-                          }}
-                        />
-                        <Line dataKey="afr" stroke="#f59e0b" strokeWidth={2} dot={false} name="AFR" />
-                      </LineChart>
-                    </ResponsiveContainer>
-                  </div>
-                </Card> */}
                 <Card className="bg-gray-800 border-gray-700 p-4 flex flex-col">
                   <h3 className="font-semibold mb-4 flex-shrink-0">Ignition Advance</h3>
                   <div className="flex-grow">
@@ -2292,8 +2299,41 @@ export default function AutomotiveAnalyzer() {
                 </TabsContent>
 
                 <TabsContent value="presets" className="space-y-4">
+                  <div className="flex gap-2 mb-4">
+                    <div className="relative flex-1">
+                      <Search className="absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                      <Input
+                        placeholder="Search presets..."
+                        value={presetSearchQuery}
+                        onChange={(e) => setPresetSearchQuery(e.target.value)}
+                        className="pl-8 bg-gray-700 border-gray-600 text-white placeholder:text-gray-400"
+                      />
+                    </div>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="outline" size="sm" className="bg-gray-700 border-gray-600">
+                          <ChevronDown className="h-4 w-4 mr-1" />
+                          Sort
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="bg-gray-800 border-gray-600 text-white">
+                        <DropdownMenuItem
+                          onClick={() => setPresetSortOption("default")}
+                          className={presetSortOption === "default" ? "bg-gray-700" : ""}
+                        >
+                          Default Order
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={() => setPresetSortOption("alphabetical")}
+                          className={presetSortOption === "alphabetical" ? "bg-gray-700" : ""}
+                        >
+                          Alphabetical
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
                   <div className="grid gap-4">
-                    {transmissionPresets.map((preset, index) => (
+                    {filteredTransmissionPresets.map((preset, index) => (
                       <Card key={index} className="bg-gray-700 border-gray-600 p-4">
                         <div className="flex items-center justify-between mb-2">
                           <h3 className="font-semibold text-white">{preset.name}</h3>
