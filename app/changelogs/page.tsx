@@ -14,6 +14,33 @@ interface ChangelogEntry {
 
 const changelogs: ChangelogEntry[] = [
   {
+    version: "1.4.1",
+    date: "2025-07-30",
+    title: "Drag and Drop, Smarter Statistics & PID Enhancements",
+    type: "feature",
+    description: [
+      "Added automatic unit detection for metric (km/h) and imperial (mph)",
+      "Full support for European (comma) and American (period) decimal separators",
+      "Enhanced CSV data handling with better speed unit conversion, robust numeric parsing, and edge-case management",
+      "Improved max speed calculation by prioritizing dedicated 'Max Speed' fields and intelligently falling back to other speed sources",
+      "Improved CSV compatibility and handling of edge cases",
+      "Added smart fallback mechanisms for missing or incomplete data",
+    ],
+  },
+  {
+    version: "1.4.0",
+    date: "2025-07-30",
+    title: "Drag and Drop, Smarter Statistics & PID Enhancements",
+    type: "feature",
+    description: [
+      "Added drag-and-drop support for CSV file uploads with visual feedback during file hover",
+      "Improved statistics calculations to filter out invalid values (0, null, undefined, NaN) and prevent incorrect (0.00) results",
+      "Enhanced PID selection logic to automatically enable the first 6 valid metrics instead of empty ones",
+      "Added formatValue() helper for consistent decimal formatting (4 decimals for very small numbers, 2 for most, none for large values and RPM)",
+      "Fixed and refined session statistics for better accuracy and edge case handling",
+    ],
+  },
+  {
     version: "1.3.0",
     date: "2025-06-09",
     title: "Mobile Responsiveness & Gearbox Improvements",

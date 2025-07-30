@@ -70,6 +70,7 @@ interface DataPoint {
   tripDistance?: number
   tripFuel?: number
   tripFuelEconomy?: number
+  maxSpeed?: number
   // Allow dynamic col_X properties
   [key: string]: any
 }
@@ -523,6 +524,69 @@ function parseTireSize(tireSize: string): { width: number; aspectRatio: number; 
   return null
 }
 
+// Helper function to normalize decimal separators and parse numbers
+function parseNumericValue(value: string): number {
+  if (!value || typeof value !== "string") return 0
+
+  // Replace comma decimal separator with period
+  const normalizedValue = value.replace(",", ".")
+  const parsed = Number.parseFloat(normalizedValue)
+
+  return isNaN(parsed) ? 0 : parsed
+}
+
+// Helper function to detect speed unit from column names and data
+function detectSpeedUnit(headers: string[], data: any[]): "km/h" | "mph" {
+  // Check header names for unit indicators
+  const speedHeaders = headers.filter((h) => h.toLowerCase().includes("speed") || h.toLowerCase().includes("velocity"))
+
+  for (const header of speedHeaders) {
+    const lower = header.toLowerCase()
+    if (lower.includes("mph") || lower.includes("mi/h")) return "mph"
+    if (lower.includes("kmh") || lower.includes("km/h") || lower.includes("kph")) return "km/h"
+  }
+
+  // Analyze speed data ranges to guess unit
+  const speedValues = data.map((d) => d.speed || d.vehicleSpeed || d.gpsSpeed).filter((v) => v && v > 0)
+
+  if (speedValues.length > 0) {
+    const maxSpeed = Math.max(...speedValues)
+    const avgSpeed = speedValues.reduce((sum, v) => sum + v, 0) / speedValues.length
+
+    // If max speed is over 200 or average is over 80, likely km/h
+    // If max speed is under 150 and average under 50, likely mph
+    if (maxSpeed > 200 || avgSpeed > 80) return "km/h"
+    if (maxSpeed < 150 && avgSpeed < 50) return "mph"
+  }
+
+  // Default to km/h
+  return "km/h"
+}
+
+// Helper function to convert mph to km/h if needed
+// Helper function to format numbers with appropriate decimal places
+function formatValue(value: number, unit = ""): string {
+  if (isNaN(value) || value === null || value === undefined) return "N/A"
+
+  // For very small values (less than 0.01), show more precision
+  if (Math.abs(value) < 0.01 && value !== 0) {
+    return value.toFixed(4)
+  }
+
+  // For percentages and most values, 2 decimal places is enough
+  if (unit === "%" || unit === "°C" || unit === "bar" || unit === "V") {
+    return value.toFixed(2)
+  }
+
+  // For RPM and large numbers, no decimal places
+  if (unit === "RPM" || Math.abs(value) > 1000) {
+    return value.toFixed(0)
+  }
+
+  // Default to 2 decimal places
+  return value.toFixed(2)
+}
+
 export default function AutomotiveAnalyzer() {
   const [data, setData] = useState<DataPoint[]>([])
   const [metrics, setMetrics] = useState<MetricConfig[]>(defaultMetrics)
@@ -540,6 +604,8 @@ export default function AutomotiveAnalyzer() {
   const [selectedPIDs, setSelectedPIDs] = useState<string[]>([])
   const [showEmptyPIDs, setShowEmptyPIDs] = useState(false)
   const [pidAnalysisHoveredTimeKey, setPidAnalysisHoveredTimeKey] = useState<number | null>(null)
+  const [isDragOver, setIsDragOver] = useState(false)
+  const [speedUnit, setSpeedUnit] = useState<"km/h" | "mph">("km/h")
   const [transmissionConfig, setTransmissionConfig] = useState({
     gearRatios: {
       1: 3.538,
@@ -650,8 +716,17 @@ export default function AutomotiveAnalyzer() {
     return () => clearInterval(interval)
   }, [isPlaying, data.length])
 
-  // Find the parseCSV function and fix the circular dependency issue
-  // Replace the parseCSV function definition with this:
+  // Check if a metric has all zero values or is empty
+  const isEmptyPID = useCallback(
+    (metric: MetricConfig) => {
+      const key = metric.key as string
+      return data.every((point) => {
+        const value = (point as any)[key]
+        return value === 0 || value === null || value === undefined || isNaN(value)
+      })
+    },
+    [data],
+  )
 
   const parseCSV = useCallback(
     async (file: File) => {
@@ -660,6 +735,7 @@ export default function AutomotiveAnalyzer() {
         const text = await file.text()
         const lines = text.split("\n")
         const headers = lines[0].split(",").map((h) => h.trim())
+
         const shortenColumnName = (name: string): string => {
           const cleanName = name.replace(/[()]/g, "").replace(/\s+/g, " ").trim()
           const abbreviations: { [key: string]: string } = {
@@ -686,7 +762,7 @@ export default function AutomotiveAnalyzer() {
             "Short term fuel trim (Bank 1 Sensor 2)": "Short term fuel",
             "Short term fuel trim Bank 1 Sensor 2": "Short term fuel",
             "OBD requirements to which vehicle or engine is certified": "OBD Cert",
-            "Time since engine start (sec)": "Engine Run Time",
+            "Time since engine start": "Engine Run Time",
             "Distance traveled while MIL is activated": "Distance with CEL",
             "Fuel rail pressure": "Fuel Pressure",
             "Commanded evaporative purge": "Evap Purge",
@@ -793,6 +869,7 @@ export default function AutomotiveAnalyzer() {
             .join("")
             .substring(0, 10)
         }
+
         const extractUnit = (name: string): string => {
           const unitMatches = name.match(/$$([^)]+)$$/)
           if (unitMatches) return unitMatches[1]
@@ -829,6 +906,7 @@ export default function AutomotiveAnalyzer() {
           if (lower.includes("(bar)")) return "bar"
           return ""
         }
+
         const generateColor = (index: number): string => {
           const colors = [
             "#ef4444",
@@ -849,45 +927,97 @@ export default function AutomotiveAnalyzer() {
           ]
           return colors[index % colors.length]
         }
+
         const detectedMetrics: MetricConfig[] = []
         const parsedData: DataPoint[] = []
         const numericColumns: { [key: string]: boolean } = {}
+
+        // First pass: detect numeric columns and sample data for unit detection
+        const sampleData: any[] = []
         for (let i = 1; i < Math.min(lines.length, 10); i++) {
           const values = lines[i].split(",")
+          const samplePoint: any = {}
           headers.forEach((header, index) => {
             if (header.toLowerCase() === "time") return
             const value = values[index]
-            if (value && !isNaN(Number.parseFloat(value))) {
-              numericColumns[header] = true
+            if (value && value.trim() !== "") {
+              const numericValue = parseNumericValue(value)
+              if (!isNaN(numericValue)) {
+                numericColumns[header] = true
+                samplePoint[header] = numericValue
+              }
             }
           })
+          if (Object.keys(samplePoint).length > 0) {
+            sampleData.push(samplePoint)
+          }
         }
+
+        // Detect speed unit from headers and sample data
+        const detectedSpeedUnit = detectSpeedUnit(headers, sampleData)
+        setSpeedUnit(detectedSpeedUnit)
+
         let metricIndex = 0
         headers.forEach((header, colIdx) => {
           if (header.toLowerCase() === "time" || !numericColumns[header]) return
           const key = `col_${colIdx}`
+          let unit = extractUnit(header)
+
+          // Update speed unit based on detection
+          if (header.toLowerCase().includes("speed") && !unit) {
+            unit = detectedSpeedUnit
+          }
+
           detectedMetrics.push({
             key: key,
             label: shortenColumnName(header),
             color: generateColor(metricIndex),
-            unit: extractUnit(header),
-            enabled: metricIndex < 6,
+            unit: unit,
+            enabled: false, // Start with all disabled, we'll enable non-empty ones later
             originalName: header,
           })
           metricIndex++
         })
+
+        // Update speed metric unit based on detection
+        const speedMetric = detectedMetrics.find(
+          (m) => m.key === "speed" || m.originalName?.toLowerCase().includes("speed"),
+        )
+        if (speedMetric && !speedMetric.unit) {
+          speedMetric.unit = detectedSpeedUnit
+        }
+
+        // Parse data with improved number parsing and unit conversion
         for (let i = 1; i < lines.length; i++) {
           const values = lines[i].split(",")
           if (values.length < headers.length) continue
           const dataPoint: DataPoint = { time: i - 1, timestamp: values[0] || `${i - 1}s` } as DataPoint
+
           headers.forEach((header, colIdx) => {
             if (!numericColumns[header]) return
             const key = `col_${colIdx}`
-            const value = Number.parseFloat(values[colIdx]) || 0
+            const rawValue = values[colIdx]
+            const value = parseNumericValue(rawValue)
             dataPoint[key] = value
+
             const lowerHeader = header.toLowerCase()
-            if (lowerHeader.includes("rpm")) dataPoint.rpm = value
-            if (lowerHeader.includes("speed") && lowerHeader.includes("km")) dataPoint.speed = value
+
+            // Map to standard properties with unit conversion
+            if (lowerHeader.includes("rpm")) {
+              dataPoint.rpm = value
+            }
+            if (lowerHeader.includes("speed")) {
+              // Use the original speed value without conversion
+              if (lowerHeader.includes("vehicle") || (lowerHeader.includes("speed") && !lowerHeader.includes("gps"))) {
+                dataPoint.speed = value
+              }
+              if (lowerHeader.includes("gps")) {
+                dataPoint.gpsSpeed = value
+              }
+              if (lowerHeader.includes("max")) {
+                dataPoint.maxSpeed = value
+              }
+            }
             if (lowerHeader.includes("throttle")) dataPoint.throttle = value
             if (lowerHeader.includes("boost")) dataPoint.boost = value
             if (lowerHeader.includes("coolant")) dataPoint.coolantTemp = value
@@ -911,6 +1041,12 @@ export default function AutomotiveAnalyzer() {
             if (lowerHeader.includes("trip") && lowerHeader.includes("fuel") && lowerHeader.includes("economy"))
               dataPoint.tripFuelEconomy = value
           })
+
+          // Use GPS speed as fallback if vehicle speed is not available
+          if (!dataPoint.speed && dataPoint.gpsSpeed) {
+            dataPoint.speed = dataPoint.gpsSpeed
+          }
+
           if (!dataPoint.brake && dataPoint.throttle)
             dataPoint.brake = Math.max(0, (100 - dataPoint.throttle) * Math.random() * 0.3)
 
@@ -927,6 +1063,21 @@ export default function AutomotiveAnalyzer() {
           }
           parsedData.push(dataPoint)
         }
+
+        // Now check which metrics have actual data and enable the first few non-empty ones
+        const nonEmptyMetrics = detectedMetrics.filter((metric) => {
+          const key = metric.key as string
+          return !parsedData.every((point) => {
+            const value = (point as any)[key]
+            return value === 0 || value === null || value === undefined || isNaN(value)
+          })
+        })
+
+        // Enable the first 6 non-empty metrics
+        nonEmptyMetrics.slice(0, 6).forEach((metric) => {
+          metric.enabled = true
+        })
+
         setMetrics(detectedMetrics)
         setData(parsedData)
         setTimeRange([0, Math.max(0, parsedData.length - 1)])
@@ -937,11 +1088,8 @@ export default function AutomotiveAnalyzer() {
         setIsLoading(false)
       }
     },
-    // Remove parseCSV from the dependency array to avoid circular reference
     [transmissionConfig],
   )
-
-  // Also fix the loadSampleData function to remove the circular reference:
 
   const loadSampleData = useCallback(async () => {
     setIsLoading(true)
@@ -958,6 +1106,29 @@ export default function AutomotiveAnalyzer() {
     }
   }, [parseCSV])
 
+  const handleDrop = useCallback(
+    (event: React.DragEvent<HTMLDivElement>) => {
+      event.preventDefault()
+      setIsDragOver(false)
+      const file = event.dataTransfer.files[0]
+      if (file && file.type === "text/csv") {
+        setSelectedFile(file)
+        parseCSV(file)
+      }
+    },
+    [parseCSV],
+  )
+
+  const handleDragOver = useCallback((event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault()
+    setIsDragOver(true)
+  }, [])
+
+  const handleDragLeave = useCallback((event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault()
+    setIsDragOver(false)
+  }, [])
+
   const handleFileUpload = useCallback(
     (event: React.ChangeEvent<HTMLInputElement>) => {
       const file = event.target.files?.[0]
@@ -972,18 +1143,6 @@ export default function AutomotiveAnalyzer() {
   const toggleMetric = useCallback((index: number) => {
     setMetrics((prev) => prev.map((metric, i) => (i === index ? { ...metric, enabled: !metric.enabled } : metric)))
   }, [])
-
-  // Check if a metric has all zero values
-  const isEmptyPID = useCallback(
-    (metric: MetricConfig) => {
-      const key = metric.key as string
-      return data.every((point) => {
-        const value = (point as any)[key]
-        return value === 0 || value === null || value === undefined || isNaN(value)
-      })
-    },
-    [data],
-  )
 
   const filteredMetrics = useMemo(() => {
     let result = metrics
@@ -1047,14 +1206,40 @@ export default function AutomotiveAnalyzer() {
   const stats = useMemo(() => {
     if (data.length === 0)
       return { maxRPM: 0, maxSpeed: 0, maxBoost: 0, avgCoolant: 0, avgIntakeTemp: 0, maxPower: 0, maxTorque: 0 }
+
+    // Filter out invalid values (0, null, undefined, NaN) for max calculations
+    const validRPMs = data.map((d) => d.rpm || 0).filter((v) => v > 0)
+    const validBoosts = data.map((d) => d.boost || 0).filter((v) => !isNaN(v))
+    const validPowers = data.map((d) => d.enginePower || 0).filter((v) => v > 0)
+    const validTorques = data.map((d) => d.engineTorque || 0).filter((v) => v > 0)
+    const validCoolants = data.map((d) => d.coolantTemp || 0).filter((v) => v > 0)
+    const validIntakes = data.map((d) => d.intakeTemp || 0).filter((v) => v > 0)
+
+    // For max speed, try multiple sources in order of preference
+    let maxSpeed = 0
+
+    // First, try to find a dedicated "Max Speed" field
+    const maxSpeedFromField = data.map((d) => d.maxSpeed || 0).filter((v) => v > 0)
+
+    if (maxSpeedFromField.length > 0) {
+      maxSpeed = Math.max(...maxSpeedFromField)
+    } else {
+      // Fallback to calculating from speed data
+      const validSpeeds = data.map((d) => d.speed || d.gpsSpeed || 0).filter((v) => v > 0)
+
+      if (validSpeeds.length > 0) {
+        maxSpeed = Math.max(...validSpeeds)
+      }
+    }
+
     return {
-      maxRPM: Math.max(0, ...data.map((d) => d.rpm || 0)),
-      maxSpeed: Math.max(0, ...data.map((d) => d.speed || 0)),
-      maxBoost: Math.max(0, ...data.map((d) => d.boost || 0)),
-      avgCoolant: data.length > 0 ? data.reduce((sum, d) => sum + (d.coolantTemp || 0), 0) / data.length : 0,
-      avgIntakeTemp: data.length > 0 ? data.reduce((sum, d) => sum + (d.intakeTemp || 0), 0) / data.length : 0,
-      maxPower: Math.max(0, ...data.map((d) => d.enginePower || 0)),
-      maxTorque: Math.max(0, ...data.map((d) => d.engineTorque || 0)),
+      maxRPM: validRPMs.length > 0 ? Math.max(...validRPMs) : 0,
+      maxSpeed: maxSpeed,
+      maxBoost: validBoosts.length > 0 ? Math.max(...validBoosts) : 0,
+      avgCoolant: validCoolants.length > 0 ? validCoolants.reduce((sum, v) => sum + v, 0) / validCoolants.length : 0,
+      avgIntakeTemp: validIntakes.length > 0 ? validIntakes.reduce((sum, v) => sum + v, 0) / validIntakes.length : 0,
+      maxPower: validPowers.length > 0 ? Math.max(...validPowers) : 0,
+      maxTorque: validTorques.length > 0 ? Math.max(...validTorques) : 0,
     }
   }, [data])
 
@@ -1125,7 +1310,7 @@ export default function AutomotiveAnalyzer() {
           </div>
           {selectedFile && (
             <span className="text-sm text-gray-400 block w-full md:w-auto mt-2 md:mt-0">
-              {selectedFile.name} ({data.length} records)
+              {selectedFile.name} ({data.length} records) - {speedUnit}
             </span>
           )}
         </div>
@@ -1310,15 +1495,17 @@ export default function AutomotiveAnalyzer() {
                         <div className="space-y-1 text-sm">
                           <div className="flex justify-between">
                             <span>RPM:</span>
-                            <span className="text-red-400">{currentDataPoint.rpm?.toFixed(0)}</span>
+                            <span className="text-red-400">{formatValue(currentDataPoint.rpm, "RPM")}</span>
                           </div>
                           <div className="flex justify-between">
                             <span>Speed:</span>
-                            <span className="text-green-400">{currentDataPoint.speed?.toFixed(1)} km/h</span>
+                            <span className="text-green-400">
+                              {formatValue(currentDataPoint.speed, speedUnit)} {speedUnit}
+                            </span>
                           </div>
                           <div className="flex justify-between">
                             <span>Throttle:</span>
-                            <span className="text-yellow-400">{currentDataPoint.throttle?.toFixed(1)}%</span>
+                            <span className="text-yellow-400">{formatValue(currentDataPoint.throttle, "%")}%</span>
                           </div>
                           <div className="flex justify-between items-center">
                             <span>Gear:</span>
@@ -1408,32 +1595,34 @@ export default function AutomotiveAnalyzer() {
                     <div className="space-y-3 text-sm">
                       <div className="flex justify-between">
                         <span>Max RPM:</span>
-                        <span className="text-red-400 font-bold">{stats.maxRPM.toFixed(0)}</span>
+                        <span className="text-red-400 font-bold">{formatValue(stats.maxRPM, "RPM")}</span>
                       </div>
                       <div className="flex justify-between">
                         <span>Max Speed:</span>
-                        <span className="text-green-400 font-bold">{stats.maxSpeed.toFixed(1)} km/h</span>
+                        <span className="text-green-400 font-bold">
+                          {formatValue(stats.maxSpeed, speedUnit)} {speedUnit}
+                        </span>
                       </div>
                       <div className="flex justify-between">
                         <span>Max Boost Pressure:</span>
-                        <span className="text-blue-400 font-bold">{stats.maxBoost.toFixed(2)} bar</span>
+                        <span className="text-blue-400 font-bold">{formatValue(stats.maxBoost, "bar")} bar</span>
                       </div>
                       <div className="flex justify-between">
                         <span>Max Calculated Power:</span>
-                        <span className="text-pink-400 font-bold">{stats.maxPower.toFixed(0)} hp</span>
+                        <span className="text-pink-400 font-bold">{formatValue(stats.maxPower, "hp")} hp</span>
                       </div>
                       <div className="flex justify-between">
                         <span>Max Calculated Torque:</span>
-                        <span className="text-lime-400 font-bold">{stats.maxTorque.toFixed(0)} N•m</span>
+                        <span className="text-lime-400 font-bold">{formatValue(stats.maxTorque, "N•m")} N•m</span>
                       </div>
                       <div className="h-px bg-gray-700 my-2"></div>
                       <div className="flex justify-between">
                         <span>Average Coolant Temp:</span>
-                        <span className="text-purple-400 font-bold">{stats.avgCoolant.toFixed(1)}°C</span>
+                        <span className="text-purple-400 font-bold">{formatValue(stats.avgCoolant, "°C")}°C</span>
                       </div>
                       <div className="flex justify-between">
                         <span>Average Intake Temp:</span>
-                        <span className="text-orange-400 font-bold">{stats.avgIntakeTemp.toFixed(1)}°C</span>
+                        <span className="text-orange-400 font-bold">{formatValue(stats.avgIntakeTemp, "°C")}°C</span>
                       </div>
                       <div className="h-px bg-gray-700 my-2"></div>
                       <div className="flex justify-between">
@@ -1450,7 +1639,7 @@ export default function AutomotiveAnalyzer() {
                         <span>Trip Distance:</span>
                         <span className="text-gray-300">
                           {data.length > 0 && data[data.length - 1].tripDistance
-                            ? `${data[data.length - 1].tripDistance.toFixed(1)} km`
+                            ? `${formatValue(data[data.length - 1].tripDistance)} km`
                             : "N/A"}
                         </span>
                       </div>
@@ -1458,7 +1647,7 @@ export default function AutomotiveAnalyzer() {
                         <span>Trip Fuel Used:</span>
                         <span className="text-gray-300">
                           {data.length > 0 && data[data.length - 1].tripFuel
-                            ? `${data[data.length - 1].tripFuel.toFixed(1)} L`
+                            ? `${formatValue(data[data.length - 1].tripFuel)} L`
                             : "N/A"}
                         </span>
                       </div>
@@ -1466,7 +1655,7 @@ export default function AutomotiveAnalyzer() {
                         <span>Trip Fuel Economy:</span>
                         <span className="text-gray-300">
                           {data.length > 0 && data[data.length - 1].tripFuelEconomy
-                            ? `${data[data.length - 1].tripFuelEconomy.toFixed(1)} L/100km`
+                            ? `${formatValue(data[data.length - 1].tripFuelEconomy)} L/100km`
                             : "N/A"}
                         </span>
                       </div>
@@ -1495,7 +1684,14 @@ export default function AutomotiveAnalyzer() {
                           }}
                         />
                         <Line yAxisId="rpm" dataKey="rpm" stroke="#ef4444" strokeWidth={2} dot={false} name="RPM" />
-                        <Line yAxisId="speed" dataKey="speed" stroke="#22c55e" strokeWidth={2} dot={false} name="Speed (km/h)" />
+                        <Line
+                          yAxisId="speed"
+                          dataKey="speed"
+                          stroke="#22c55e"
+                          strokeWidth={2}
+                          dot={false}
+                          name={`Speed (${speedUnit})`}
+                        />
                       </ComposedChart>
                     </ResponsiveContainer>
                   </div>
@@ -1530,7 +1726,7 @@ export default function AutomotiveAnalyzer() {
                           stroke="#22c55e"
                           strokeWidth={2}
                           dot={false}
-                          name="Speed (km/h)"
+                          name={`Speed (${speedUnit})`}
                         />
                       </ComposedChart>
                     </ResponsiveContainer>
@@ -1579,21 +1775,16 @@ export default function AutomotiveAnalyzer() {
                       <ComposedChart data={finalChartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
                         <XAxis dataKey="time" stroke="#9CA3AF" fontSize={12} />
-                        <YAxis 
+                        <YAxis
                           yAxisId="gear"
-                          stroke="#b666d2" 
-                          fontSize={12} 
-                          domain={[0.5, 6.5]} 
-                          ticks={[1, 2, 3, 4, 5, 6]} 
+                          stroke="#b666d2"
+                          fontSize={12}
+                          domain={[0.5, 6.5]}
+                          ticks={[1, 2, 3, 4, 5, 6]}
                           allowDataOverflow={true}
                           orientation="right"
                         />
-                        <YAxis
-                          yAxisId="speed"
-                          stroke="#22c55e"
-                          fontSize={12}
-                          orientation="left"
-                        />
+                        <YAxis yAxisId="speed" stroke="#22c55e" fontSize={12} orientation="left" />
                         <Tooltip
                           contentStyle={{
                             backgroundColor: "#1F2937",
@@ -1602,10 +1793,10 @@ export default function AutomotiveAnalyzer() {
                           }}
                           formatter={(value, name) => {
                             if (name === "gear") {
-                              const gear = Math.min(6, Math.max(1, Number(value)));
-                              return [`${gear}`, "Gear"];
+                              const gear = Math.min(6, Math.max(1, Number(value)))
+                              return [`${gear}`, "Gear"]
                             }
-                            return [`${value} km/h`, "Speed"];
+                            return [`${value} ${speedUnit}`, "Speed"]
                           }}
                         />
                         <Line
@@ -2055,7 +2246,9 @@ export default function AutomotiveAnalyzer() {
                                 </div>
                                 <div className="text-center mt-2 flex-shrink-0">
                                   <span className="text-lg font-bold" style={{ color: metric.color }}>
-                                    {typeof currentPidValue === "number" ? currentPidValue.toFixed(2) : "N/A"}
+                                    {typeof currentPidValue === "number"
+                                      ? formatValue(currentPidValue, metric.unit)
+                                      : "N/A"}
                                   </span>
                                   <span className="text-xs text-gray-400 ml-1">{metric.unit}</span>
                                 </div>
@@ -2092,16 +2285,29 @@ export default function AutomotiveAnalyzer() {
         </>
       )}
       {data.length === 0 && !isLoading && (
-        <Card className="bg-gray-800 border-gray-700 p-8 text-center">
-          <Upload className="w-12 h-12 mx-auto mb-4 text-gray-400" />
-          <h3 className="text-lg font-semibold mb-2">No Data Loaded</h3>
-          <p className="text-gray-400 mb-4">Upload a CSV file containing automotive log data to begin analysis</p>
+        <Card
+          className={`bg-gray-800 border-gray-700 p-8 text-center transition-all duration-200 ${
+            isDragOver ? "border-blue-500 bg-gray-700" : ""
+          }`}
+          onDrop={handleDrop}
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+        >
+          <Upload className={`w-12 h-12 mx-auto mb-4 ${isDragOver ? "text-blue-400" : "text-gray-400"}`} />
+          <h3 className="text-lg font-semibold mb-2">
+            {isDragOver ? "Drop CSV file here" : "Drag and drop CSV file here"}
+          </h3>
+          <p className="text-gray-400 mb-4">Or click below to select a file</p>
           <div className="flex gap-4 justify-center">
             <Button onClick={() => fileInputRef.current?.click()} className="bg-blue-600 hover:bg-blue-700">
               <Upload className="w-4 h-4 mr-2" />
               Choose CSV File
             </Button>
-            <Button onClick={loadSampleData} variant="outline" className="border-gray-600 hover:bg-gray-700">
+            <Button
+              onClick={loadSampleData}
+              variant="outline"
+              className="border-gray-600 hover:bg-gray-700 bg-transparent"
+            >
               <FileText className="w-4 h-4 mr-2" />
               Load Sample Data
             </Button>
