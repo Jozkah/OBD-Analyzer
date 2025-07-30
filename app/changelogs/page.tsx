@@ -17,7 +17,7 @@ const changelogs: ChangelogEntry[] = [
     version: "1.4.1",
     date: "2025-07-30",
     title: "International Support & Data Processing",
-    type: "feature",
+    type: "improvement",
     description: [
       "Added automatic unit detection for km/h and mph",
       "Supported comma and period decimal formats",
