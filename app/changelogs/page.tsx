@@ -14,6 +14,17 @@ interface ChangelogEntry {
 
 const changelogs: ChangelogEntry[] = [
   {
+    version: "1.5.0",
+    date: "2025-08-22",
+    title: "Average Speed, RPM & PID Reliability",
+    type: "improvement",
+    description: [
+      "Added average speed and RPM display to the overview page",
+      "Fixed issues with Speed PID reporting static values in graphs",
+      "Added detection for null or corrupt PIDs with user warnings for missing crucial data",
+    ],
+  },
+  {
     version: "1.4.1",
     date: "2025-07-30",
     title: "International Support & Data Processing",

@@ -19,6 +19,7 @@ import {
   X,
   Settings,
   History,
+  AlertTriangle,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
@@ -41,6 +42,15 @@ import {
   ComposedChart,
 } from "recharts"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import Link from "next/link"
 
 interface DataPoint {
@@ -95,6 +105,34 @@ const defaultMetrics: MetricConfig[] = [
   { key: "coolantTemp", label: "Coolant Temp", color: "#8b5cf6", unit: "°C", enabled: false, scale: 1 },
   { key: "enginePower", label: "Power", color: "#ec4899", unit: "hp", enabled: false, scale: 1 },
   { key: "engineTorque", label: "Torque", color: "#84cc16", unit: "N•m", enabled: false, scale: 1 },
+]
+
+// Define crucial PIDs that are important for the main functionality
+const CRUCIAL_PIDS = [
+  {
+    name: "Engine RPM",
+    keys: ["rpm", "engine_rpm"],
+    description: "Essential for performance analysis, gear calculations, and engine monitoring",
+    tabs: ["Overview", "Performance", "Engine"],
+  },
+  {
+    name: "Vehicle Speed",
+    keys: ["speed", "vehicle_speed", "gps_speed"],
+    description: "Required for performance analysis, gear calculations, and GPS tracking",
+    tabs: ["Overview", "Performance", "GPS"],
+  },
+  {
+    name: "Throttle Position",
+    keys: ["throttle", "throttle_position", "accelerator_position"],
+    description: "Important for performance analysis and driving behavior",
+    tabs: ["Performance", "Engine"],
+  },
+  {
+    name: "Engine Coolant Temperature",
+    keys: ["coolant_temp", "coolant_temperature", "engine_coolant_temperature"],
+    description: "Critical for engine health monitoring",
+    tabs: ["Overview", "Engine"],
+  },
 ]
 
 // Enhanced GPS Track Map Component with proper map base
@@ -587,6 +625,60 @@ function formatValue(value: number, unit = ""): string {
   return value.toFixed(2)
 }
 
+// Function to check for missing crucial PIDs
+function checkMissingCrucialPIDs(
+  data: DataPoint[],
+  headers: string[],
+): { missing: typeof CRUCIAL_PIDS; hasCriticalMissing: boolean } {
+  const lowerHeaders = headers.map((h) => h.toLowerCase())
+  const missing = []
+
+  for (const pid of CRUCIAL_PIDS) {
+    let found = false
+
+    // Check if any of the PID keys exist in headers
+    for (const key of pid.keys) {
+      if (lowerHeaders.some((h) => h.includes(key.toLowerCase().replace("_", " ")) || h.includes(key.toLowerCase()))) {
+        found = true
+        break
+      }
+    }
+
+    // Also check if data exists for this PID type
+    if (!found && data.length > 0) {
+      const sampleSize = Math.min(10, data.length)
+      const sampleData = data.slice(0, sampleSize)
+
+      for (const key of pid.keys) {
+        const hasData = sampleData.some((point) => {
+          const value = point[key as keyof DataPoint]
+          return value !== undefined && value !== null && value !== 0 && !isNaN(Number(value))
+        })
+
+        if (hasData) {
+          found = true
+          break
+        }
+      }
+    }
+
+    if (!found) {
+      missing.push(pid)
+    }
+  }
+
+  // Consider it critical if RPM or Speed is missing
+  const hasCriticalMissing = missing.some(
+    (pid) =>
+      pid.keys.includes("rpm") ||
+      pid.keys.includes("speed") ||
+      pid.keys.includes("engine_rpm") ||
+      pid.keys.includes("vehicle_speed"),
+  )
+
+  return { missing, hasCriticalMissing }
+}
+
 export default function AutomotiveAnalyzer() {
   const [data, setData] = useState<DataPoint[]>([])
   const [metrics, setMetrics] = useState<MetricConfig[]>(defaultMetrics)
@@ -606,6 +698,11 @@ export default function AutomotiveAnalyzer() {
   const [pidAnalysisHoveredTimeKey, setPidAnalysisHoveredTimeKey] = useState<number | null>(null)
   const [isDragOver, setIsDragOver] = useState(false)
   const [speedUnit, setSpeedUnit] = useState<"km/h" | "mph">("km/h")
+  const [showMissingPIDsDialog, setShowMissingPIDsDialog] = useState(false)
+  const [missingPIDs, setMissingPIDs] = useState<{ missing: typeof CRUCIAL_PIDS; hasCriticalMissing: boolean }>({
+    missing: [],
+    hasCriticalMissing: false,
+  })
   const [transmissionConfig, setTransmissionConfig] = useState({
     gearRatios: {
       1: 3.538,
@@ -1078,6 +1175,15 @@ export default function AutomotiveAnalyzer() {
           metric.enabled = true
         })
 
+        // Check for missing crucial PIDs
+        const pidCheck = checkMissingCrucialPIDs(parsedData, headers)
+        setMissingPIDs(pidCheck)
+
+        // Show warning dialog if crucial PIDs are missing
+        if (pidCheck.missing.length > 0) {
+          setShowMissingPIDsDialog(true)
+        }
+
         setMetrics(detectedMetrics)
         setData(parsedData)
         setTimeRange([0, Math.max(0, parsedData.length - 1)])
@@ -1205,7 +1311,17 @@ export default function AutomotiveAnalyzer() {
 
   const stats = useMemo(() => {
     if (data.length === 0)
-      return { maxRPM: 0, maxSpeed: 0, maxBoost: 0, avgCoolant: 0, avgIntakeTemp: 0, maxPower: 0, maxTorque: 0 }
+      return {
+        maxRPM: 0,
+        maxSpeed: 0,
+        maxBoost: 0,
+        avgCoolant: 0,
+        avgIntakeTemp: 0,
+        maxPower: 0,
+        maxTorque: 0,
+        avgSpeed: 0,
+        avgRPM: 0,
+      }
 
     // Filter out invalid values (0, null, undefined, NaN) for max calculations
     const validRPMs = data.map((d) => d.rpm || 0).filter((v) => v > 0)
@@ -1214,6 +1330,7 @@ export default function AutomotiveAnalyzer() {
     const validTorques = data.map((d) => d.engineTorque || 0).filter((v) => v > 0)
     const validCoolants = data.map((d) => d.coolantTemp || 0).filter((v) => v > 0)
     const validIntakes = data.map((d) => d.intakeTemp || 0).filter((v) => v > 0)
+    const validSpeeds = data.map((d) => d.speed || d.gpsSpeed || 0).filter((v) => v > 0)
 
     // For max speed, try multiple sources in order of preference
     let maxSpeed = 0
@@ -1225,8 +1342,6 @@ export default function AutomotiveAnalyzer() {
       maxSpeed = Math.max(...maxSpeedFromField)
     } else {
       // Fallback to calculating from speed data
-      const validSpeeds = data.map((d) => d.speed || d.gpsSpeed || 0).filter((v) => v > 0)
-
       if (validSpeeds.length > 0) {
         maxSpeed = Math.max(...validSpeeds)
       }
@@ -1240,6 +1355,8 @@ export default function AutomotiveAnalyzer() {
       avgIntakeTemp: validIntakes.length > 0 ? validIntakes.reduce((sum, v) => sum + v, 0) / validIntakes.length : 0,
       maxPower: validPowers.length > 0 ? Math.max(...validPowers) : 0,
       maxTorque: validTorques.length > 0 ? Math.max(...validTorques) : 0,
+      avgSpeed: validSpeeds.length > 0 ? validSpeeds.reduce((sum, v) => sum + v, 0) / validSpeeds.length : 0,
+      avgRPM: validRPMs.length > 0 ? validRPMs.reduce((sum, v) => sum + v, 0) / validRPMs.length : 0,
     }
   }, [data])
 
@@ -1351,6 +1468,71 @@ export default function AutomotiveAnalyzer() {
           </Button>
         </div>
       </div>
+
+      {/* Missing PIDs Warning Dialog */}
+      <AlertDialog open={showMissingPIDsDialog} onOpenChange={setShowMissingPIDsDialog}>
+        <AlertDialogContent className="bg-gray-800 border-gray-700 text-white max-w-2xl">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2 text-yellow-400">
+              <AlertTriangle className="h-5 w-5" />
+              Missing Crucial Data Detected
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-gray-300">
+              Your datalog appears to be missing some important PIDs that are essential for the full functionality of
+              this analyzer.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+
+          <div className="space-y-4">
+            <div className="bg-gray-700 rounded-lg p-4">
+              <h4 className="font-semibold text-white mb-3">Missing PIDs:</h4>
+              <div className="space-y-3">
+                {missingPIDs.missing.map((pid, index) => (
+                  <div key={index} className="border-l-4 border-yellow-400 pl-4">
+                    <div className="font-medium text-yellow-400">{pid.name}</div>
+                    <div className="text-sm text-gray-300 mt-1">{pid.description}</div>
+                    <div className="text-xs text-gray-400 mt-1">Affects: {pid.tabs.join(", ")} tabs</div>
+                    <div className="text-xs text-gray-500 mt-1">Looking for: {pid.keys.join(", ")}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {missingPIDs.hasCriticalMissing && (
+              <div className="bg-red-900/30 border border-red-700 rounded-lg p-4">
+                <div className="flex items-center gap-2 text-red-400 font-semibold mb-2">
+                  <AlertTriangle className="h-4 w-4" />
+                  Critical Data Missing
+                </div>
+                <p className="text-sm text-red-300">
+                  Essential PIDs like Engine RPM or Vehicle Speed are missing. This will significantly limit the
+                  analyzer's functionality.
+                </p>
+              </div>
+            )}
+
+            <div className="bg-blue-900/30 border border-blue-700 rounded-lg p-4">
+              <h4 className="font-semibold text-blue-400 mb-2">Recommendations:</h4>
+              <ul className="text-sm text-blue-300 space-y-1">
+                <li>• Check your OBD scanner's PID logging settings</li>
+                <li>• Ensure your vehicle supports these PIDs</li>
+                <li>• Try enabling more PIDs in your logging software</li>
+                <li>• Some features may not work properly without this data</li>
+              </ul>
+            </div>
+          </div>
+
+          <AlertDialogFooter>
+            <AlertDialogAction
+              onClick={() => setShowMissingPIDsDialog(false)}
+              className="bg-blue-600 hover:bg-blue-700"
+            >
+              Continue Anyway
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       {isLoading && (
         <div className="text-center py-8">
           <div className="text-lg">Loading and parsing data...</div>
@@ -1614,6 +1796,17 @@ export default function AutomotiveAnalyzer() {
                       <div className="flex justify-between">
                         <span>Max Calculated Torque:</span>
                         <span className="text-lime-400 font-bold">{formatValue(stats.maxTorque, "N•m")} N•m</span>
+                      </div>
+                      <div className="h-px bg-gray-700 my-2"></div>
+                      <div className="flex justify-between">
+                        <span>Average Speed:</span>
+                        <span className="text-green-400 font-bold">
+                          {formatValue(stats.avgSpeed, speedUnit)} {speedUnit}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Average RPM:</span>
+                        <span className="text-red-400 font-bold">{formatValue(stats.avgRPM, "RPM")}</span>
                       </div>
                       <div className="h-px bg-gray-700 my-2"></div>
                       <div className="flex justify-between">
