@@ -14,8 +14,20 @@ interface ChangelogEntry {
 
 const changelogs: ChangelogEntry[] = [
   {
+    version: "1.5.1",
+    date: "2026-02-23",
+    title: "CSV Format Compatibility & Next.js Upgrade",
+    type: "improvement",
+    description: [
+      "Fixed CSV parsing to support 2024 format with comment lines (# prefix)",
+      "Fixed speed field mapping to prevent 'Max Speed' from overwriting real-time speed data in Performance tab",
+      "Added support for both European (comma) and American (period) decimal separators",
+      "Upgraded Next.js from 14.2.16 to 14.2.35 for improved performance and security",
+    ],
+  },
+  {
     version: "1.5.0",
-    date: "2025-08-22",
+    date: "2026-01-22",
     title: "Average Speed, RPM & PID Reliability",
     type: "improvement",
     description: [
@@ -26,7 +38,7 @@ const changelogs: ChangelogEntry[] = [
   },
   {
     version: "1.4.1",
-    date: "2025-07-30",
+    date: "2025-12-30",
     title: "International Support & Data Processing",
     type: "improvement",
     description: [
@@ -38,7 +50,7 @@ const changelogs: ChangelogEntry[] = [
   },
   {
     version: "1.4.0",
-    date: "2025-07-30",
+    date: "2025-12-30",
     title: "Drag and Drop, Smarter Statistics & PID Enhancements",
     type: "feature",
     description: [
