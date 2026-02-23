@@ -830,7 +830,7 @@ export default function AutomotiveAnalyzer() {
       setIsLoading(true)
       try {
         const text = await file.text()
-        const lines = text.split("\n")
+        const lines = text.split("\n").filter((line) => line.trim() && !line.trim().startsWith("#"))
         const headers = lines[0].split(",").map((h) => h.trim())
 
         const shortenColumnName = (name: string): string => {
