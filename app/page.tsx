@@ -1104,15 +1104,20 @@ export default function AutomotiveAnalyzer() {
               dataPoint.rpm = value
             }
             if (lowerHeader.includes("speed")) {
-              // Use the original speed value without conversion
-              if (lowerHeader.includes("vehicle") || (lowerHeader.includes("speed") && !lowerHeader.includes("gps"))) {
-                dataPoint.speed = value
-              }
-              if (lowerHeader.includes("gps")) {
-                dataPoint.gpsSpeed = value
-              }
+              // Map to standard speed properties
               if (lowerHeader.includes("max")) {
+                // Store max speed separately, don't use it for real-time speed
                 dataPoint.maxSpeed = value
+              } else if (lowerHeader.includes("gps")) {
+                dataPoint.gpsSpeed = value
+                // Use GPS speed if no vehicle speed is set yet
+                if (!dataPoint.speed) dataPoint.speed = value
+              } else if (lowerHeader.includes("vehicle")) {
+                // Vehicle speed is preferred for real-time speed
+                dataPoint.speed = value
+              } else if (!dataPoint.speed) {
+                // Use any other speed field if no speed is set yet
+                dataPoint.speed = value
               }
             }
             if (lowerHeader.includes("throttle")) dataPoint.throttle = value
