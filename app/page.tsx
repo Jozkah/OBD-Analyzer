@@ -601,7 +601,67 @@ function detectSpeedUnit(headers: string[], data: any[]): "km/h" | "mph" {
   return "km/h"
 }
 
-// Helper function to convert mph to km/h if needed
+// Determine the order of multiple CSV files for merging
+function determineFileOrder(files: File[]): File[] {
+  if (files.length <= 1) return files
+
+  // Try to extract sequence numbers from filenames
+  const withSequence = files.map((file) => {
+    const name = file.name.replace(/\.csv$/i, "")
+    const match =
+      name.match(/(\d+)\s*$/) ||
+      name.match(/part\s*(\d+)/i) ||
+      name.match(/\((\d+)\)/) ||
+      name.match(/[_-](\d+)(?:[_-]|$)/)
+    return { file, sequence: match ? parseInt(match[1], 10) : null }
+  })
+
+  // If all files have extractable sequence numbers, sort by them
+  if (withSequence.every((f) => f.sequence !== null)) {
+    return withSequence.sort((a, b) => a.sequence! - b.sequence!).map((f) => f.file)
+  }
+
+  // Fallback: sort by lastModified timestamp if they differ
+  if (files.every((f) => f.lastModified > 0) && new Set(files.map((f) => f.lastModified)).size === files.length) {
+    return [...files].sort((a, b) => a.lastModified - b.lastModified)
+  }
+
+  // Final fallback: natural alphabetical sort by name
+  return [...files].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }))
+}
+
+// Merge multiple CSV files into a single file, preserving the header from the first file
+async function mergeCSVFiles(orderedFiles: File[]): Promise<File> {
+  if (orderedFiles.length === 1) return orderedFiles[0]
+
+  const texts = await Promise.all(orderedFiles.map((f) => f.text()))
+
+  // First file: keep everything (comments + header + data)
+  let merged = texts[0].trimEnd()
+
+  // Subsequent files: skip comment lines and header row, keep only data
+  for (let i = 1; i < texts.length; i++) {
+    const lines = texts[i].split("\n")
+    let dataStartIndex = 0
+    for (let j = 0; j < lines.length; j++) {
+      const trimmed = lines[j].trim()
+      if (!trimmed) continue
+      if (trimmed.startsWith("#")) continue
+      // This is the header line — skip it, data starts after
+      dataStartIndex = j + 1
+      break
+    }
+    const dataLines = lines.slice(dataStartIndex).filter((l) => l.trim())
+    if (dataLines.length > 0) {
+      merged += "\n" + dataLines.join("\n")
+    }
+  }
+
+  const blob = new Blob([merged], { type: "text/csv" })
+  const mergedName = `${orderedFiles.length} files merged`
+  return new File([blob], mergedName, { type: "text/csv" })
+}
+
 // Helper function to format numbers with appropriate decimal places
 function formatValue(value: number, unit = ""): string {
   if (isNaN(value) || value === null || value === undefined) return "N/A"
@@ -686,6 +746,8 @@ export default function AutomotiveAnalyzer() {
   const [currentTime, setCurrentTime] = useState(0)
   const [timeRange, setTimeRange] = useState([0, 100])
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
+  const [importedFileNames, setImportedFileNames] = useState<string[]>([])
+  const [ignoreIdle, setIgnoreIdle] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [activeTab, setActiveTab] = useState("overview")
   const [searchQuery, setSearchQuery] = useState("")
@@ -1209,6 +1271,8 @@ export default function AutomotiveAnalyzer() {
       const csvText = await response.text()
       const blob = new Blob([csvText], { type: "text/csv" })
       const file = new File([blob], "sample-data.csv", { type: "text/csv" })
+      setSelectedFile(file)
+      setImportedFileNames(["sample-data.csv"])
       await parseCSV(file)
     } catch (error) {
       console.error("Error loading sample data:", error)
@@ -1218,13 +1282,23 @@ export default function AutomotiveAnalyzer() {
   }, [parseCSV])
 
   const handleDrop = useCallback(
-    (event: React.DragEvent<HTMLDivElement>) => {
+    async (event: React.DragEvent<HTMLDivElement>) => {
       event.preventDefault()
       setIsDragOver(false)
-      const file = event.dataTransfer.files[0]
-      if (file && file.type === "text/csv") {
-        setSelectedFile(file)
-        parseCSV(file)
+      const csvFiles = Array.from(event.dataTransfer.files).filter((f) =>
+        f.name.toLowerCase().endsWith(".csv"),
+      )
+      if (csvFiles.length === 0) return
+      if (csvFiles.length === 1) {
+        setSelectedFile(csvFiles[0])
+        setImportedFileNames([csvFiles[0].name])
+        parseCSV(csvFiles[0])
+      } else {
+        const ordered = determineFileOrder(csvFiles)
+        setImportedFileNames(ordered.map((f) => f.name))
+        const merged = await mergeCSVFiles(ordered)
+        setSelectedFile(merged)
+        parseCSV(merged)
       }
     },
     [parseCSV],
@@ -1241,11 +1315,21 @@ export default function AutomotiveAnalyzer() {
   }, [])
 
   const handleFileUpload = useCallback(
-    (event: React.ChangeEvent<HTMLInputElement>) => {
-      const file = event.target.files?.[0]
-      if (file && file.type === "text/csv") {
-        setSelectedFile(file)
-        parseCSV(file)
+    async (event: React.ChangeEvent<HTMLInputElement>) => {
+      const csvFiles = Array.from(event.target.files || []).filter((f) =>
+        f.name.toLowerCase().endsWith(".csv"),
+      )
+      if (csvFiles.length === 0) return
+      if (csvFiles.length === 1) {
+        setSelectedFile(csvFiles[0])
+        setImportedFileNames([csvFiles[0].name])
+        parseCSV(csvFiles[0])
+      } else {
+        const ordered = determineFileOrder(csvFiles)
+        setImportedFileNames(ordered.map((f) => f.name))
+        const merged = await mergeCSVFiles(ordered)
+        setSelectedFile(merged)
+        parseCSV(merged)
       }
     },
     [parseCSV],
@@ -1328,20 +1412,23 @@ export default function AutomotiveAnalyzer() {
         avgRPM: 0,
       }
 
+    // When ignoring idle, exclude data points where speed is 0 from statistics
+    const statsData = ignoreIdle ? data.filter((d) => (d.speed || 0) > 0) : data
+
     // Filter out invalid values (0, null, undefined, NaN) for max calculations
-    const validRPMs = data.map((d) => d.rpm || 0).filter((v) => v > 0)
-    const validBoosts = data.map((d) => d.boost || 0).filter((v) => !isNaN(v))
-    const validPowers = data.map((d) => d.enginePower || 0).filter((v) => v > 0)
-    const validTorques = data.map((d) => d.engineTorque || 0).filter((v) => v > 0)
-    const validCoolants = data.map((d) => d.coolantTemp || 0).filter((v) => v > 0)
-    const validIntakes = data.map((d) => d.intakeTemp || 0).filter((v) => v > 0)
-    const validSpeeds = data.map((d) => d.speed || d.gpsSpeed || 0).filter((v) => v > 0)
+    const validRPMs = statsData.map((d) => d.rpm || 0).filter((v) => v > 0)
+    const validBoosts = statsData.map((d) => d.boost || 0).filter((v) => !isNaN(v))
+    const validPowers = statsData.map((d) => d.enginePower || 0).filter((v) => v > 0)
+    const validTorques = statsData.map((d) => d.engineTorque || 0).filter((v) => v > 0)
+    const validCoolants = statsData.map((d) => d.coolantTemp || 0).filter((v) => v > 0)
+    const validIntakes = statsData.map((d) => d.intakeTemp || 0).filter((v) => v > 0)
+    const validSpeeds = statsData.map((d) => d.speed || d.gpsSpeed || 0).filter((v) => v > 0)
 
     // For max speed, try multiple sources in order of preference
     let maxSpeed = 0
 
     // First, try to find a dedicated "Max Speed" field
-    const maxSpeedFromField = data.map((d) => d.maxSpeed || 0).filter((v) => v > 0)
+    const maxSpeedFromField = statsData.map((d) => d.maxSpeed || 0).filter((v) => v > 0)
 
     if (maxSpeedFromField.length > 0) {
       maxSpeed = Math.max(...maxSpeedFromField)
@@ -1363,7 +1450,7 @@ export default function AutomotiveAnalyzer() {
       avgSpeed: validSpeeds.length > 0 ? validSpeeds.reduce((sum, v) => sum + v, 0) / validSpeeds.length : 0,
       avgRPM: validRPMs.length > 0 ? validRPMs.reduce((sum, v) => sum + v, 0) / validRPMs.length : 0,
     }
-  }, [data])
+  }, [data, ignoreIdle])
 
   const autoDetection = useMemo(() => {
     if (data.length > 100) {
@@ -1414,7 +1501,7 @@ export default function AutomotiveAnalyzer() {
         <div className="flex flex-wrap items-center gap-4 w-full md:w-auto">
           <h1 className="text-2xl font-bold">OBD Data Analyzer</h1>
           <div className="flex gap-2">
-            <input ref={fileInputRef} type="file" accept=".csv" onChange={handleFileUpload} className="hidden" />
+            <input ref={fileInputRef} type="file" accept=".csv" multiple onChange={handleFileUpload} className="hidden" />
             <Button
               onClick={() => fileInputRef.current?.click()}
               variant="outline"
@@ -1431,9 +1518,19 @@ export default function AutomotiveAnalyzer() {
             </Button>
           </div>
           {selectedFile && (
-            <span className="text-sm text-gray-400 block w-full md:w-auto mt-2 md:mt-0">
-              {selectedFile.name} ({data.length} records) - {speedUnit}
-            </span>
+            <div className="text-sm text-gray-400 w-full md:w-auto mt-2 md:mt-0">
+              <span>
+                {importedFileNames.length > 1
+                  ? `${importedFileNames.length} files merged`
+                  : selectedFile.name}{" "}
+                ({data.length} records) - {speedUnit}
+              </span>
+              {importedFileNames.length > 1 && (
+                <div className="text-xs text-gray-500 mt-0.5">
+                  {importedFileNames.join(" → ")}
+                </div>
+              )}
+            </div>
           )}
         </div>
         <div className="flex items-center gap-2 mt-2 md:mt-0 w-full md:w-auto justify-end">
@@ -1572,6 +1669,14 @@ export default function AutomotiveAnalyzer() {
                   className="w-full"
                 />
               </div>
+            </div>
+            <div className="flex items-center gap-2 mt-3 pt-3 border-t border-gray-700">
+              <Checkbox
+                checked={ignoreIdle}
+                onCheckedChange={(checked) => setIgnoreIdle(checked === true)}
+              />
+              <span className="text-sm font-medium">Ignore Idle</span>
+              <span className="text-xs text-gray-400">(Excludes speed = 0 from statistics and averages)</span>
             </div>
           </Card>
 
@@ -2493,13 +2598,13 @@ export default function AutomotiveAnalyzer() {
         >
           <Upload className={`w-12 h-12 mx-auto mb-4 ${isDragOver ? "text-blue-400" : "text-gray-400"}`} />
           <h3 className="text-lg font-semibold mb-2">
-            {isDragOver ? "Drop CSV file here" : "Drag and drop CSV file here"}
+            {isDragOver ? "Drop CSV file(s) here" : "Drag and drop CSV file(s) here"}
           </h3>
-          <p className="text-gray-400 mb-4">Or click below to select a file</p>
+          <p className="text-gray-400 mb-4">Select one or multiple CSV files — multiple files will be merged automatically in order</p>
           <div className="flex gap-4 justify-center">
             <Button onClick={() => fileInputRef.current?.click()} className="bg-blue-600 hover:bg-blue-700">
               <Upload className="w-4 h-4 mr-2" />
-              Choose CSV File
+              Choose CSV File(s)
             </Button>
             <Button
               onClick={loadSampleData}
