@@ -40,6 +40,7 @@ import {
   BarChart,
   Bar,
   ComposedChart,
+  ReferenceArea,
 } from "recharts"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import {
@@ -52,6 +53,17 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import Link from "next/link"
+import { ErrorBoundary } from "@/components/error-boundary"
+
+function safeMax(arr: number[]): number {
+  return arr.reduce((a, b) => (b > a ? b : a), -Infinity)
+}
+function safeMin(arr: number[]): number {
+  return arr.reduce((a, b) => (b < a ? b : a), Infinity)
+}
+
+const tooltipFormatter = (value: number | string) =>
+  typeof value === "number" ? Number(value.toFixed(2)) : value
 
 interface DataPoint {
   time: number
@@ -172,10 +184,10 @@ function GPSTrackMap({ data, currentTime }: { data: DataPoint[]; currentTime: nu
 
     const lats = gpsData.map((d) => d.latitude!)
     const lngs = gpsData.map((d) => d.longitude!)
-    const minLat = Math.min(...lats)
-    const maxLat = Math.max(...lats)
-    const minLng = Math.min(...lngs)
-    const maxLng = Math.max(...lngs)
+    const minLat = safeMin(lats)
+    const maxLat = safeMax(lats)
+    const minLng = safeMin(lngs)
+    const maxLng = safeMax(lngs)
 
     const padding = 40
     const latRange = maxLat - minLat || 0.001
@@ -359,21 +371,6 @@ function GPSTrackMap({ data, currentTime }: { data: DataPoint[]; currentTime: nu
   )
 }
 
-// Calculate speed for each gear using the formula:
-// Speed (km/h) = (RPM × Tyre Circumference × 60) ÷ (Gear Ratio × Final Drive × 1000000)
-const GEAR_RATIOS = {
-  1: 3.538,
-  2: 1.92,
-  3: 1.323,
-  4: 1.026,
-  5: 0.822,
-  6: 0.681,
-}
-const FINAL_DRIVE = 4.35
-const TYRE_DIAMETER_MM = 647
-const TYRE_CIRCUMFERENCE = (Math.PI * TYRE_DIAMETER_MM) / 1000 // Convert to meters
-const SHIFT_RPM = 6900
-
 function calculateGear(speed: number, rpm: number, config: any): number {
   if (!speed || !rpm || speed < 1 || rpm < 500) return 1
 
@@ -474,8 +471,8 @@ function detectGearRatios(data: DataPoint[]): any {
     gearStats[Number(gear)] = {
       count: points.length,
       avgRatio,
-      minSpeed: Math.min(...speeds),
-      maxSpeed: Math.max(...speeds),
+      minSpeed: safeMin(speeds),
+      maxSpeed: safeMax(speeds),
     }
   })
 
@@ -588,7 +585,7 @@ function detectSpeedUnit(headers: string[], data: any[]): "km/h" | "mph" {
   const speedValues = data.map((d) => d.speed || d.vehicleSpeed || d.gpsSpeed).filter((v) => v && v > 0)
 
   if (speedValues.length > 0) {
-    const maxSpeed = Math.max(...speedValues)
+    const maxSpeed = safeMax(speedValues)
     const avgSpeed = speedValues.reduce((sum, v) => sum + v, 0) / speedValues.length
 
     // If max speed is over 200 or average is over 80, likely km/h
@@ -761,11 +758,24 @@ export default function AutomotiveAnalyzer() {
   const [isDragOver, setIsDragOver] = useState(false)
   const [speedUnit, setSpeedUnit] = useState<"km/h" | "mph">("km/h")
   const [showMissingPIDsDialog, setShowMissingPIDsDialog] = useState(false)
+  const [toastMessage, setToastMessage] = useState<string | null>(null)
+  const toastTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const showToast = useCallback((msg: string) => {
+    setToastMessage(msg)
+    if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current)
+    toastTimeoutRef.current = setTimeout(() => setToastMessage(null), 3000)
+  }, [])
   const [missingPIDs, setMissingPIDs] = useState<{ missing: typeof CRUCIAL_PIDS; hasCriticalMissing: boolean }>({
     missing: [],
     hasCriticalMissing: false,
   })
-  const [transmissionConfig, setTransmissionConfig] = useState({
+  const [transmissionConfig, setTransmissionConfig] = useState<{
+    gearRatios: Record<number, number>
+    finalDrive: number
+    tyreDiameterMm: number
+    shiftRpm: number
+    numberOfGears: number
+  }>({
     gearRatios: {
       1: 3.538,
       2: 1.92,
@@ -779,7 +789,7 @@ export default function AutomotiveAnalyzer() {
     shiftRpm: 6900,
     numberOfGears: 6,
   })
-  const [transmissionPresets] = useState([
+  const [transmissionPresets] = useState<{ name: string; config: { gearRatios: Record<number, number>; finalDrive: number; tyreDiameterMm: number; shiftRpm: number; numberOfGears: number } }[]>([
     {
       name: "Peugeot 308 GTi (T9 EA71)",
       config: {
@@ -975,7 +985,7 @@ export default function AutomotiveAnalyzer() {
             "Transmission temperature": "Trans Temp",
             "Exhaust gas temperature": "Exhaust Temp",
           }
-          const nameWithoutUnits = cleanName.replace(/\s*$$[^)]*$$\s*$/, "").trim()
+          const nameWithoutUnits = cleanName.replace(/\s*\([^)]*\)\s*$/, "").trim()
           for (const [full, short] of Object.entries(abbreviations)) {
             if (nameWithoutUnits === full || cleanName.includes(full)) return short
           }
@@ -1211,9 +1221,6 @@ export default function AutomotiveAnalyzer() {
             dataPoint.speed = dataPoint.gpsSpeed
           }
 
-          if (!dataPoint.brake && dataPoint.throttle)
-            dataPoint.brake = Math.max(0, (100 - dataPoint.throttle) * Math.random() * 0.3)
-
           if (!dataPoint.gear && dataPoint.speed && dataPoint.rpm) {
             dataPoint.gear = calculateGear(dataPoint.speed, dataPoint.rpm, transmissionConfig)
           } else if (!dataPoint.gear && dataPoint.speed) {
@@ -1384,6 +1391,26 @@ export default function AutomotiveAnalyzer() {
     return processed
   }, [filteredData, metrics])
 
+  // Compute idle zones (consecutive ranges where speed === 0) for chart overlay
+  const idleZones = useMemo(() => {
+    if (!ignoreIdle || finalChartData.length === 0) return []
+    const zones: { x1: number; x2: number }[] = []
+    let zoneStart: number | null = null
+    for (let i = 0; i < finalChartData.length; i++) {
+      const isIdle = (finalChartData[i].speed || 0) === 0
+      if (isIdle && zoneStart === null) {
+        zoneStart = finalChartData[i].time
+      } else if (!isIdle && zoneStart !== null) {
+        zones.push({ x1: zoneStart, x2: finalChartData[i - 1].time })
+        zoneStart = null
+      }
+    }
+    if (zoneStart !== null) {
+      zones.push({ x1: zoneStart, x2: finalChartData[finalChartData.length - 1].time })
+    }
+    return zones
+  }, [finalChartData, ignoreIdle])
+
   const enabledMetrics = metrics.filter((m) => m.enabled)
   const currentDataPoint = data[currentTime] || null
 
@@ -1431,22 +1458,22 @@ export default function AutomotiveAnalyzer() {
     const maxSpeedFromField = statsData.map((d) => d.maxSpeed || 0).filter((v) => v > 0)
 
     if (maxSpeedFromField.length > 0) {
-      maxSpeed = Math.max(...maxSpeedFromField)
+      maxSpeed = safeMax(maxSpeedFromField)
     } else {
       // Fallback to calculating from speed data
       if (validSpeeds.length > 0) {
-        maxSpeed = Math.max(...validSpeeds)
+        maxSpeed = safeMax(validSpeeds)
       }
     }
 
     return {
-      maxRPM: validRPMs.length > 0 ? Math.max(...validRPMs) : 0,
+      maxRPM: validRPMs.length > 0 ? safeMax(validRPMs) : 0,
       maxSpeed: maxSpeed,
-      maxBoost: validBoosts.length > 0 ? Math.max(...validBoosts) : 0,
+      maxBoost: validBoosts.length > 0 ? safeMax(validBoosts) : 0,
       avgCoolant: validCoolants.length > 0 ? validCoolants.reduce((sum, v) => sum + v, 0) / validCoolants.length : 0,
       avgIntakeTemp: validIntakes.length > 0 ? validIntakes.reduce((sum, v) => sum + v, 0) / validIntakes.length : 0,
-      maxPower: validPowers.length > 0 ? Math.max(...validPowers) : 0,
-      maxTorque: validTorques.length > 0 ? Math.max(...validTorques) : 0,
+      maxPower: validPowers.length > 0 ? safeMax(validPowers) : 0,
+      maxTorque: validTorques.length > 0 ? safeMax(validTorques) : 0,
       avgSpeed: validSpeeds.length > 0 ? validSpeeds.reduce((sum, v) => sum + v, 0) / validSpeeds.length : 0,
       avgRPM: validRPMs.length > 0 ? validRPMs.reduce((sum, v) => sum + v, 0) / validRPMs.length : 0,
     }
@@ -1650,7 +1677,7 @@ export default function AutomotiveAnalyzer() {
                 </label>
                 <Slider
                   value={[currentTime]}
-                  onValueChange={([value]) => setCurrentTime(value)}
+                  onValueChange={([value]: number[]) => setCurrentTime(value)}
                   max={data.length - 1}
                   step={1}
                   className="w-full"
@@ -1673,7 +1700,7 @@ export default function AutomotiveAnalyzer() {
             <div className="flex items-center gap-2 mt-3 pt-3 border-t border-gray-700">
               <Checkbox
                 checked={ignoreIdle}
-                onCheckedChange={(checked) => setIgnoreIdle(checked === true)}
+                onCheckedChange={(checked: boolean) => setIgnoreIdle(checked === true)}
               />
               <span className="text-sm font-medium">Ignore Idle</span>
               <span className="text-xs text-gray-400">(Excludes speed = 0 from statistics and averages)</span>
@@ -1681,16 +1708,16 @@ export default function AutomotiveAnalyzer() {
           </Card>
 
           <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-            <TabsList className="grid w-full grid-cols-2 md:grid-cols-5 bg-gray-800">
-              <TabsTrigger value="overview">Overview</TabsTrigger>
-              <TabsTrigger value="performance">Performance</TabsTrigger>
-              <TabsTrigger value="engine" className="hidden md:block">
+            <TabsList className="flex w-full overflow-x-auto bg-gray-800">
+              <TabsTrigger value="overview" className="flex-1 min-w-[80px]">Overview</TabsTrigger>
+              <TabsTrigger value="performance" className="flex-1 min-w-[80px]">Performance</TabsTrigger>
+              <TabsTrigger value="engine" className="flex-1 min-w-[80px]">
                 Engine
               </TabsTrigger>
-              <TabsTrigger value="analysis" className="hidden md:block">
+              <TabsTrigger value="analysis" className="flex-1 min-w-[80px]">
                 PID Analysis
               </TabsTrigger>
-              <TabsTrigger value="gps" className="hidden md:block">
+              <TabsTrigger value="gps" className="flex-1 min-w-[80px]">
                 GPS Track
               </TabsTrigger>
             </TabsList>
@@ -1865,6 +1892,7 @@ export default function AutomotiveAnalyzer() {
                             border: "1px solid #374151",
                             borderRadius: "6px",
                           }}
+                          formatter={tooltipFormatter}
                         />
                         {enabledMetrics.map((metric) => (
                           <Line
@@ -1876,6 +1904,9 @@ export default function AutomotiveAnalyzer() {
                             dot={false}
                             name={`${metric.label} (${metric.unit})`}
                           />
+                        ))}
+                        {idleZones.map((zone, i) => (
+                          <ReferenceArea key={`idle-${i}`} x1={zone.x1} x2={zone.x2} fill="#ef4444" fillOpacity={0.08} stroke="#ef4444" strokeOpacity={0.2} strokeDasharray="4 4" />
                         ))}
                       </ComposedChart>
                     </ResponsiveContainer>
@@ -1931,34 +1962,34 @@ export default function AutomotiveAnalyzer() {
                       <div className="flex justify-between">
                         <span>Trip Duration:</span>
                         <span className="text-gray-300">
-                          {data.length > 0 && data[data.length - 1].tripDuration
-                            ? data[data.length - 1].tripDuration >= 60
-                              ? `${Math.floor(data[data.length - 1].tripDuration / 60)}h ${Math.floor(data[data.length - 1].tripDuration % 60)}min`
-                              : `${Math.floor(data[data.length - 1].tripDuration)}min`
+                          {data.length > 0 && data[data.length - 1]?.tripDuration
+                            ? (data[data.length - 1].tripDuration ?? 0) >= 60
+                              ? `${Math.floor((data[data.length - 1].tripDuration ?? 0) / 60)}h ${Math.floor((data[data.length - 1].tripDuration ?? 0) % 60)}min`
+                              : `${Math.floor(data[data.length - 1].tripDuration ?? 0)}min`
                             : "N/A"}
                         </span>
                       </div>
                       <div className="flex justify-between">
                         <span>Trip Distance:</span>
                         <span className="text-gray-300">
-                          {data.length > 0 && data[data.length - 1].tripDistance
-                            ? `${formatValue(data[data.length - 1].tripDistance)} km`
+                          {data.length > 0 && data[data.length - 1]?.tripDistance
+                            ? `${formatValue(data[data.length - 1].tripDistance ?? 0)} km`
                             : "N/A"}
                         </span>
                       </div>
                       <div className="flex justify-between">
                         <span>Trip Fuel Used:</span>
                         <span className="text-gray-300">
-                          {data.length > 0 && data[data.length - 1].tripFuel
-                            ? `${formatValue(data[data.length - 1].tripFuel)} L`
+                          {data.length > 0 && data[data.length - 1]?.tripFuel
+                            ? `${formatValue(data[data.length - 1].tripFuel ?? 0)} L`
                             : "N/A"}
                         </span>
                       </div>
                       <div className="flex justify-between">
                         <span>Trip Fuel Economy:</span>
                         <span className="text-gray-300">
-                          {data.length > 0 && data[data.length - 1].tripFuelEconomy
-                            ? `${formatValue(data[data.length - 1].tripFuelEconomy)} L/100km`
+                          {data.length > 0 && data[data.length - 1]?.tripFuelEconomy
+                            ? `${formatValue(data[data.length - 1].tripFuelEconomy ?? 0)} L/100km`
                             : "N/A"}
                         </span>
                       </div>
@@ -1969,6 +2000,7 @@ export default function AutomotiveAnalyzer() {
             </TabsContent>
 
             <TabsContent value="performance" className="space-y-0">
+              <ErrorBoundary>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4" style={{ height: `${STATIC_HEIGHT}px` }}>
                 <Card className="bg-gray-800 border-gray-700 p-4 flex flex-col">
                   <h3 className="font-semibold mb-4 flex-shrink-0">RPM vs Speed Analysis</h3>
@@ -1985,6 +2017,7 @@ export default function AutomotiveAnalyzer() {
                             border: "1px solid #374151",
                             borderRadius: "6px",
                           }}
+                          formatter={tooltipFormatter}
                         />
                         <Line yAxisId="rpm" dataKey="rpm" stroke="#ef4444" strokeWidth={2} dot={false} name="RPM" />
                         <Line
@@ -1995,6 +2028,9 @@ export default function AutomotiveAnalyzer() {
                           dot={false}
                           name={`Speed (${speedUnit})`}
                         />
+                        {idleZones.map((zone, i) => (
+                          <ReferenceArea key={`idle-${i}`} x1={zone.x1} x2={zone.x2} yAxisId="rpm" fill="#ef4444" fillOpacity={0.08} stroke="#ef4444" strokeOpacity={0.2} strokeDasharray="4 4" />
+                        ))}
                       </ComposedChart>
                     </ResponsiveContainer>
                   </div>
@@ -2014,6 +2050,7 @@ export default function AutomotiveAnalyzer() {
                             border: "1px solid #374151",
                             borderRadius: "6px",
                           }}
+                          formatter={tooltipFormatter}
                         />
                         <Line
                           yAxisId="throttle"
@@ -2031,6 +2068,9 @@ export default function AutomotiveAnalyzer() {
                           dot={false}
                           name={`Speed (${speedUnit})`}
                         />
+                        {idleZones.map((zone, i) => (
+                          <ReferenceArea key={`idle-${i}`} x1={zone.x1} x2={zone.x2} yAxisId="throttle" fill="#ef4444" fillOpacity={0.08} stroke="#ef4444" strokeOpacity={0.2} strokeDasharray="4 4" />
+                        ))}
                       </ComposedChart>
                     </ResponsiveContainer>
                   </div>
@@ -2050,6 +2090,7 @@ export default function AutomotiveAnalyzer() {
                             border: "1px solid #374151",
                             borderRadius: "6px",
                           }}
+                          formatter={tooltipFormatter}
                         />
                         <Area
                           yAxisId="left"
@@ -2067,6 +2108,9 @@ export default function AutomotiveAnalyzer() {
                           dot={false}
                           name="Torque (N•m)"
                         />
+                        {idleZones.map((zone, i) => (
+                          <ReferenceArea key={`idle-${i}`} x1={zone.x1} x2={zone.x2} yAxisId="left" fill="#ef4444" fillOpacity={0.08} stroke="#ef4444" strokeOpacity={0.2} strokeDasharray="4 4" />
+                        ))}
                       </ComposedChart>
                     </ResponsiveContainer>
                   </div>
@@ -2094,7 +2138,7 @@ export default function AutomotiveAnalyzer() {
                             border: "1px solid #374151",
                             borderRadius: "6px",
                           }}
-                          formatter={(value, name) => {
+                          formatter={(value: any, name: any) => {
                             if (name === "gear") {
                               const gear = Math.min(6, Math.max(1, Number(value)))
                               return [`${gear}`, "Gear"]
@@ -2104,7 +2148,7 @@ export default function AutomotiveAnalyzer() {
                         />
                         <Line
                           yAxisId="gear"
-                          dataKey={(data) => Math.min(6, Math.max(1, data.gear || 1))}
+                          dataKey={(data: any) => Math.min(6, Math.max(1, data.gear || 1))}
                           stroke="#b666d2"
                           strokeWidth={2}
                           dot={false}
@@ -2121,6 +2165,9 @@ export default function AutomotiveAnalyzer() {
                           dot={false}
                           name="speed"
                         />
+                        {idleZones.map((zone, i) => (
+                          <ReferenceArea key={`idle-${i}`} x1={zone.x1} x2={zone.x2} yAxisId="gear" fill="#ef4444" fillOpacity={0.08} stroke="#ef4444" strokeOpacity={0.2} strokeDasharray="4 4" />
+                        ))}
                       </ComposedChart>
                     </ResponsiveContainer>
                   </div>
@@ -2153,7 +2200,7 @@ export default function AutomotiveAnalyzer() {
                             border: "1px solid #374151",
                             borderRadius: "6px",
                           }}
-                          formatter={(value, name, props) => [
+                          formatter={(value: any, name: any, props: any) => [
                             `${value} samples (${props.payload.percentage}%)`,
                             `Gear ${props.payload.gear}`,
                           ]}
@@ -2164,9 +2211,11 @@ export default function AutomotiveAnalyzer() {
                   </div>
                 </Card>
               </div>
+              </ErrorBoundary>
             </TabsContent>
 
             <TabsContent value="engine" className="space-y-0">
+              <ErrorBoundary>
               <div className="grid grid-cols-2 gap-4" style={{ height: `${STATIC_HEIGHT}px` }}>
                 <Card className="bg-gray-800 border-gray-700 p-4 flex flex-col">
                   <div className="flex items-center justify-between mb-4 flex-shrink-0">
@@ -2212,6 +2261,7 @@ export default function AutomotiveAnalyzer() {
                             border: "1px solid #374151",
                             borderRadius: "6px",
                           }}
+                          formatter={tooltipFormatter}
                         />
                         {selectedTempSensors.map((sensorKey) => {
                           const sensor = tempSensors.find((s) => s.key === sensorKey)
@@ -2228,6 +2278,9 @@ export default function AutomotiveAnalyzer() {
                             />
                           )
                         })}
+                        {idleZones.map((zone, i) => (
+                          <ReferenceArea key={`idle-${i}`} x1={zone.x1} x2={zone.x2} fill="#ef4444" fillOpacity={0.08} stroke="#ef4444" strokeOpacity={0.2} strokeDasharray="4 4" />
+                        ))}
                       </AreaChart>
                     </ResponsiveContainer>
                   </div>
@@ -2246,6 +2299,7 @@ export default function AutomotiveAnalyzer() {
                             border: "1px solid #374151",
                             borderRadius: "6px",
                           }}
+                          formatter={tooltipFormatter}
                         />
                         <Line
                           dataKey="ignitionAdvance"
@@ -2254,6 +2308,9 @@ export default function AutomotiveAnalyzer() {
                           dot={false}
                           name="Ignition Advance (°)"
                         />
+                        {idleZones.map((zone, i) => (
+                          <ReferenceArea key={`idle-${i}`} x1={zone.x1} x2={zone.x2} fill="#ef4444" fillOpacity={0.08} stroke="#ef4444" strokeOpacity={0.2} strokeDasharray="4 4" />
+                        ))}
                       </LineChart>
                     </ResponsiveContainer>
                   </div>
@@ -2265,15 +2322,19 @@ export default function AutomotiveAnalyzer() {
                       <LineChart data={finalChartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
                         <XAxis dataKey="time" stroke="#9CA3AF" fontSize={12} />
-                        <YAxis stroke="#9CA3AF" fontSize={12} domain={["dataMin - 0.2", "dataMax + 0.2"]} />
+                        <YAxis stroke="#9CA3AF" fontSize={12} domain={([dataMin, dataMax]: [number, number]) => [Math.min(dataMin - 0.2, -0.5), Math.max(dataMax + 0.2, 0.5)]} tickFormatter={(v: number) => Number(v).toFixed(2)} />
                         <Tooltip
                           contentStyle={{
                             backgroundColor: "#1F2937",
                             border: "1px solid #374151",
                             borderRadius: "6px",
                           }}
+                          formatter={tooltipFormatter}
                         />
                         <Line dataKey="boost" stroke="#06b6d4" strokeWidth={3} dot={false} name="Boost (bar)" />
+                        {idleZones.map((zone, i) => (
+                          <ReferenceArea key={`idle-${i}`} x1={zone.x1} x2={zone.x2} fill="#ef4444" fillOpacity={0.08} stroke="#ef4444" strokeOpacity={0.2} strokeDasharray="4 4" />
+                        ))}
                       </LineChart>
                     </ResponsiveContainer>
                   </div>
@@ -2292,6 +2353,7 @@ export default function AutomotiveAnalyzer() {
                             border: "1px solid #374151",
                             borderRadius: "6px",
                           }}
+                          formatter={tooltipFormatter}
                         />
                         <Area
                           dataKey="fuelRate"
@@ -2301,6 +2363,9 @@ export default function AutomotiveAnalyzer() {
                           name="Fuel Rate (l/hr)"
                           strokeWidth={2}
                         />
+                        {idleZones.map((zone, i) => (
+                          <ReferenceArea key={`idle-${i}`} x1={zone.x1} x2={zone.x2} fill="#ef4444" fillOpacity={0.08} stroke="#ef4444" strokeOpacity={0.2} strokeDasharray="4 4" />
+                        ))}
                       </AreaChart>
                     </ResponsiveContainer>
                   </div>
@@ -2319,6 +2384,7 @@ export default function AutomotiveAnalyzer() {
                             border: "1px solid #374151",
                             borderRadius: "6px",
                           }}
+                          formatter={tooltipFormatter}
                         />
                         <Area
                           dataKey="throttle"
@@ -2327,12 +2393,16 @@ export default function AutomotiveAnalyzer() {
                           stroke="#22c55e"
                           name="Throttle (%)"
                         />
-                        <Area dataKey="brake" fill="#ef4444" fillOpacity={0.3} stroke="#ef4444" name="Brake (%)" />
+                        <Area dataKey="brake" fill="#ef4444" fillOpacity={0.3} stroke="#ef4444" name="Brake (%)" type="monotone" />
+                        {idleZones.map((zone, i) => (
+                          <ReferenceArea key={`idle-${i}`} x1={zone.x1} x2={zone.x2} fill="#ef4444" fillOpacity={0.08} stroke="#ef4444" strokeOpacity={0.2} strokeDasharray="4 4" />
+                        ))}
                       </ComposedChart>
                     </ResponsiveContainer>
                   </div>
                 </Card>
               </div>
+              </ErrorBoundary>
             </TabsContent>
 
             <TabsContent value="analysis" className="space-y-0">
@@ -2517,7 +2587,7 @@ export default function AutomotiveAnalyzer() {
                                       data={finalChartData}
                                       margin={{ top: 5, right: 5, left: 5, bottom: 5 }}
                                       syncId="pidAnalysisSync"
-                                      onMouseMove={(chartState) => {
+                                      onMouseMove={(chartState: any) => {
                                         if (chartState && chartState.activeLabel) {
                                           setPidAnalysisHoveredTimeKey(Number(chartState.activeLabel))
                                         }
@@ -2536,6 +2606,7 @@ export default function AutomotiveAnalyzer() {
                                           borderRadius: "6px",
                                           fontSize: "12px",
                                         }}
+                                        formatter={tooltipFormatter}
                                       />
                                       <Line
                                         dataKey={metric.key as string}
@@ -2544,6 +2615,9 @@ export default function AutomotiveAnalyzer() {
                                         dot={false}
                                         name={`${metric.label} (${metric.unit})`}
                                       />
+                                      {idleZones.map((zone, i) => (
+                                        <ReferenceArea key={`idle-${i}`} x1={zone.x1} x2={zone.x2} fill="#ef4444" fillOpacity={0.08} stroke="#ef4444" strokeOpacity={0.2} strokeDasharray="4 4" />
+                                      ))}
                                     </LineChart>
                                   </ResponsiveContainer>
                                 </div>
@@ -2567,6 +2641,7 @@ export default function AutomotiveAnalyzer() {
             </TabsContent>
 
             <TabsContent value="gps" className="space-y-0">
+              <ErrorBoundary>
               <div style={{ height: `${STATIC_HEIGHT}px` }}>
                 <Card className="bg-gray-800 border-gray-700 p-4 h-full">
                   <div className="flex items-center justify-between mb-4">
@@ -2583,6 +2658,7 @@ export default function AutomotiveAnalyzer() {
                   </div>
                 </Card>
               </div>
+              </ErrorBoundary>
             </TabsContent>
           </Tabs>
         </>
@@ -2629,13 +2705,13 @@ export default function AutomotiveAnalyzer() {
               </div>
 
               <Tabs defaultValue="manual" className="space-y-4">
-                <TabsList className="grid w-full grid-cols-2 md:grid-cols-4 bg-gray-700">
-                  <TabsTrigger value="manual">Manual</TabsTrigger>
-                  <TabsTrigger value="presets">Presets</TabsTrigger>
-                  <TabsTrigger value="auto" className="hidden md:block">
+                <TabsList className="flex w-full overflow-x-auto bg-gray-700">
+                  <TabsTrigger value="manual" className="flex-1 min-w-[80px]">Manual</TabsTrigger>
+                  <TabsTrigger value="presets" className="flex-1 min-w-[80px]">Presets</TabsTrigger>
+                  <TabsTrigger value="auto" className="flex-1 min-w-[80px]">
                     Auto Detection
                   </TabsTrigger>
-                  <TabsTrigger value="import-export" className="hidden md:block">
+                  <TabsTrigger value="import-export" className="flex-1 min-w-[80px]">
                     Import/Export
                   </TabsTrigger>
                 </TabsList>
@@ -2867,7 +2943,10 @@ export default function AutomotiveAnalyzer() {
                           <h3 className="font-semibold text-white">{preset.name}</h3>
                           <Button
                             size="sm"
-                            onClick={() => setTransmissionConfig(preset.config)}
+                            onClick={() => {
+                              setTransmissionConfig(preset.config)
+                              showToast(`Applied "${preset.name}" configuration`)
+                            }}
                             className="bg-blue-600 hover:bg-blue-700"
                           >
                             Apply
@@ -2945,6 +3024,7 @@ export default function AutomotiveAnalyzer() {
                             shiftRpm: 7000,
                             numberOfGears: autoDetection.detectedGears,
                           })
+                          showToast("Applied auto-detected transmission settings")
                         }}
                         className="mt-4 bg-blue-600 hover:bg-blue-700"
                         size="sm"
@@ -2982,7 +3062,7 @@ export default function AutomotiveAnalyzer() {
                           if (file) {
                             importTransmissionConfig(file, (config) => {
                               setTransmissionConfig(config)
-                              alert("Transmission configuration imported successfully!")
+                              showToast("Transmission configuration imported successfully")
                             })
                           }
                         }}
@@ -3016,6 +3096,7 @@ export default function AutomotiveAnalyzer() {
                       shiftRpm: 6900,
                       numberOfGears: 6,
                     })
+                    showToast("Reset to default configuration")
                   }}
                   variant="outline"
                   className="border-gray-600 hover:bg-gray-700"
@@ -3035,6 +3116,7 @@ export default function AutomotiveAnalyzer() {
                       }))
                       setData(updatedData)
                     }
+                    showToast("Transmission configuration applied")
                   }}
                   className="bg-blue-600 hover:bg-blue-700"
                 >
@@ -3043,6 +3125,11 @@ export default function AutomotiveAnalyzer() {
               </div>
             </div>
           </Card>
+        </div>
+      )}
+      {toastMessage && (
+        <div className="fixed bottom-6 right-6 z-[100] bg-gray-800 border border-gray-600 text-white px-4 py-3 rounded-lg shadow-lg animate-in fade-in slide-in-from-bottom-4 duration-300">
+          {toastMessage}
         </div>
       )}
     </div>

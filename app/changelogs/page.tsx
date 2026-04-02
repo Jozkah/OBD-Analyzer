@@ -14,6 +14,24 @@ interface ChangelogEntry {
 
 const changelogs: ChangelogEntry[] = [
   {
+    version: "1.6.0",
+    date: "2026-04-02",
+    title: "Major Cleanup, Bug Fixes & Quality of Life",
+    type: "improvement",
+    description: [
+      "Added idle zone overlays on all 11 charts when 'Ignore Idle' is checked",
+      "Added toast notifications for transmission config changes",
+      "Added error boundaries to prevent chart crashes from breaking the whole page",
+      "All tabs now visible on mobile via horizontal scroll",
+      "Fixed boost Y-axis showing raw floats like '1.6199999999999999'",
+      "Fixed tooltip values showing excessive decimals across all charts",
+      "Fixed regex bug in column name shortening",
+      "Fixed crash risk on large datasets from Math.max/min spread",
+      "Removed fake brake data, dead components, unused constants",
+      "Added proper TypeScript types throughout",
+    ],
+  },
+  {
     version: "1.5.1",
     date: "2026-02-23",
     title: "CSV Format Compatibility & Next.js Upgrade",
