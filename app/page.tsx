@@ -65,6 +65,38 @@ function safeMin(arr: number[]): number {
 const tooltipFormatter = (value: number | string | undefined): string | number =>
   typeof value === "number" ? Number(value.toFixed(2)) : value ?? ""
 
+// Parse a single CSV line, respecting double-quoted fields (which may contain
+// commas) and stripping any trailing carriage return from CRLF-encoded files.
+function parseCsvLine(line: string): string[] {
+  const result: string[] = []
+  let current = ""
+  let inQuotes = false
+  for (let i = 0; i < line.length; i++) {
+    const char = line[i]
+    if (inQuotes) {
+      if (char === '"') {
+        if (line[i + 1] === '"') {
+          current += '"'
+          i++
+        } else {
+          inQuotes = false
+        }
+      } else {
+        current += char
+      }
+    } else if (char === '"') {
+      inQuotes = true
+    } else if (char === ",") {
+      result.push(current)
+      current = ""
+    } else if (char !== "\r") {
+      current += char
+    }
+  }
+  result.push(current)
+  return result
+}
+
 interface DataPoint {
   time: number
   timestamp: string
@@ -350,7 +382,15 @@ function GPSTrackMap({ data, currentTime }: { data: DataPoint[]; currentTime: nu
   )
 }
 
-function calculateGear(speed: number, rpm: number, config: any): number {
+interface TransmissionConfig {
+  gearRatios: Record<number, number>
+  finalDrive: number
+  tyreDiameterMm: number
+  shiftRpm: number
+  numberOfGears: number
+}
+
+function calculateGear(speed: number, rpm: number, config: TransmissionConfig): number {
   if (!speed || !rpm || speed < 1 || rpm < 500) return 1
 
   const tyreCircumference = (Math.PI * config.tyreDiameterMm) / 1000 // Convert to meters
@@ -392,7 +432,7 @@ function calculateGear(speed: number, rpm: number, config: any): number {
 function getShiftIndicator(
   rpm: number,
   gear: number,
-  config: any,
+  config: TransmissionConfig,
 ): { shouldShift: "up" | "down" | "optimal" | null; reason: string } {
   if (!rpm || !gear) return { shouldShift: null, reason: "" }
 
@@ -480,7 +520,7 @@ function detectGearRatios(data: DataPoint[]): any {
   }
 }
 
-function exportTransmissionConfig(config: any): void {
+function exportTransmissionConfig(config: TransmissionConfig): void {
   const dataStr = JSON.stringify(config, null, 2)
   const dataBlob = new Blob([dataStr], { type: "application/json" })
   const url = URL.createObjectURL(dataBlob)
@@ -493,7 +533,7 @@ function exportTransmissionConfig(config: any): void {
   URL.revokeObjectURL(url)
 }
 
-function importTransmissionConfig(file: File, callback: (config: any) => void): void {
+function importTransmissionConfig(file: File, callback: (config: TransmissionConfig) => void): void {
   const reader = new FileReader()
   reader.onload = (e) => {
     try {
@@ -748,13 +788,7 @@ export default function AutomotiveAnalyzer() {
     missing: [],
     hasCriticalMissing: false,
   })
-  const [transmissionConfig, setTransmissionConfig] = useState<{
-    gearRatios: Record<number, number>
-    finalDrive: number
-    tyreDiameterMm: number
-    shiftRpm: number
-    numberOfGears: number
-  }>({
+  const [transmissionConfig, setTransmissionConfig] = useState<TransmissionConfig>({
     gearRatios: {
       1: 3.538,
       2: 1.92,
@@ -768,7 +802,7 @@ export default function AutomotiveAnalyzer() {
     shiftRpm: 6900,
     numberOfGears: 6,
   })
-  const [transmissionPresets] = useState<{ name: string; config: { gearRatios: Record<number, number>; finalDrive: number; tyreDiameterMm: number; shiftRpm: number; numberOfGears: number } }[]>([
+  const [transmissionPresets] = useState<{ name: string; config: TransmissionConfig }[]>([
     {
       name: "Peugeot 308 GTi (T9 EA71)",
       config: {
@@ -881,8 +915,8 @@ export default function AutomotiveAnalyzer() {
       setIsLoading(true)
       try {
         const text = await file.text()
-        const lines = text.split("\n").filter((line) => line.trim() && !line.trim().startsWith("#"))
-        const headers = lines[0].split(",").map((h) => h.trim())
+        const lines = text.split(/\r?\n/).filter((line) => line.trim() && !line.trim().startsWith("#"))
+        const headers = parseCsvLine(lines[0]).map((h) => h.trim())
 
         const shortenColumnName = (name: string): string => {
           const cleanName = name.replace(/[()]/g, "").replace(/\s+/g, " ").trim()
@@ -1083,7 +1117,7 @@ export default function AutomotiveAnalyzer() {
         // First pass: detect numeric columns and sample data for unit detection
         const sampleData: any[] = []
         for (let i = 1; i < Math.min(lines.length, 10); i++) {
-          const values = lines[i].split(",")
+          const values = parseCsvLine(lines[i])
           const samplePoint: any = {}
           headers.forEach((header, index) => {
             if (header.toLowerCase() === "time") return
@@ -1137,7 +1171,7 @@ export default function AutomotiveAnalyzer() {
 
         // Parse data with improved number parsing and unit conversion
         for (let i = 1; i < lines.length; i++) {
-          const values = lines[i].split(",")
+          const values = parseCsvLine(lines[i])
           if (values.length < headers.length) continue
           const dataPoint: DataPoint = { time: i - 1, timestamp: values[0] || `${i - 1}s` } as DataPoint
 
