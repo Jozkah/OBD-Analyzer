@@ -62,8 +62,8 @@ function safeMin(arr: number[]): number {
   return arr.reduce((a, b) => (b < a ? b : a), Infinity)
 }
 
-const tooltipFormatter = (value: number | string) =>
-  typeof value === "number" ? Number(value.toFixed(2)) : value
+const tooltipFormatter = (value: number | string | undefined): string | number =>
+  typeof value === "number" ? Number(value.toFixed(2)) : value ?? ""
 
 interface DataPoint {
   time: number
@@ -151,16 +151,6 @@ const CRUCIAL_PIDS = [
 function GPSTrackMap({ data, currentTime }: { data: DataPoint[]; currentTime: number }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [mapStyle, setMapStyle] = useState<"satellite" | "street" | "terrain">("satellite")
-  const [satelliteTexture, setSatelliteTexture] = useState<HTMLImageElement | null>(null)
-
-  // Load satellite texture
-  useEffect(() => {
-    const img = new Image()
-    img.crossOrigin = "anonymous"
-    img.src = "/images/satellite-texture.png"
-    img.onload = () => setSatelliteTexture(img)
-    img.onerror = () => console.error("Failed to load satellite texture. Ensure /images/satellite-texture.png exists.")
-  }, [])
 
   const gpsData = useMemo(
     () => data.filter((d) => d.latitude && d.longitude && d.latitude !== 0 && d.longitude !== 0),
@@ -196,22 +186,11 @@ function GPSTrackMap({ data, currentTime }: { data: DataPoint[]; currentTime: nu
     ctx.clearRect(0, 0, width, height)
 
     if (mapStyle === "satellite") {
-      if (satelliteTexture) {
-        const pattern = ctx.createPattern(satelliteTexture, "repeat")
-        if (pattern) {
-          ctx.fillStyle = pattern
-          ctx.fillRect(0, 0, width, height)
-        } else {
-          ctx.fillStyle = "#1a1a2e"
-          ctx.fillRect(0, 0, width, height)
-        }
-      } else {
-        const gradient = ctx.createLinearGradient(0, 0, 0, height)
-        gradient.addColorStop(0, "#1a1a2e")
-        gradient.addColorStop(1, "#16213e")
-        ctx.fillStyle = gradient
-        ctx.fillRect(0, 0, width, height)
-      }
+      const gradient = ctx.createLinearGradient(0, 0, 0, height)
+      gradient.addColorStop(0, "#1a1a2e")
+      gradient.addColorStop(1, "#16213e")
+      ctx.fillStyle = gradient
+      ctx.fillRect(0, 0, width, height)
     } else if (mapStyle === "street") {
       const gradient = ctx.createLinearGradient(0, 0, 0, height)
       gradient.addColorStop(0, "#f0f0f0")
@@ -310,7 +289,7 @@ function GPSTrackMap({ data, currentTime }: { data: DataPoint[]; currentTime: nu
     ctx.textBaseline = "alphabetic"
     ctx.fillText(`${minLat.toFixed(4)}, ${minLng.toFixed(4)}`, 5, height - 5)
     ctx.fillText(`${maxLat.toFixed(4)}, ${maxLng.toFixed(4)}`, 5, 15)
-  }, [gpsData, currentTime, mapStyle, data, satelliteTexture])
+  }, [gpsData, currentTime, mapStyle, data])
 
   if (gpsData.length === 0) {
     return (
@@ -1760,7 +1739,7 @@ export default function AutomotiveAnalyzer() {
                             </DropdownMenuItem>
                             <div className="px-2 py-1.5">
                               <div className="flex items-center space-x-2">
-                                <Checkbox checked={showEmptyPIDs} onCheckedChange={setShowEmptyPIDs} />
+                                <Checkbox checked={showEmptyPIDs} onCheckedChange={(checked) => setShowEmptyPIDs(checked === true)} />
                                 <span className="text-sm">Show Empty PIDs</span>
                               </div>
                             </div>
@@ -2322,7 +2301,7 @@ export default function AutomotiveAnalyzer() {
                       <LineChart data={finalChartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
                         <XAxis dataKey="time" stroke="#9CA3AF" fontSize={12} />
-                        <YAxis stroke="#9CA3AF" fontSize={12} domain={([dataMin, dataMax]: [number, number]) => [Math.min(dataMin - 0.2, -0.5), Math.max(dataMax + 0.2, 0.5)]} tickFormatter={(v: number) => Number(v).toFixed(2)} />
+                        <YAxis stroke="#9CA3AF" fontSize={12} domain={[(dataMin: number) => Math.min(dataMin - 0.2, -0.5), (dataMax: number) => Math.max(dataMax + 0.2, 0.5)]} tickFormatter={(v: number) => Number(v).toFixed(2)} />
                         <Tooltip
                           contentStyle={{
                             backgroundColor: "#1F2937",
@@ -2443,7 +2422,7 @@ export default function AutomotiveAnalyzer() {
                             </DropdownMenuItem>
                             <div className="px-2 py-1.5">
                               <div className="flex items-center space-x-2">
-                                <Checkbox checked={showEmptyPIDs} onCheckedChange={setShowEmptyPIDs} />
+                                <Checkbox checked={showEmptyPIDs} onCheckedChange={(checked) => setShowEmptyPIDs(checked === true)} />
                                 <span className="text-sm">Show Empty PIDs</span>
                               </div>
                             </div>

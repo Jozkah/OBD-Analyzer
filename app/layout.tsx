@@ -6,9 +6,8 @@ import "./globals.css"
 const inter = Inter({ subsets: ["latin"] })
 
 export const metadata: Metadata = {
-  title: "Automotive Data Analyzer",
-  description: "Professional automotive telemetry data analysis tool",
-    generator: 'v0.dev'
+  title: "OBD Analyzer",
+  description: "Client-side OBD-II automotive telemetry analyzer — charts and a GPS track map from a CSV log",
 }
 
 export default function RootLayout({
