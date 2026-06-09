@@ -68,6 +68,9 @@ const tooltipFormatter = (value: number | string | undefined): string | number =
 // Parse a single CSV line, respecting double-quoted fields (which may contain
 // commas) and stripping any trailing carriage return from CRLF-encoded files.
 function parseCsvLine(line: string): string[] {
+  // Defense-in-depth: never read .length off undefined/null (e.g. lines[0] on an
+  // empty file). Callers also guard upstream, but this keeps the function safe.
+  if (line == null) return []
   const result: string[] = []
   let current = ""
   let inQuotes = false
@@ -183,9 +186,19 @@ const CRUCIAL_PIDS = [
 function GPSTrackMap({ data, currentTime }: { data: DataPoint[]; currentTime: number }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [mapStyle, setMapStyle] = useState<"satellite" | "street" | "terrain">("satellite")
+  // Whether the speed column has usable variation. When it doesn't (all-zero/missing
+  // speed, or every sample identical), the speed-gradient coloring is meaningless, so
+  // we render a neutral track and hide the misleading gradient legend.
+  const [hasSpeedVariation, setHasSpeedVariation] = useState(true)
 
   const gpsData = useMemo(
-    () => data.filter((d) => d.latitude && d.longitude && d.latitude !== 0 && d.longitude !== 0),
+    // Only discard the true "no fix" sentinel pair (0,0); a finite point that sits
+    // exactly on the equator (lat 0) or prime meridian (lng 0) is a valid fix and
+    // must stay on the track. Using Number.isFinite also rejects undefined/NaN.
+    () =>
+      data.filter(
+        (d) => Number.isFinite(d.latitude) && Number.isFinite(d.longitude) && !(d.latitude === 0 && d.longitude === 0),
+      ),
     [data],
   )
 
@@ -197,9 +210,19 @@ function GPSTrackMap({ data, currentTime }: { data: DataPoint[]; currentTime: nu
     if (!ctx) return
 
     const rect = canvas.getBoundingClientRect()
-    canvas.width = rect.width * window.devicePixelRatio
-    canvas.height = rect.height * window.devicePixelRatio
-    ctx.scale(window.devicePixelRatio, window.devicePixelRatio)
+    // Only reallocate the canvas backing store when the target pixel size actually
+    // changes. Assigning canvas.width/height reallocates the backing store (an
+    // expensive op) and would otherwise run on every 100ms playback tick even though
+    // only the marker moves. setTransform (below) replaces — not compounds — the
+    // matrix, so it is safe to call on every draw whether or not we resized.
+    const dpr = window.devicePixelRatio
+    const targetW = Math.round(rect.width * dpr)
+    const targetH = Math.round(rect.height * dpr)
+    if (canvas.width !== targetW || canvas.height !== targetH) {
+      canvas.width = targetW
+      canvas.height = targetH
+    }
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
 
     const width = rect.width
     const height = rect.height
@@ -212,8 +235,16 @@ function GPSTrackMap({ data, currentTime }: { data: DataPoint[]; currentTime: nu
     const maxLng = safeMax(lngs)
 
     const padding = 40
-    const latRange = maxLat - minLat || 0.001
-    const lngRange = maxLng - minLng || 0.001
+    // Track which axes have an effectively-zero span (single fix, or a stationary
+    // log where every point shares the same coordinate). We keep the 0.001 fallback
+    // to avoid divide-by-zero, but flag the degenerate axes so toCanvas can center
+    // those points instead of collapsing them into the lower-left corner.
+    const rawLatRange = maxLat - minLat
+    const rawLngRange = maxLng - minLng
+    const latRange = rawLatRange || 0.001
+    const lngRange = rawLngRange || 0.001
+    const latDegenerate = rawLatRange === 0
+    const lngDegenerate = rawLngRange === 0
 
     ctx.clearRect(0, 0, width, height)
 
@@ -260,19 +291,37 @@ function GPSTrackMap({ data, currentTime }: { data: DataPoint[]; currentTime: nu
     ctx.setLineDash([])
 
     const toCanvas = (lat: number, lng: number) => ({
-      x: padding + ((lng - minLng) / lngRange) * (width - 2 * padding),
-      y: height - padding - ((lat - minLat) / latRange) * (height - 2 * padding),
+      // Center a degenerate axis (zero span) rather than pinning it to the padding edge.
+      x: lngDegenerate ? width / 2 : padding + ((lng - minLng) / lngRange) * (width - 2 * padding),
+      y: latDegenerate ? height / 2 : height - padding - ((lat - minLat) / latRange) * (height - 2 * padding),
     })
 
-    const maxSpeed = Math.max(1, ...gpsData.map((d) => d.speed || 0))
+    // Use safeMax/safeMin (reduce-based) instead of Math.max(...) spread: spreading
+    // tens of thousands of GPS points as individual args overflows the engine's
+    // argument/stack limit (RangeError) and aborts the whole draw on large trips.
+    const speeds = gpsData.map((d) => d.speed || 0)
+    const maxSpeed = safeMax(speeds)
+    const minSpeed = safeMin(speeds)
+    // Only color by speed when there is real variation; otherwise an all-zero/constant
+    // speed column would paint the entire track one color while the legend implies a
+    // meaningful slow->fast gradient. Normalizing by (max-min) also handles the
+    // all-equal-but-nonzero case.
+    const speedSpan = maxSpeed - minSpeed
+    const speedVaries = speedSpan > 0.001
+    if (speedVaries !== hasSpeedVariation) setHasSpeedVariation(speedVaries)
+    const neutralTrackColor = mapStyle === "street" ? "#3b82f6" : "#60a5fa"
     for (let i = 0; i < gpsData.length - 1; i++) {
       const point1 = gpsData[i]
       const point2 = gpsData[i + 1]
       const coords1 = toCanvas(point1.latitude!, point1.longitude!)
       const coords2 = toCanvas(point2.latitude!, point2.longitude!)
-      const speedRatio = (point1.speed || 0) / maxSpeed
-      const hue = (1 - speedRatio) * 240
-      ctx.strokeStyle = `hsl(${hue}, 80%, 60%)`
+      if (speedVaries) {
+        const speedRatio = ((point1.speed || 0) - minSpeed) / speedSpan
+        const hue = (1 - speedRatio) * 240
+        ctx.strokeStyle = `hsl(${hue}, 80%, 60%)`
+      } else {
+        ctx.strokeStyle = neutralTrackColor
+      }
       ctx.lineWidth = 4
       ctx.beginPath()
       ctx.moveTo(coords1.x, coords1.y)
@@ -280,10 +329,20 @@ function GPSTrackMap({ data, currentTime }: { data: DataPoint[]; currentTime: nu
       ctx.stroke()
     }
 
-    const currentPoint = data[currentTime]
-    if (currentPoint?.latitude && currentPoint?.longitude) {
-      const coords = toCanvas(currentPoint.latitude, currentPoint.longitude)
-      const pulseRadius = 8 + Math.sin(Date.now() * 0.01) * 3
+    // currentTime is an index into the FULL data array, but the track is built from
+    // the filtered gpsData. Indexing data[currentTime] directly makes the live marker
+    // vanish on every row that logs no GPS fix (lat/lng === 0). Instead map currentTime
+    // onto the next GPS fix at/after it (each gpsData point carries its original data
+    // index in .time), falling back to the last fix once playback passes the final
+    // sample — so the marker is always drawn at a valid, correctly-placed point.
+    const currentPoint = gpsData.find((p) => (p.time ?? 0) >= currentTime) ?? gpsData[gpsData.length - 1]
+    if (Number.isFinite(currentPoint?.latitude) && Number.isFinite(currentPoint?.longitude)) {
+      const coords = toCanvas(currentPoint.latitude!, currentPoint.longitude!)
+      // Fixed radius: the previous Date.now()-based "pulse" had no animation driver
+      // (rAF/interval) and no time tick in the effect deps, so it never actually
+      // animated — it just sampled the sine at an arbitrary phase on unrelated
+      // re-renders. A constant radius is the correct, jank-free behavior.
+      const pulseRadius = 10
       ctx.fillStyle = "#ef4444"
       ctx.beginPath()
       ctx.arc(coords.x, coords.y, pulseRadius, 0, 2 * Math.PI)
@@ -298,6 +357,10 @@ function GPSTrackMap({ data, currentTime }: { data: DataPoint[]; currentTime: nu
     if (gpsData.length > 0) {
       const startCoords = toCanvas(gpsData[0].latitude!, gpsData[0].longitude!)
       const endCoords = toCanvas(gpsData[gpsData.length - 1].latitude!, gpsData[gpsData.length - 1].longitude!)
+      // With a single fix (or start/end at the same spot) the markers map to the same
+      // pixel and "F" would be painted over "S". Detect that and draw a single combined
+      // "S/F" marker instead of two stacked, hidden markers.
+      const sameSpot = startCoords.x === endCoords.x && startCoords.y === endCoords.y
       ctx.fillStyle = "#22c55e"
       ctx.beginPath()
       ctx.arc(startCoords.x, startCoords.y, 8, 0, 2 * Math.PI)
@@ -306,13 +369,15 @@ function GPSTrackMap({ data, currentTime }: { data: DataPoint[]; currentTime: nu
       ctx.font = "bold 12px Arial"
       ctx.textAlign = "center"
       ctx.textBaseline = "middle"
-      ctx.fillText("S", startCoords.x, startCoords.y)
-      ctx.fillStyle = "#1f2937"
-      ctx.beginPath()
-      ctx.arc(endCoords.x, endCoords.y, 8, 0, 2 * Math.PI)
-      ctx.fill()
-      ctx.fillStyle = "#ffffff"
-      ctx.fillText("F", endCoords.x, endCoords.y)
+      ctx.fillText(sameSpot ? "S/F" : "S", startCoords.x, startCoords.y)
+      if (!sameSpot) {
+        ctx.fillStyle = "#1f2937"
+        ctx.beginPath()
+        ctx.arc(endCoords.x, endCoords.y, 8, 0, 2 * Math.PI)
+        ctx.fill()
+        ctx.fillStyle = "#ffffff"
+        ctx.fillText("F", endCoords.x, endCoords.y)
+      }
     }
 
     ctx.fillStyle = mapStyle === "street" ? "#333333" : "#ffffff"
@@ -366,11 +431,20 @@ function GPSTrackMap({ data, currentTime }: { data: DataPoint[]; currentTime: nu
           <div className="w-3 h-3 bg-red-500 rounded-full"></div>
           <span>Current</span>
         </div>
-        <div className="text-gray-400 mt-2">Speed colored track</div>
-        <div className="flex items-center space-x-1 mt-1">
-          <div className="w-4 h-2 bg-gradient-to-r from-blue-500 to-red-500 rounded"></div>
-          <span>Slow → Fast</span>
-        </div>
+        {/* Only show the speed-gradient legend when the track is actually colored by
+            speed. With no usable speed variation the track is a neutral single color,
+            so a "Slow → Fast" gradient legend would be misleading. */}
+        {hasSpeedVariation ? (
+          <>
+            <div className="text-gray-400 mt-2">Speed colored track</div>
+            <div className="flex items-center space-x-1 mt-1">
+              <div className="w-4 h-2 bg-gradient-to-r from-blue-500 to-red-500 rounded"></div>
+              <span>Slow → Fast</span>
+            </div>
+          </>
+        ) : (
+          <div className="text-gray-400 mt-2">GPS track</div>
+        )}
       </div>
       {data[currentTime] && (
         <div className="absolute bottom-2 left-2 bg-gray-800/90 rounded p-2 text-sm">
@@ -390,18 +464,33 @@ interface TransmissionConfig {
   numberOfGears: number
 }
 
-function calculateGear(speed: number, rpm: number, config: TransmissionConfig): number {
+function calculateGear(
+  speed: number,
+  rpm: number,
+  config: TransmissionConfig,
+  speedUnit: "km/h" | "mph" = "km/h",
+): number {
   if (!speed || !rpm || speed < 1 || rpm < 500) return 1
+
+  // The theoretical-speed formula and the fallback thresholds below are all
+  // expressed in km/h, but raw speed values are stored in their source unit
+  // (no conversion at parse time). Normalize mph data to km/h up front so both
+  // the diff comparison and the speed-range fallback use consistent units.
+  const speedKmh = speedUnit === "mph" ? speed * 1.60934 : speed
 
   const tyreCircumference = (Math.PI * config.tyreDiameterMm) / 1000 // Convert to meters
 
-  // Calculate theoretical speed for each gear
+  // Calculate theoretical speed (km/h) for each gear.
+  // wheelRpm = rpm / (ratio * finalDrive); distance/min = wheelRpm * circumference_m;
+  // *60 -> m/h, /1000 -> km/h. The previous formula multiplied by an extra *3600
+  // (only correct for a mm-based circumference), inflating every speed by 3.6x and
+  // pushing almost every real sample into the crude speed-range fallback.
   const gearSpeeds = Object.entries(config.gearRatios).map(([gear, ratio]) => {
-    const theoreticalSpeed = ((rpm * tyreCircumference * 60) / (Number(ratio) * config.finalDrive * 1000000)) * 3600
+    const theoreticalSpeed = ((rpm / (Number(ratio) * config.finalDrive)) * tyreCircumference * 60) / 1000
     return {
       gear: Number.parseInt(gear),
       speed: theoreticalSpeed,
-      diff: Math.abs(theoreticalSpeed - speed),
+      diff: Math.abs(theoreticalSpeed - speedKmh),
       ratio: Number(ratio),
     }
   })
@@ -413,20 +502,22 @@ function calculateGear(speed: number, rpm: number, config: TransmissionConfig): 
   const bestMatch = gearSpeeds[0]
 
   // Add some hysteresis to prevent gear hunting
-  const tolerance = speed * 0.12 // 12% tolerance
+  const tolerance = speedKmh * 0.12 // 12% tolerance
 
   // If we're within tolerance, use the best match
   if (bestMatch.diff <= tolerance) {
     return Math.max(1, Math.min(bestMatch.gear, config.numberOfGears))
   }
 
-  // Fallback to a simpler calculation based on speed ranges
-  if (speed < 15) return 1
-  else if (speed < 35) return 2
-  else if (speed < 55) return 3
-  else if (speed < 80) return 4
-  else if (speed < 110) return 5
-  else return Math.min(6, config.numberOfGears)
+  // Fallback to a simpler calculation based on km/h speed ranges.
+  // The top bucket maps to the configured top gear (not a hard-coded 6) so
+  // 7-speed transmissions can reach gear 7 in the fallback path too.
+  if (speedKmh < 15) return 1
+  else if (speedKmh < 35) return 2
+  else if (speedKmh < 55) return 3
+  else if (speedKmh < 80) return 4
+  else if (speedKmh < 110) return 5
+  else return config.numberOfGears
 }
 
 function getShiftIndicator(
@@ -510,13 +601,29 @@ function detectGearRatios(data: DataPoint[]): any {
     gearRatios[Number(gear)] = gearRatio
   })
 
+  // Detection can yield a non-contiguous set (e.g. only gears {3,4,6} on a highway log).
+  // Fill any missing intermediate gears so gearRatios spans 1..maxGear contiguously,
+  // which keeps numberOfGears (derived from maxGear, not the count) consistent with the
+  // keys present and prevents the gear-ratio inputs / charts / calculateGear clamp from
+  // dropping or mislabeling the real high-gear ratios.
+  const detectedKeys = Object.keys(gearRatios).map(Number)
+  const detectedCount = detectedKeys.length
+  const maxGear = detectedCount > 0 ? Math.max(...detectedKeys) : 0
+  for (let g = 1; g <= maxGear; g++) {
+    if (gearRatios[g] === undefined) gearRatios[g] = 1.0
+  }
+
   return {
-    detectedGears: Object.keys(gearRatios).length,
+    // Count of distinct gears actually detected — shown in the "Detected Gears" label.
+    detectedGears: detectedCount,
+    // Highest detected gear number — used to set numberOfGears so it matches the keys.
+    maxGear,
     gearRatios,
     gearStats,
     estimatedFinalDrive,
     estimatedTireDiameter,
-    confidence: Math.min(Object.keys(gearRatios).length / 6, 1) * 100,
+    // Confidence still reflects how many real gears were found, not the filled max.
+    confidence: Math.min(detectedCount / 6, 1) * 100,
   }
 }
 
@@ -565,27 +672,63 @@ function calculateTireDiameter(width: number, aspectRatio: number, rimSize: numb
 
 function parseTireSize(tireSize: string): { width: number; aspectRatio: number; rimSize: number } | null {
   // Match patterns like "235/35R19", "235 35 R19", "235-35-19", etc.
-  const match = tireSize.match(/(\d{3})\s*[/\-\s]\s*(\d{2})\s*[rR]?\s*(\d{2})/)
+  // Anchor the rim with \b so a typo like "235/35R199" is REJECTED rather than
+  // silently truncated to rim 19 (which would feed a wrong diameter into the
+  // transmission/speed calibration with no user feedback).
+  const match = tireSize.match(/(\d{2,3})\s*[/\-\s]\s*(\d{2,3})\s*[rR]?\s*(\d{2})\b/)
+  if (!match) return null
 
-  if (match) {
-    return {
-      width: Number.parseInt(match[1]),
-      aspectRatio: Number.parseInt(match[2]),
-      rimSize: Number.parseInt(match[3]),
-    }
-  }
+  const width = Number.parseInt(match[1])
+  const aspectRatio = Number.parseInt(match[2])
+  const rimSize = Number.parseInt(match[3])
 
-  return null
+  // Reject implausible values rather than feeding a wrong diameter into the calibration.
+  if (width < 125 || width > 355) return null
+  if (aspectRatio < 25 || aspectRatio > 85) return null
+  if (rimSize < 12 || rimSize > 24) return null
+
+  return { width, aspectRatio, rimSize }
 }
 
-// Helper function to normalize decimal separators and parse numbers
+// Helper function to normalize decimal separators and parse numbers.
+// Previously this did a single, non-global `value.replace(",", ".")` which only
+// swapped the FIRST comma. That corrupted thousands-grouped and European-format
+// numbers (e.g. "1,234.5" -> "1.234.5" -> 1.234, and "12.345" EU-thousands ->
+// 12.345 instead of 12345) — off by ~1000x with no error. This separator-aware
+// normalizer strips grouping separators based on which separator appears last,
+// so US ("1,234.5"), EU ("1.234,5") and plain ("12,5"/"12.5") all parse correctly.
 function parseNumericValue(value: string): number {
   if (!value || typeof value !== "string") return 0
 
-  // Replace comma decimal separator with period
-  const normalizedValue = value.replace(",", ".")
-  const parsed = Number.parseFloat(normalizedValue)
+  let s = value.trim()
+  const hasComma = s.includes(",")
+  const hasDot = s.includes(".")
 
+  if (hasComma && hasDot) {
+    // Both separators present: the right-most one is the decimal point, the other is grouping.
+    if (s.lastIndexOf(",") > s.lastIndexOf(".")) {
+      s = s.replace(/\./g, "").replace(",", ".") // EU: 1.234,5 -> 1234.5
+    } else {
+      s = s.replace(/,/g, "") // US: 1,234.5 -> 1234.5
+    }
+  } else if (hasComma) {
+    const parts = s.split(",")
+    // Multiple commas, or a single comma followed by exactly 3 digits => grouping.
+    if (parts.length > 2 || (parts.length === 2 && parts[1].length === 3)) {
+      s = s.replace(/,/g, "") // 1,234 -> 1234
+    } else {
+      s = s.replace(",", ".") // 12,5 -> 12.5
+    }
+  } else if (hasDot) {
+    const parts = s.split(".")
+    // Multiple dots, or a single grouping pattern (1-3 lead digits + exactly 3 trailing) => grouping.
+    if (parts.length > 2 || (parts.length === 2 && parts[1].length === 3 && parts[0].length <= 3)) {
+      s = s.replace(/\./g, "") // 12.345 -> 12345
+    }
+    // else leave as-is: ordinary decimal like 12.5
+  }
+
+  const parsed = Number.parseFloat(s)
   return isNaN(parsed) ? 0 : parsed
 }
 
@@ -600,8 +743,15 @@ function detectSpeedUnit(headers: string[], data: any[]): "km/h" | "mph" {
     if (lower.includes("kmh") || lower.includes("km/h") || lower.includes("kph")) return "km/h"
   }
 
-  // Analyze speed data ranges to guess unit
-  const speedValues = data.map((d) => d.speed || d.vehicleSpeed || d.gpsSpeed).filter((v) => v && v > 0)
+  // Analyze speed data ranges to guess unit.
+  // sampleData is keyed by RAW header strings (samplePoint[header]), not by the
+  // normalized speed/vehicleSpeed/gpsSpeed keys (which are only assigned later in
+  // the main parse loop). Reading those normalized keys here always produced an
+  // empty array, making this heuristic dead code. Gather values from the actual
+  // speed-named header columns present in the sample data instead.
+  const speedValues = speedHeaders
+    .flatMap((h) => data.map((d) => d[h]))
+    .filter((v): v is number => typeof v === "number" && v > 0)
 
   if (speedValues.length > 0) {
     const maxSpeed = safeMax(speedValues)
@@ -652,22 +802,40 @@ async function mergeCSVFiles(orderedFiles: File[]): Promise<File> {
 
   const texts = await Promise.all(orderedFiles.map((f) => f.text()))
 
+  // Locate the header line (first non-comment, non-blank line) and where data
+  // begins. Use /\r?\n/ so CRLF files split cleanly. dataStart defaults to
+  // lines.length so a file with no real header row contributes nothing (this
+  // prevents comment-only files from leaking their comment lines in as data).
+  const extractHeader = (text: string): { header: string; dataStart: number; lines: string[] } => {
+    const lines = text.split(/\r?\n/)
+    for (let j = 0; j < lines.length; j++) {
+      const trimmed = lines[j].trim()
+      if (!trimmed || trimmed.startsWith("#")) continue
+      return { header: trimmed, dataStart: j + 1, lines }
+    }
+    return { header: "", dataStart: lines.length, lines }
+  }
+
+  const base = extractHeader(texts[0])
+
   // First file: keep everything (comments + header + data)
   let merged = texts[0].trimEnd()
 
-  // Subsequent files: skip comment lines and header row, keep only data
+  // Subsequent files: verify their header matches file[0]'s before appending.
+  // Blindly concatenating rows from a file whose columns are re-ordered (or a
+  // different shape) would map every channel to the wrong column with no warning,
+  // silently corrupting the data. Refuse the merge on any header mismatch.
   for (let i = 1; i < texts.length; i++) {
-    const lines = texts[i].split("\n")
-    let dataStartIndex = 0
-    for (let j = 0; j < lines.length; j++) {
-      const trimmed = lines[j].trim()
-      if (!trimmed) continue
-      if (trimmed.startsWith("#")) continue
-      // This is the header line — skip it, data starts after
-      dataStartIndex = j + 1
-      break
+    const cur = extractHeader(texts[i])
+    if (cur.header !== base.header) {
+      throw new Error(
+        `Cannot merge "${orderedFiles[i].name}": its CSV header differs from "${orderedFiles[0].name}". ` +
+          `Files must log the same PIDs in the same order to be merged.`,
+      )
     }
-    const dataLines = lines.slice(dataStartIndex).filter((l) => l.trim())
+    // Only append real data lines — strip any comment/blank lines so they are
+    // never appended as if they were data rows.
+    const dataLines = cur.lines.slice(cur.dataStart).filter((l) => l.trim() && !l.trim().startsWith("#"))
     if (dataLines.length > 0) {
       merged += "\n" + dataLines.join("\n")
     }
@@ -888,15 +1056,27 @@ export default function AutomotiveAnalyzer() {
     if (!isPlaying || data.length === 0) return
     const interval = setInterval(() => {
       setCurrentTime((prev) => {
-        if (prev >= data.length - 1) {
+        // Play within the user-selected analysis window: stop at the range end and loop
+        // back to the range start (not absolute 0), so narrowing the Time Range actually
+        // scopes playback. timeRange is in the deps so the interval restarts on change.
+        if (prev >= timeRange[1]) {
           setIsPlaying(false)
-          return 0
+          return timeRange[0]
         }
-        return prev + 1
+        // If the cursor is before the window, jump to its start before advancing.
+        return prev < timeRange[0] ? timeRange[0] : prev + 1
       })
     }, 100)
     return () => clearInterval(interval)
-  }, [isPlaying, data.length])
+  }, [isPlaying, data.length, timeRange])
+
+  // Re-clamp currentTime into the active timeRange whenever the user narrows the window.
+  // Without this the scrubbed point can sit outside [timeRange[0], timeRange[1]], making
+  // the PID Analysis "current value" (which looks up against the narrowed chart data)
+  // show N/A while the Current Values panel still shows an out-of-window row.
+  useEffect(() => {
+    setCurrentTime((t) => Math.min(Math.max(t, timeRange[0]), timeRange[1]))
+  }, [timeRange])
 
   // Check if a metric has all zero values or is empty
   const isEmptyPID = useCallback(
@@ -916,6 +1096,31 @@ export default function AutomotiveAnalyzer() {
       try {
         const text = await file.text()
         const lines = text.split(/\r?\n/).filter((line) => line.trim() && !line.trim().startsWith("#"))
+
+        // Guard against degenerate files. An empty, whitespace-only, or all-comment
+        // file yields lines = [], so parseCsvLine(lines[0]) would call
+        // parseCsvLine(undefined) and throw (swallowed by the catch below, leaving
+        // stale data and zero user feedback). A header-only file (lines.length === 1)
+        // parses to no data rows. Reset state and tell the user in both cases.
+        if (lines.length === 0) {
+          setMetrics([])
+          setData([])
+          setTimeRange([0, 0])
+          setCurrentTime(0)
+          setMissingPIDs({ missing: [], hasCriticalMissing: false })
+          showToast("The selected CSV file is empty or contains no data.")
+          return
+        }
+        if (lines.length === 1) {
+          setMetrics([])
+          setData([])
+          setTimeRange([0, 0])
+          setCurrentTime(0)
+          setMissingPIDs({ missing: [], hasCriticalMissing: false })
+          showToast("The CSV file has a header row but no data rows.")
+          return
+        }
+
         const headers = parseCsvLine(lines[0]).map((h) => h.trim())
 
         const shortenColumnName = (name: string): string => {
@@ -1053,8 +1258,13 @@ export default function AutomotiveAnalyzer() {
         }
 
         const extractUnit = (name: string): string => {
-          const unitMatches = name.match(/$$([^)]+)$$/)
-          if (unitMatches) return unitMatches[1]
+          // Pull a parenthesized unit from the header, e.g. "Vehicle speed (km/h)".
+          // The previous literal /$$([^)]+)$$/ used `$$` (two end-of-string anchors,
+          // a v0/MDX escape artifact) which could never match real parentheses, so
+          // every parenthesized unit fell through to the keyword heuristics below.
+          // Anchor to a trailing (unit) and trim to tolerate "Speed ( km/h )".
+          const unitMatches = name.match(/\(([^)]+)\)\s*$/)
+          if (unitMatches) return unitMatches[1].trim()
           const lower = name.toLowerCase()
           if (lower.includes("rpm")) return "RPM"
           if (lower.includes("speed") && lower.includes("km")) return "km/h"
@@ -1112,12 +1322,20 @@ export default function AutomotiveAnalyzer() {
 
         const detectedMetrics: MetricConfig[] = []
         const parsedData: DataPoint[] = []
-        const numericColumns: { [key: string]: boolean } = {}
+        // Keyed by physical column INDEX (not header text) so duplicate or blank
+        // header names each track their own numeric status instead of colliding
+        // under a shared string key. This matches the col_${index} keyspace used
+        // for metrics/data below.
+        const numericColumns: { [key: number]: boolean } = {}
 
-        // First pass: detect numeric columns and sample data for unit detection
+        // First pass: detect numeric columns across the FULL file so columns that
+        // are blank in the first 9 rows but populate later (e.g. a sensor coming
+        // online after warm-up, a GPS lock, or a sparse PID) are still retained.
+        // sampleData is kept limited to the first ~10 rows purely for unit detection.
         const sampleData: any[] = []
-        for (let i = 1; i < Math.min(lines.length, 10); i++) {
+        for (let i = 1; i < lines.length; i++) {
           const values = parseCsvLine(lines[i])
+          const buildSample = i < Math.min(lines.length, 10)
           const samplePoint: any = {}
           headers.forEach((header, index) => {
             if (header.toLowerCase() === "time") return
@@ -1125,12 +1343,12 @@ export default function AutomotiveAnalyzer() {
             if (value && value.trim() !== "") {
               const numericValue = parseNumericValue(value)
               if (!isNaN(numericValue)) {
-                numericColumns[header] = true
-                samplePoint[header] = numericValue
+                numericColumns[index] = true
+                if (buildSample) samplePoint[header] = numericValue
               }
             }
           })
-          if (Object.keys(samplePoint).length > 0) {
+          if (buildSample && Object.keys(samplePoint).length > 0) {
             sampleData.push(samplePoint)
           }
         }
@@ -1141,7 +1359,8 @@ export default function AutomotiveAnalyzer() {
 
         let metricIndex = 0
         headers.forEach((header, colIdx) => {
-          if (header.toLowerCase() === "time" || !numericColumns[header]) return
+          // Gate by column index (matches the index-keyed numericColumns above).
+          if (header.toLowerCase() === "time" || !numericColumns[colIdx]) return
           const key = `col_${colIdx}`
           let unit = extractUnit(header)
 
@@ -1169,14 +1388,45 @@ export default function AutomotiveAnalyzer() {
           speedMetric.unit = detectedSpeedUnit
         }
 
+        // Derive `time` from a real time column when one exists, falling back to a
+        // running counter over PUSHED points (not the raw line index). Using the
+        // raw line index made the X axis a row-ordinal (misrepresenting non-uniform
+        // sampling) and left gaps whenever a row was skipped. parseTimeToSeconds
+        // accepts numeric seconds or HH:MM:SS / MM:SS clock strings.
+        const timeColIdx = headers.findIndex((h) => h.toLowerCase() === "time")
+        const parseTimeToSeconds = (raw: string | undefined): number | null => {
+          if (!raw) return null
+          if (raw.includes(":")) {
+            const parts = raw.split(":").map((p) => Number(p))
+            if (parts.length >= 2 && parts.every((p) => !isNaN(p))) {
+              return parts.reduce((acc, p) => acc * 60 + p, 0)
+            }
+          }
+          const n = parseNumericValue(raw)
+          return isNaN(n) ? null : n
+        }
+        let rowCounter = 0
+
         // Parse data with improved number parsing and unit conversion
         for (let i = 1; i < lines.length; i++) {
           const values = parseCsvLine(lines[i])
-          if (values.length < headers.length) continue
-          const dataPoint: DataPoint = { time: i - 1, timestamp: values[0] || `${i - 1}s` } as DataPoint
+          // Don't drop ragged rows that simply omit trailing fields (common when a
+          // sensor times out or the last PID had no reading): missing trailing
+          // columns are read as undefined and parseNumericValue maps them to 0.
+          // Only skip rows that are genuinely empty.
+          if (values.length === 1 && !values[0].trim()) continue
+          const rawTime = timeColIdx >= 0 ? values[timeColIdx] : undefined
+          const parsedTime = parseTimeToSeconds(rawTime)
+          const dataPoint: DataPoint = {
+            // Real seconds when a time column is present; otherwise a contiguous
+            // counter that always matches the point's array position.
+            time: parsedTime ?? rowCounter,
+            timestamp: timeColIdx >= 0 ? rawTime || `${rowCounter}s` : `${rowCounter}s`,
+          } as DataPoint
 
           headers.forEach((header, colIdx) => {
-            if (!numericColumns[header]) return
+            // Gate by column index (matches the index-keyed numericColumns above).
+            if (!numericColumns[colIdx]) return
             const key = `col_${colIdx}`
             const rawValue = values[colIdx]
             const value = parseNumericValue(rawValue)
@@ -1235,25 +1485,36 @@ export default function AutomotiveAnalyzer() {
           }
 
           if (!dataPoint.gear && dataPoint.speed && dataPoint.rpm) {
-            dataPoint.gear = calculateGear(dataPoint.speed, dataPoint.rpm, transmissionConfig)
+            // Pass the detected speed unit so mph logs are normalized inside calculateGear.
+            dataPoint.gear = calculateGear(dataPoint.speed, dataPoint.rpm, transmissionConfig, detectedSpeedUnit)
           } else if (!dataPoint.gear && dataPoint.speed) {
-            // Better fallback calculation based on speed ranges
-            if (dataPoint.speed < 15) dataPoint.gear = 1
-            else if (dataPoint.speed < 35) dataPoint.gear = 2
-            else if (dataPoint.speed < 55) dataPoint.gear = 3
-            else if (dataPoint.speed < 80) dataPoint.gear = 4
-            else if (dataPoint.speed < 110) dataPoint.gear = 5
-            else dataPoint.gear = Math.min(6, transmissionConfig.numberOfGears)
+            // Better fallback calculation based on speed ranges.
+            // Normalize to km/h first (raw speed is stored in its source unit) so the
+            // km/h cutoffs are correct for mph logs, and let the top bucket reach the
+            // configured top gear (not a hard-coded 6) for 7-speed transmissions.
+            const sKmh = detectedSpeedUnit === "mph" ? dataPoint.speed * 1.60934 : dataPoint.speed
+            if (sKmh < 15) dataPoint.gear = 1
+            else if (sKmh < 35) dataPoint.gear = 2
+            else if (sKmh < 55) dataPoint.gear = 3
+            else if (sKmh < 80) dataPoint.gear = 4
+            else if (sKmh < 110) dataPoint.gear = 5
+            else dataPoint.gear = transmissionConfig.numberOfGears
           }
           parsedData.push(dataPoint)
+          // Increment only on a successful push so the fallback `time` counter stays
+          // contiguous with the point's array position (no gaps from skipped rows).
+          rowCounter++
         }
 
-        // Now check which metrics have actual data and enable the first few non-empty ones
+        // Now check which metrics have actual data and enable the first few non-empty ones.
+        // A legitimately all-zero channel (e.g. boost on an NA engine, idle brake
+        // pressure) is real data and should be eligible for auto-enable, so we no
+        // longer treat 0 as "empty" — only null/undefined/NaN count as missing.
         const nonEmptyMetrics = detectedMetrics.filter((metric) => {
           const key = metric.key as string
-          return !parsedData.every((point) => {
+          return parsedData.some((point) => {
             const value = (point as any)[key]
-            return value === 0 || value === null || value === undefined || isNaN(value)
+            return value !== null && value !== undefined && !isNaN(value)
           })
         })
 
@@ -1281,7 +1542,7 @@ export default function AutomotiveAnalyzer() {
         setIsLoading(false)
       }
     },
-    [transmissionConfig],
+    [transmissionConfig, showToast],
   )
 
   const loadSampleData = useCallback(async () => {
@@ -1316,12 +1577,17 @@ export default function AutomotiveAnalyzer() {
       } else {
         const ordered = determineFileOrder(csvFiles)
         setImportedFileNames(ordered.map((f) => f.name))
-        const merged = await mergeCSVFiles(ordered)
-        setSelectedFile(merged)
-        parseCSV(merged)
+        try {
+          // mergeCSVFiles throws if the files' headers don't align; surface that to the user.
+          const merged = await mergeCSVFiles(ordered)
+          setSelectedFile(merged)
+          parseCSV(merged)
+        } catch (error) {
+          showToast(error instanceof Error ? error.message : "Failed to merge CSV files")
+        }
       }
     },
-    [parseCSV],
+    [parseCSV, showToast],
   )
 
   const handleDragOver = useCallback((event: React.DragEvent<HTMLDivElement>) => {
@@ -1347,12 +1613,17 @@ export default function AutomotiveAnalyzer() {
       } else {
         const ordered = determineFileOrder(csvFiles)
         setImportedFileNames(ordered.map((f) => f.name))
-        const merged = await mergeCSVFiles(ordered)
-        setSelectedFile(merged)
-        parseCSV(merged)
+        try {
+          // mergeCSVFiles throws if the files' headers don't align; surface that to the user.
+          const merged = await mergeCSVFiles(ordered)
+          setSelectedFile(merged)
+          parseCSV(merged)
+        } catch (error) {
+          showToast(error instanceof Error ? error.message : "Failed to merge CSV files")
+        }
       }
     },
-    [parseCSV],
+    [parseCSV, showToast],
   )
 
   const toggleMetric = useCallback((index: number) => {
@@ -1414,7 +1685,12 @@ export default function AutomotiveAnalyzer() {
       if (isIdle && zoneStart === null) {
         zoneStart = finalChartData[i].time
       } else if (!isIdle && zoneStart !== null) {
-        zones.push({ x1: zoneStart, x2: finalChartData[i - 1].time })
+        // Extend the right edge to the FIRST non-idle sample (finalChartData[i]) rather
+        // than the last idle one. A single retained idle sample previously produced
+        // x1 === x2 (a zero-width ReferenceArea that renders as nothing); using the next
+        // sample guarantees every interior idle run spans at least one band. x1/x2 remain
+        // time values that exist in finalChartData, so the category-axis area still renders.
+        zones.push({ x1: zoneStart, x2: finalChartData[i].time })
         zoneStart = null
       }
     }
@@ -1460,24 +1736,28 @@ export default function AutomotiveAnalyzer() {
     const validBoosts = statsData.map((d) => d.boost || 0).filter((v) => !isNaN(v))
     const validPowers = statsData.map((d) => d.enginePower || 0).filter((v) => v > 0)
     const validTorques = statsData.map((d) => d.engineTorque || 0).filter((v) => v > 0)
-    const validCoolants = statsData.map((d) => d.coolantTemp || 0).filter((v) => v > 0)
-    const validIntakes = statsData.map((d) => d.intakeTemp || 0).filter((v) => v > 0)
+    // Use `?? NaN` (not `|| 0`) so genuine 0 °C and sub-zero readings are kept and
+    // only truly-absent values are excluded — this distinguishes "missing" from "zero"
+    // and stops the cold-climate average from being biased upward.
+    const validCoolants = statsData.map((d) => d.coolantTemp ?? NaN).filter((v) => !isNaN(v))
+    const validIntakes = statsData.map((d) => d.intakeTemp ?? NaN).filter((v) => !isNaN(v))
     const validSpeeds = statsData.map((d) => d.speed || d.gpsSpeed || 0).filter((v) => v > 0)
 
-    // For max speed, try multiple sources in order of preference
-    let maxSpeed = 0
+    // Average speed must respect the Ignore Idle toggle: include idle (speed=0) samples
+    // when unchecked (statsData = full data) and exclude them when checked (statsData
+    // already drops speed=0 rows). validSpeeds keeps its >0 filter for the max-speed path.
+    const speedsForAvg = statsData.map((d) => d.speed || d.gpsSpeed || 0)
 
+    // For max speed, try multiple sources in order of preference
     // First, try to find a dedicated "Max Speed" field
     const maxSpeedFromField = statsData.map((d) => d.maxSpeed || 0).filter((v) => v > 0)
 
-    if (maxSpeedFromField.length > 0) {
-      maxSpeed = safeMax(maxSpeedFromField)
-    } else {
-      // Fallback to calculating from speed data
-      if (validSpeeds.length > 0) {
-        maxSpeed = safeMax(validSpeeds)
-      }
-    }
+    // Never under-report below the actual speed-trace peak: a stale/capped "Max Speed"
+    // PID column could otherwise win over a higher real trace maximum. Take the larger
+    // of the dedicated field and the speed trace.
+    const fieldMax = maxSpeedFromField.length > 0 ? safeMax(maxSpeedFromField) : 0
+    const traceMax = validSpeeds.length > 0 ? safeMax(validSpeeds) : 0
+    const maxSpeed = Math.max(fieldMax, traceMax)
 
     return {
       maxRPM: validRPMs.length > 0 ? safeMax(validRPMs) : 0,
@@ -1487,7 +1767,7 @@ export default function AutomotiveAnalyzer() {
       avgIntakeTemp: validIntakes.length > 0 ? validIntakes.reduce((sum, v) => sum + v, 0) / validIntakes.length : 0,
       maxPower: validPowers.length > 0 ? safeMax(validPowers) : 0,
       maxTorque: validTorques.length > 0 ? safeMax(validTorques) : 0,
-      avgSpeed: validSpeeds.length > 0 ? validSpeeds.reduce((sum, v) => sum + v, 0) / validSpeeds.length : 0,
+      avgSpeed: speedsForAvg.length > 0 ? speedsForAvg.reduce((sum, v) => sum + v, 0) / speedsForAvg.length : 0,
       avgRPM: validRPMs.length > 0 ? validRPMs.reduce((sum, v) => sum + v, 0) / validRPMs.length : 0,
     }
   }, [data, ignoreIdle])
@@ -1499,11 +1779,13 @@ export default function AutomotiveAnalyzer() {
     return null
   }, [data])
 
+  // Dedupe inside the functional updater against the latest state (not a closed-over,
+  // possibly stale selectedPIDs) and drop the [selectedPIDs] dep so the callback identity
+  // is stable. Returning prev unchanged when already present avoids an extra render and
+  // guarantees no duplicate even if called twice within one render batch. Mirrors removePID.
   const addPID = useCallback(
-    (pidKey: string) => {
-      if (!selectedPIDs.includes(pidKey)) setSelectedPIDs((prev) => [...prev, pidKey])
-    },
-    [selectedPIDs],
+    (pidKey: string) => setSelectedPIDs((prev) => (prev.includes(pidKey) ? prev : [...prev, pidKey])),
+    [],
   )
 
   const removePID = useCallback((pidKey: string) => {
@@ -1686,7 +1968,7 @@ export default function AutomotiveAnalyzer() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="text-sm font-medium mb-2 block">
-                  Current Time: {currentTime} / {data.length - 1} ({((currentTime / data.length) * 100).toFixed(1)}%)
+                  Current Time: {currentTime} / {data.length - 1} ({((currentTime / Math.max(1, data.length - 1)) * 100).toFixed(1)}%)
                 </label>
                 <Slider
                   value={[currentTime]}
@@ -2139,8 +2421,8 @@ export default function AutomotiveAnalyzer() {
                           yAxisId="gear"
                           stroke="#b666d2"
                           fontSize={12}
-                          domain={[0.5, 6.5]}
-                          ticks={[1, 2, 3, 4, 5, 6]}
+                          domain={[0.5, transmissionConfig.numberOfGears + 0.5]}
+                          ticks={Array.from({ length: transmissionConfig.numberOfGears }, (_, i) => i + 1)}
                           allowDataOverflow={true}
                           orientation="right"
                         />
@@ -2153,7 +2435,9 @@ export default function AutomotiveAnalyzer() {
                           }}
                           formatter={(value: any, name: any) => {
                             if (name === "gear") {
-                              const gear = Math.min(6, Math.max(1, Number(value)))
+                              // Clamp to the configured gear count, not a hard-coded 6, so
+                              // 7-speed (and higher) transmissions show their top gear.
+                              const gear = Math.min(transmissionConfig.numberOfGears, Math.max(1, Number(value)))
                               return [`${gear}`, "Gear"]
                             }
                             return [`${value} ${speedUnit}`, "Speed"]
@@ -2161,7 +2445,7 @@ export default function AutomotiveAnalyzer() {
                         />
                         <Line
                           yAxisId="gear"
-                          dataKey={(data: any) => Math.min(6, Math.max(1, data.gear || 1))}
+                          dataKey={(data: any) => Math.min(transmissionConfig.numberOfGears, Math.max(1, data.gear || 1))}
                           stroke="#b666d2"
                           strokeWidth={2}
                           dot={false}
@@ -2191,13 +2475,16 @@ export default function AutomotiveAnalyzer() {
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart
                         data={
-                          finalChartData.length > 0
+                          // Use full-resolution filteredData (within the selected range),
+                          // not the downsampled finalChartData (capped at ~500 points), so the
+                          // "N samples (P%)" tooltip reports real counts/percentages for large logs.
+                          filteredData.length > 0
                             ? Array.from({ length: transmissionConfig.numberOfGears }, (_, i) => i + 1).map((g) => {
-                                const count = finalChartData.filter((d) => d.gear === g).length
+                                const count = filteredData.filter((d) => d.gear === g).length
                                 return {
                                   gear: g,
                                   count: count,
-                                  percentage: count > 0 ? ((count / finalChartData.length) * 100).toFixed(1) : "0.0",
+                                  percentage: count > 0 ? ((count / filteredData.length) * 100).toFixed(1) : "0.0",
                                 }
                               })
                             : []
@@ -2576,7 +2863,15 @@ export default function AutomotiveAnalyzer() {
                           {selectedPIDs.map((pidKey) => {
                             const metric = metrics.find((m) => m.key === pidKey)
                             if (!metric) return null
-                            const currentPidValueDataPoint = finalChartData.find((p) => p.time === pidDisplayTimeKey)
+                            // Look up against the full (non-downsampled) data, not finalChartData.
+                            // finalChartData is downsampled when length > 500, so an exact time match
+                            // fails for ~most currentTime values on large logs -> spurious "N/A". Since
+                            // time === array index in data, data[key] is an O(1) hit; the find() is a
+                            // safe fallback (and pidDisplayTimeKey from hover is always a real time in data).
+                            const currentPidValueDataPoint =
+                              data[pidDisplayTimeKey]?.time === pidDisplayTimeKey
+                                ? data[pidDisplayTimeKey]
+                                : data.find((p) => p.time === pidDisplayTimeKey) || null
                             const currentPidValue = currentPidValueDataPoint
                               ? currentPidValueDataPoint[metric.key as string]
                               : null
@@ -2662,7 +2957,18 @@ export default function AutomotiveAnalyzer() {
                     <div className="flex items-center gap-2">
                       <Map className="w-4 h-4" />
                       <span className="text-sm text-gray-400">
-                        {data.filter((d) => d.latitude && d.longitude).length} GPS points
+                        {/* Keep this predicate identical to gpsData (in GPSTrackMap) so the
+                            count matches exactly what is drawn: count any finite fix except the
+                            (0,0) no-fix sentinel, including valid equator/prime-meridian points. */}
+                        {
+                          data.filter(
+                            (d) =>
+                              Number.isFinite(d.latitude) &&
+                              Number.isFinite(d.longitude) &&
+                              !(d.latitude === 0 && d.longitude === 0),
+                          ).length
+                        }{" "}
+                        GPS points
                       </span>
                     </div>
                   </div>
@@ -2785,7 +3091,10 @@ export default function AutomotiveAnalyzer() {
                         max="10"
                         value={transmissionConfig.numberOfGears}
                         onChange={(e) => {
-                          const newGears = Number.parseInt(e.target.value) || 6
+                          // Clamp to [3,10] for all input paths. The HTML min/max only
+                          // constrain the spinner buttons; a directly typed/pasted value
+                          // (e.g. "1" or "50") would otherwise corrupt the gearRatios config.
+                          const newGears = Math.min(10, Math.max(3, Number.parseInt(e.target.value) || 6))
                           setTransmissionConfig((prev) => {
                             const newRatios = { ...prev.gearRatios }
                             for (let i = 1; i <= newGears; i++) {
@@ -2890,7 +3199,10 @@ export default function AutomotiveAnalyzer() {
                             const aspect = Number.parseInt(e.target.value) || 35
                             setTireAspectRatio(aspect)
                             setTireSizeInput(`${tireWidth}/${aspect}R${tireRimSize}`)
-                            const diameter = calculateTireDiameter(tireWidth, tireAspectRatio, tireRimSize)
+                            // Use the freshly parsed `aspect`, not the stale `tireAspectRatio`
+                            // state (still the pre-change value during this render), so the
+                            // stored diameter reflects the new aspect ratio immediately.
+                            const diameter = calculateTireDiameter(tireWidth, aspect, tireRimSize)
                             setTransmissionConfig((prev) => ({ ...prev, tyreDiameterMm: diameter }))
                           }}
                           className="bg-gray-700 border-gray-600 text-white text-xs"
@@ -3030,12 +3342,18 @@ export default function AutomotiveAnalyzer() {
 
                       <Button
                         onClick={() => {
+                          // numberOfGears must be the highest detected gear number, not the
+                          // count of detected gears. Using the count would clamp/hide real
+                          // high gears (e.g. detecting {3,4,5} would set numberOfGears=3).
+                          // Derive it from the gearRatios keys, falling back to 6.
+                          const gearKeys = Object.keys(autoDetection.gearRatios).map(Number)
+                          const maxGear = gearKeys.length > 0 ? Math.max(...gearKeys) : 6
                           setTransmissionConfig({
                             gearRatios: autoDetection.gearRatios,
                             finalDrive: autoDetection.estimatedFinalDrive,
                             tyreDiameterMm: autoDetection.estimatedTireDiameter,
                             shiftRpm: 7000,
-                            numberOfGears: autoDetection.detectedGears,
+                            numberOfGears: maxGear,
                           })
                           showToast("Applied auto-detected transmission settings")
                         }}
