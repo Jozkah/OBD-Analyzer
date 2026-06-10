@@ -14,6 +14,19 @@ interface ChangelogEntry {
 
 const changelogs: ChangelogEntry[] = [
   {
+    version: "1.7.0",
+    date: "2026-06-10",
+    title: "Full Visual Redesign + Major QA Bug-Fix Pass",
+    type: "improvement",
+    description: [
+      "Redesigned the entire UI as a dark 'instrument cluster' theme — a proper hero upload screen, sticky app bar, segmented tabs, and tabular-figure readouts that no longer jitter as values update",
+      "Hardened CSV parsing to be fully quote-aware, so quoted fields containing commas no longer corrupt the imported data",
+      "Removed the build-time error suppression and tightened the transmission/gear configuration types — the build now fails on real type errors instead of hiding them",
+      "Fixed 40+ confirmed bugs found in a multi-agent QA pass, spanning chart rendering, number parsing, gear-ratio detection and GPS handling",
+      "Corrected gear estimation to account for km/h vs mph speed units",
+    ],
+  },
+  {
     version: "1.6.0",
     date: "2026-04-02",
     title: "Major Cleanup, Bug Fixes & Quality of Life",

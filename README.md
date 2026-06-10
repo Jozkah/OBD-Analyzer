@@ -4,6 +4,14 @@ A fast, **fully client-side** dashboard for analyzing automotive telemetry logge
 
 > All parsing and rendering happens locally in the browser. There is **no backend, no database, and no telemetry**. Host it as a static site or just run it locally.
 
+## Screenshots
+
+The upload screen, and the analysis dashboard loaded with the bundled sample log:
+
+![OBD Analyzer — upload screen](docs/screenshot-landing.png)
+
+![OBD Analyzer — analysis dashboard](docs/screenshot-dashboard.png)
+
 ## Features
 
 - **CSV upload** — single or multiple files; multi-file logs from the same session are merged in order.
@@ -16,7 +24,7 @@ A fast, **fully client-side** dashboard for analyzing automotive telemetry logge
   - **GPS Track** — a canvas map of your route, colored by speed, with start/finish/current markers (satellite / street / terrain shading).
 - **Gear estimation** — derives the engaged gear from speed + RPM using a configurable tyre size and gear ratios.
 - **Robust number parsing** — tolerates `.`/`,` decimal separators and ignores `#` comment lines.
-- **Dark, responsive UI** built with Tailwind CSS and shadcn/ui.
+- **Polished dark "instrument cluster" UI** built with Tailwind CSS and shadcn/ui, with tabular-figure readouts that stay stable as values change.
 
 ## Supported input format
 
@@ -50,10 +58,13 @@ pnpm build && pnpm start
 
 ```
 app/page.tsx           # the whole app: CSV parsing, column/unit detection, tabs, charts, GPS map
+app/layout.tsx         # fonts (Inter + JetBrains Mono) and the dark theme shell
+app/globals.css        # design tokens / theme for the instrument-cluster look
 app/changelogs/        # changelog page
 components/ui/          # shadcn/ui primitives
 components/error-boundary.tsx
 public/sample-data.csv # demo telemetry log
+docs/                  # README screenshots
 ```
 
 The app is intentionally a single rich client component; contributions that split it into smaller modules are welcome.
