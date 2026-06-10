@@ -597,7 +597,10 @@ function detectGearRatios(data: DataPoint[]): any {
   Object.entries(detectedRatios).forEach(([gear, rpmSpeedRatio]) => {
     // Formula: gear_ratio = (RPM * tyre_circumference * 60) / (speed * final_drive * 1000000) * 3600
     // Simplified: gear_ratio = (rpm_speed_ratio * tyre_circumference * 60 * 3600) / (final_drive * 1000000)
-    const gearRatio = (rpmSpeedRatio * tyrCircumference * 60 * 3600) / (estimatedFinalDrive * 1000000)
+    // Inverse of the corrected calculateGear speed formula (km/h, circumference in
+    // metres): ratio = (rpm/speed) * circ_m * 60 / (finalDrive * 1000). The old
+    // *3600 / 1e6 form was ~3.6x off and no longer matched calculateGear.
+    const gearRatio = (rpmSpeedRatio * tyrCircumference * 60) / (estimatedFinalDrive * 1000)
     gearRatios[Number(gear)] = gearRatio
   })
 
@@ -713,19 +716,22 @@ function parseNumericValue(value: string): number {
     }
   } else if (hasComma) {
     const parts = s.split(",")
-    // Multiple commas, or a single comma followed by exactly 3 digits => grouping.
-    if (parts.length > 2 || (parts.length === 2 && parts[1].length === 3)) {
-      s = s.replace(/,/g, "") // 1,234 -> 1234
+    // Only MULTIPLE commas are unambiguous grouping (1,234,567). A single comma is
+    // an EU-style decimal separator (12,5 -> 12.5; 0,850 -> 0.85), so convert it
+    // rather than stripping it.
+    if (parts.length > 2) {
+      s = s.replace(/,/g, "")
     } else {
-      s = s.replace(",", ".") // 12,5 -> 12.5
+      s = s.replace(",", ".")
     }
   } else if (hasDot) {
     const parts = s.split(".")
-    // Multiple dots, or a single grouping pattern (1-3 lead digits + exactly 3 trailing) => grouping.
-    if (parts.length > 2 || (parts.length === 2 && parts[1].length === 3 && parts[0].length <= 3)) {
-      s = s.replace(/\./g, "") // 12.345 -> 12345
+    // Only MULTIPLE dots are unambiguous grouping (1.234.567). A single dot is a
+    // decimal point — including the very common 3-decimal sensor values like
+    // 14.700 or 0.850, which must NOT be read as thousands (that was a 1000x bug).
+    if (parts.length > 2) {
+      s = s.replace(/\./g, "")
     }
-    // else leave as-is: ordinary decimal like 12.5
   }
 
   const parsed = Number.parseFloat(s)
@@ -827,6 +833,9 @@ async function mergeCSVFiles(orderedFiles: File[]): Promise<File> {
   // silently corrupting the data. Refuse the merge on any header mismatch.
   for (let i = 1; i < texts.length; i++) {
     const cur = extractHeader(texts[i])
+    // An empty/comment-only segment contributes no rows; skip it rather than
+    // aborting the whole merge with a "header differs" error.
+    if (!cur.header) continue
     if (cur.header !== base.header) {
       throw new Error(
         `Cannot merge "${orderedFiles[i].name}": its CSV header differs from "${orderedFiles[0].name}". ` +
@@ -1388,23 +1397,15 @@ export default function AutomotiveAnalyzer() {
           speedMetric.unit = detectedSpeedUnit
         }
 
-        // Derive `time` from a real time column when one exists, falling back to a
-        // running counter over PUSHED points (not the raw line index). Using the
-        // raw line index made the X axis a row-ordinal (misrepresenting non-uniform
-        // sampling) and left gaps whenever a row was skipped. parseTimeToSeconds
-        // accepts numeric seconds or HH:MM:SS / MM:SS clock strings.
+        // `time` is the point's contiguous array index. Every consumer treats it as
+        // a POSITIONAL index — the scrub/range sliders (max = data.length - 1),
+        // currentTime, data[currentTime], the GPS live marker, and the PID
+        // current-value lookup — so it must equal the position in `parsedData`.
+        // The real clock value (when the log has a Time column) is kept only as the
+        // human-readable `timestamp`; it is never used as the X coordinate, because
+        // it may be a date string (e.g. "06/03/2025 02:22:17 PM") or non-uniformly
+        // sampled, which would collapse/misalign every chart and the scrubber.
         const timeColIdx = headers.findIndex((h) => h.toLowerCase() === "time")
-        const parseTimeToSeconds = (raw: string | undefined): number | null => {
-          if (!raw) return null
-          if (raw.includes(":")) {
-            const parts = raw.split(":").map((p) => Number(p))
-            if (parts.length >= 2 && parts.every((p) => !isNaN(p))) {
-              return parts.reduce((acc, p) => acc * 60 + p, 0)
-            }
-          }
-          const n = parseNumericValue(raw)
-          return isNaN(n) ? null : n
-        }
         let rowCounter = 0
 
         // Parse data with improved number parsing and unit conversion
@@ -1416,12 +1417,9 @@ export default function AutomotiveAnalyzer() {
           // Only skip rows that are genuinely empty.
           if (values.length === 1 && !values[0].trim()) continue
           const rawTime = timeColIdx >= 0 ? values[timeColIdx] : undefined
-          const parsedTime = parseTimeToSeconds(rawTime)
           const dataPoint: DataPoint = {
-            // Real seconds when a time column is present; otherwise a contiguous
-            // counter that always matches the point's array position.
-            time: parsedTime ?? rowCounter,
-            timestamp: timeColIdx >= 0 ? rawTime || `${rowCounter}s` : `${rowCounter}s`,
+            time: rowCounter,
+            timestamp: rawTime && rawTime.trim() ? rawTime : `${rowCounter}s`,
           } as DataPoint
 
           headers.forEach((header, colIdx) => {
@@ -2126,7 +2124,7 @@ export default function AutomotiveAnalyzer() {
                             <div className="flex items-center space-x-1">
                               <span className="text-blue-400">
                                 {currentDataPoint
-                                  ? calculateGear(currentDataPoint.speed, currentDataPoint.rpm, transmissionConfig)
+                                  ? calculateGear(currentDataPoint.speed, currentDataPoint.rpm, transmissionConfig, speedUnit)
                                   : "N/A"}
                               </span>
                               {currentDataPoint &&
@@ -2135,6 +2133,7 @@ export default function AutomotiveAnalyzer() {
                                     currentDataPoint.speed,
                                     currentDataPoint.rpm,
                                     transmissionConfig,
+                                    speedUnit,
                                   )
                                   const shiftIndicator = getShiftIndicator(
                                     currentDataPoint.rpm,
@@ -2156,6 +2155,7 @@ export default function AutomotiveAnalyzer() {
                                 currentDataPoint.speed,
                                 currentDataPoint.rpm,
                                 transmissionConfig,
+                                speedUnit,
                               )
                               const shiftIndicator = getShiftIndicator(currentDataPoint.rpm, gear, transmissionConfig)
                               if (shiftIndicator.shouldShift !== "optimal" && shiftIndicator.shouldShift !== null) {
@@ -3442,7 +3442,7 @@ export default function AutomotiveAnalyzer() {
                         ...point,
                         gear:
                           point.speed && point.rpm
-                            ? calculateGear(point.speed, point.rpm, transmissionConfig)
+                            ? calculateGear(point.speed, point.rpm, transmissionConfig, speedUnit)
                             : point.gear,
                       }))
                       setData(updatedData)
