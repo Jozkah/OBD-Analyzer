@@ -4,6 +4,12 @@ A fast, **fully client-side** dashboard for analyzing automotive telemetry logge
 
 > All parsing and rendering happens locally in the browser. There is **no backend, no database, and no telemetry**. Host it as a static site or just run it locally.
 
+## Why I built this
+
+I datalog every trip from my car's OBD-II port — but actually *reading* those logs was always the worst part. Any time I wanted to answer a simple question (what was boost doing on that pull? did the coolant temp creep up? where on the route did it stumble?) I was back to wrangling the raw CSV by hand — spreadsheets, manual filters, one-off queries — and none of it was something I could do quickly, let alone from my phone in a car park right after a drive.
+
+**datalog.help** is the tool I wished I'd had: drop in the CSV and *see* the drive immediately — charts, session stats and the GPS track — with no setup and nothing to query. It's fully client-side, so it's just as quick on a phone as on a laptop, and I can check a log the moment I pull over instead of waiting until I'm back at a desk.
+
 ## Screenshots
 
 The upload screen, and the analysis dashboard loaded with the bundled sample log:
