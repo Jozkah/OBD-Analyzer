@@ -46,7 +46,7 @@ pnpm install
 pnpm dev
 ```
 
-Open <http://localhost:3000> and upload a CSV (or the bundled sample).
+Open <http://localhost:3210> and upload a CSV (or the bundled sample). *(The dev/start port is set to **3210** in `package.json` — change it there if you prefer another.)*
 
 ### Production build
 

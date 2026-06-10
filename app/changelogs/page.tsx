@@ -14,6 +14,18 @@ interface ChangelogEntry {
 
 const changelogs: ChangelogEntry[] = [
   {
+    version: "1.8.1",
+    date: "2026-06-10",
+    title: "GPS Track Accuracy & Stationary-Log Handling",
+    type: "bugfix",
+    description: [
+      "Fixed the GPS track projection — the route now keeps its true shape (a single uniform scale, with longitude compressed by latitude) instead of being stretched independently on each axis into a full-canvas zig-zag",
+      "Stationary logs (all GPS fixes within ~20 m) now show a clear 'No track to plot' message instead of a blank map with a single centered dot",
+      "Polished the track rendering with rounded joins and a soft glow underlay so the route reads clearly",
+      "Moved the local dev/start server to port 3210 to avoid clashing with other projects on 3000",
+    ],
+  },
+  {
     version: "1.8.0",
     date: "2026-06-10",
     title: "Shareable, Expiring Log Links",

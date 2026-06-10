@@ -200,6 +200,9 @@ function GPSTrackMap({ data, currentTime }: { data: DataPoint[]; currentTime: nu
   // speed, or every sample identical), the speed-gradient coloring is meaningless, so
   // we render a neutral track and hide the misleading gradient legend.
   const [hasSpeedVariation, setHasSpeedVariation] = useState(true)
+  // True when every GPS fix sits within a few metres (parked car / single location), so
+  // there is no path to draw — we show a message instead of a confusingly blank map.
+  const [trackDegenerate, setTrackDegenerate] = useState(false)
 
   const gpsData = useMemo(
     // Only discard the true "no fix" sentinel pair (0,0); a finite point that sits
@@ -244,17 +247,31 @@ function GPSTrackMap({ data, currentTime }: { data: DataPoint[]; currentTime: nu
     const minLng = safeMin(lngs)
     const maxLng = safeMax(lngs)
 
-    const padding = 40
-    // Track which axes have an effectively-zero span (single fix, or a stationary
-    // log where every point shares the same coordinate). We keep the 0.001 fallback
-    // to avoid divide-by-zero, but flag the degenerate axes so toCanvas can center
-    // those points instead of collapsing them into the lower-left corner.
-    const rawLatRange = maxLat - minLat
-    const rawLngRange = maxLng - minLng
-    const latRange = rawLatRange || 0.001
-    const lngRange = rawLngRange || 0.001
-    const latDegenerate = rawLatRange === 0
-    const lngDegenerate = rawLngRange === 0
+    const padding = 48
+    // Project to a local equirectangular plane and fit it with a SINGLE uniform scale so
+    // the track keeps its true shape. The old code scaled latitude and longitude to fill
+    // each axis independently, which stretched a straight road into a full-canvas zig-zag.
+    // Longitude degrees are compressed by cos(latitude): away from the equator they cover
+    // less ground than latitude degrees, so without this the track looks horizontally
+    // exaggerated.
+    const meanLat = (minLat + maxLat) / 2
+    const kx = Math.cos((meanLat * Math.PI) / 180) || 1
+    const px = (lng: number) => lng * kx
+    const minPx = px(minLng)
+    const maxPx = px(maxLng)
+    const spanX = maxPx - minPx
+    const spanY = maxLat - minLat
+    // "Degenerate" = the whole log sits within ~20 m (parked car / single fix): there is
+    // no path to draw, so we surface a clear message instead of a blank map + lone dot.
+    const diagMetres = Math.hypot(spanX, spanY) * 111_320
+    const degenerate = diagMetres < 20
+    if (degenerate !== trackDegenerate) setTrackDegenerate(degenerate)
+
+    const availW = width - 2 * padding
+    const availH = height - 2 * padding
+    const scale = Math.min(availW / (spanX || 1e-9), availH / (spanY || 1e-9))
+    const offsetX = padding + (availW - spanX * scale) / 2
+    const offsetY = padding + (availH - spanY * scale) / 2
 
     ctx.clearRect(0, 0, width, height)
 
@@ -300,11 +317,15 @@ function GPSTrackMap({ data, currentTime }: { data: DataPoint[]; currentTime: nu
     }
     ctx.setLineDash([])
 
-    const toCanvas = (lat: number, lng: number) => ({
-      // Center a degenerate axis (zero span) rather than pinning it to the padding edge.
-      x: lngDegenerate ? width / 2 : padding + ((lng - minLng) / lngRange) * (width - 2 * padding),
-      y: latDegenerate ? height / 2 : height - padding - ((lat - minLat) / latRange) * (height - 2 * padding),
-    })
+    const toCanvas = (lat: number, lng: number) =>
+      degenerate
+        ? { x: width / 2, y: height / 2 }
+        : {
+            // North (max latitude) maps to the top; the shared uniform scale + centering
+            // offsets keep the route's real aspect ratio.
+            x: offsetX + (px(lng) - minPx) * scale,
+            y: offsetY + (maxLat - lat) * scale,
+          }
 
     // Use safeMax/safeMin (reduce-based) instead of Math.max(...) spread: spreading
     // tens of thousands of GPS points as individual args overflows the engine's
@@ -319,24 +340,37 @@ function GPSTrackMap({ data, currentTime }: { data: DataPoint[]; currentTime: nu
     const speedSpan = maxSpeed - minSpeed
     const speedVaries = speedSpan > 0.001
     if (speedVaries !== hasSpeedVariation) setHasSpeedVariation(speedVaries)
-    const neutralTrackColor = mapStyle === "street" ? "#3b82f6" : "#60a5fa"
-    for (let i = 0; i < gpsData.length - 1; i++) {
-      const point1 = gpsData[i]
-      const point2 = gpsData[i + 1]
-      const coords1 = toCanvas(point1.latitude!, point1.longitude!)
-      const coords2 = toCanvas(point2.latitude!, point2.longitude!)
-      if (speedVaries) {
-        const speedRatio = ((point1.speed || 0) - minSpeed) / speedSpan
-        const hue = (1 - speedRatio) * 240
-        ctx.strokeStyle = `hsl(${hue}, 80%, 60%)`
-      } else {
-        ctx.strokeStyle = neutralTrackColor
-      }
-      ctx.lineWidth = 4
+    const neutralTrackColor = mapStyle === "street" ? "#2563eb" : "#67e8f9"
+    ctx.lineJoin = "round"
+    ctx.lineCap = "round"
+    const path = gpsData.map((d) => toCanvas(d.latitude!, d.longitude!))
+    if (!degenerate && path.length > 1) {
+      // Soft glow underlay: one wide, low-alpha pass beneath the colored track so it
+      // reads as a route rather than a thin scribble.
+      ctx.save()
+      ctx.strokeStyle = mapStyle === "street" ? "rgba(37,99,235,0.22)" : "rgba(103,232,249,0.28)"
+      ctx.lineWidth = 11
       ctx.beginPath()
-      ctx.moveTo(coords1.x, coords1.y)
-      ctx.lineTo(coords2.x, coords2.y)
+      ctx.moveTo(path[0].x, path[0].y)
+      for (let i = 1; i < path.length; i++) ctx.lineTo(path[i].x, path[i].y)
       ctx.stroke()
+      ctx.restore()
+
+      // Colored track: per-segment hue by speed (blue = slow → red = fast).
+      for (let i = 0; i < path.length - 1; i++) {
+        if (speedVaries) {
+          const speedRatio = ((gpsData[i].speed || 0) - minSpeed) / speedSpan
+          const hue = (1 - speedRatio) * 240
+          ctx.strokeStyle = `hsl(${hue}, 85%, 58%)`
+        } else {
+          ctx.strokeStyle = neutralTrackColor
+        }
+        ctx.lineWidth = 4
+        ctx.beginPath()
+        ctx.moveTo(path[i].x, path[i].y)
+        ctx.lineTo(path[i + 1].x, path[i + 1].y)
+        ctx.stroke()
+      }
     }
 
     // currentTime is an index into the FULL data array, but the track is built from
@@ -413,6 +447,16 @@ function GPSTrackMap({ data, currentTime }: { data: DataPoint[]; currentTime: nu
   return (
     <div className="h-full relative">
       <canvas ref={canvasRef} className="w-full h-full rounded" />
+      {trackDegenerate && (
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+          <div className="rounded-lg border border-border/70 bg-background/85 px-4 py-3 text-center shadow-lg shadow-black/30 backdrop-blur">
+            <p className="text-sm font-medium text-foreground/90">No track to plot</p>
+            <p className="mt-0.5 max-w-[17rem] text-xs text-muted-foreground">
+              All GPS fixes are within ~20&nbsp;m — the vehicle was stationary, or the log has a single location.
+            </p>
+          </div>
+        </div>
+      )}
       <div className="absolute left-3 top-3 rounded-lg border border-border/70 bg-background/85 p-1 shadow-lg shadow-black/30 backdrop-blur">
         <div className="flex gap-1">
           {(["satellite", "street", "terrain"] as const).map((style) => (
