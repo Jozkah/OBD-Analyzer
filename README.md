@@ -2,7 +2,7 @@
 
 A fast, **fully client-side** dashboard for analyzing automotive telemetry logged from your car's OBD-II port. Drop in a CSV exported by an OBD-II scanner app and explore your drive across interactive charts and a GPS track map — no account, no server, no data ever leaves your browser.
 
-> All parsing and rendering happens locally in the browser. There is **no backend, no database, and no telemetry** — host it as a static site or just run it locally. *(The one optional exception is the [share-link feature](#sharing-logs-optional): if a deployer turns it on, clicking **Share** uploads that single log to the deployment's own backend. It's off by default.)*
+> All parsing and rendering happens locally in the browser. There is **no backend, no database, and no telemetry** — host it as a static site or just run it locally. *(Two optional, off-by-default exceptions: the [share-link feature](#sharing-logs-optional) uploads a single log to the deployment's own backend when you click **Share**, and the GPS map's real basemaps fetch tiles from a public map provider when you switch off the default **Offline** style — see [GPS map basemaps](#gps-map-basemaps).)*
 
 ## Why I built this
 
@@ -27,7 +27,7 @@ The upload screen, and the analysis dashboard loaded with the bundled sample log
   - **Performance** — throttle, brake, boost and speed over time.
   - **Engine** — RPM, coolant/intake temperature, fuel trims.
   - **PID Analysis** — every detected channel as a searchable table; optionally hide all-zero PIDs.
-  - **GPS Track** — a canvas map of your route, colored by speed, with start/finish/current markers (satellite / street / terrain shading).
+  - **GPS Track** — a pannable, zoomable map of your route, colored by speed, with start/finish/current markers. Defaults to an **Offline** basemap (no network); optionally switch to real **Satellite / Street / Terrain** tiles (see [GPS map basemaps](#gps-map-basemaps)).
 - **Gear estimation** — derives the engaged gear from speed + RPM using a configurable tyre size and gear ratios.
 - **Robust number parsing** — tolerates `.`/`,` decimal separators and ignores `#` comment lines.
 - **Polished dark "instrument cluster" UI** built with Tailwind CSS and shadcn/ui, with tabular-figure readouts that stay stable as values change.
@@ -73,6 +73,20 @@ When a deployment has this turned on, clicking **Share** uploads the current log
 3. Deploy to a Node/serverless host (e.g. Vercel). With the variables unset, the Share button stays hidden and the app remains a pure static site.
 
 > The share endpoint has no built-in rate limiting. If you expose it publicly, put it behind your host's rate limiter (e.g. Vercel/Upstash) to deter abuse.
+
+## GPS map basemaps
+
+The GPS Track tab defaults to an **Offline** basemap — a neutral backdrop drawn entirely in the browser, with **no network requests**. Switch to a real basemap with the **Satellite / Street / Terrain** buttons; the track is **pannable** (drag) and **zoomable** (scroll wheel, or the on-map `+ / − / fit` controls).
+
+Choosing a real basemap fetches map tiles from a public, keyless provider, which sends the map viewport's coordinates to that provider (the same as any web map). The default **Offline** style never does this.
+
+| Style | Provider | Attribution |
+|-------|----------|-------------|
+| Satellite | Esri World Imagery | Imagery © Esri |
+| Street | [OpenStreetMap](https://www.openstreetmap.org/copyright) | © OpenStreetMap contributors |
+| Terrain | [OpenTopoMap](https://opentopomap.org/) | © OpenTopoMap (CC-BY-SA) |
+
+No API keys are required. These providers have fair-use tile policies suitable for personal / self-hosted use; for heavy or commercial use, point `MAP_TILE_SOURCES` in [`app/page.tsx`](app/page.tsx) at your own tile source.
 
 ## Tech stack
 

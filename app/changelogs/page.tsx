@@ -14,6 +14,18 @@ interface ChangelogEntry {
 
 const changelogs: ChangelogEntry[] = [
   {
+    version: "1.9.0",
+    date: "2026-06-10",
+    title: "Interactive GPS Map: Real Basemaps + Pan & Zoom",
+    type: "feature",
+    description: [
+      "Added optional real basemaps to the GPS Track tab — Satellite (Esri), Street (OpenStreetMap) and Terrain (OpenTopoMap) — rendered under your route",
+      "The track is now pannable (drag) and zoomable (scroll wheel, or on-map + / − / fit controls), reprojected with Web Mercator so it lines up with the map",
+      "Defaults to an 'Offline' basemap that makes no network requests; real basemaps are opt-in and only then fetch map tiles",
+      "No API keys required, and tile providers are attributed on the map",
+    ],
+  },
+  {
     version: "1.8.1",
     date: "2026-06-10",
     title: "GPS Track Accuracy & Stationary-Log Handling",
