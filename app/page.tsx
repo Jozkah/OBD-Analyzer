@@ -20,6 +20,7 @@ import {
   Settings,
   History,
   AlertTriangle,
+  Gauge,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
@@ -390,7 +391,7 @@ function GPSTrackMap({ data, currentTime }: { data: DataPoint[]; currentTime: nu
 
   if (gpsData.length === 0) {
     return (
-      <div className="h-full flex items-center justify-center text-gray-400">
+      <div className="h-full flex items-center justify-center text-muted-foreground">
         <div className="text-center">
           <Map className="w-12 h-12 mx-auto mb-2 opacity-50" />
           <p>No GPS data available</p>
@@ -403,7 +404,7 @@ function GPSTrackMap({ data, currentTime }: { data: DataPoint[]; currentTime: nu
   return (
     <div className="h-full relative">
       <canvas ref={canvasRef} className="w-full h-full rounded" />
-      <div className="absolute top-2 left-2 bg-gray-800/90 rounded p-2">
+      <div className="absolute left-3 top-3 rounded-lg border border-border/70 bg-background/85 p-1 shadow-lg shadow-black/30 backdrop-blur">
         <div className="flex gap-1">
           {(["satellite", "street", "terrain"] as const).map((style) => (
             <Button
@@ -418,7 +419,7 @@ function GPSTrackMap({ data, currentTime }: { data: DataPoint[]; currentTime: nu
           ))}
         </div>
       </div>
-      <div className="absolute top-2 right-2 bg-gray-800/90 rounded p-2 text-xs">
+      <div className="absolute right-3 top-3 rounded-lg border border-border/70 bg-background/85 p-2.5 text-xs shadow-lg shadow-black/30 backdrop-blur">
         <div className="flex items-center space-x-2 mb-1">
           <div className="w-3 h-3 bg-green-500 rounded-full"></div>
           <span>Start</span>
@@ -436,20 +437,20 @@ function GPSTrackMap({ data, currentTime }: { data: DataPoint[]; currentTime: nu
             so a "Slow → Fast" gradient legend would be misleading. */}
         {hasSpeedVariation ? (
           <>
-            <div className="text-gray-400 mt-2">Speed colored track</div>
+            <div className="text-muted-foreground mt-2">Speed colored track</div>
             <div className="flex items-center space-x-1 mt-1">
               <div className="w-4 h-2 bg-gradient-to-r from-blue-500 to-red-500 rounded"></div>
               <span>Slow → Fast</span>
             </div>
           </>
         ) : (
-          <div className="text-gray-400 mt-2">GPS track</div>
+          <div className="text-muted-foreground mt-2">GPS track</div>
         )}
       </div>
       {data[currentTime] && (
-        <div className="absolute bottom-2 left-2 bg-gray-800/90 rounded p-2 text-sm">
-          <div className="text-white font-bold">{data[currentTime].speed?.toFixed(1)} km/h</div>
-          <div className="text-gray-400 text-xs">Current Speed</div>
+        <div className="absolute bottom-3 left-3 rounded-lg border border-border/70 bg-background/85 px-3 py-2 shadow-lg shadow-black/30 backdrop-blur">
+          <div className="font-mono text-base font-semibold tabular-nums text-primary">{data[currentTime].speed?.toFixed(1)} km/h</div>
+          <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Current Speed</div>
         </div>
       )}
     </div>
@@ -1816,105 +1817,123 @@ export default function AutomotiveAnalyzer() {
   const pidDisplayTimeKey = pidAnalysisHoveredTimeKey !== null ? pidAnalysisHoveredTimeKey : currentTime
 
   return (
-    <div className="min-h-screen bg-gray-900 text-white p-4">
-      <div className="flex flex-col md:flex-row items-start md:items-center justify-between mb-6 gap-2">
-        <div className="flex flex-wrap items-center gap-4 w-full md:w-auto">
-          <h1 className="text-2xl font-bold">OBD Data Analyzer</h1>
-          <div className="flex gap-2">
-            <input ref={fileInputRef} type="file" accept=".csv" multiple onChange={handleFileUpload} className="hidden" />
+    <div className="min-h-screen bg-background text-foreground">
+      <header className="sticky top-0 z-40 border-b border-border/70 bg-background/80 backdrop-blur-xl">
+        <div className="mx-auto flex w-full max-w-[1700px] flex-col gap-3 px-4 py-3 md:flex-row md:items-center md:justify-between lg:px-6">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+            <div className="flex items-center gap-3 pr-1">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-primary/30 bg-primary/10 text-primary shadow-[0_0_18px_-4px] shadow-primary/50">
+                <Gauge className="h-5 w-5" />
+              </div>
+              <div className="leading-tight">
+                <h1 className="text-base font-semibold tracking-tight">OBD Data Analyzer</h1>
+                <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">
+                  Telemetry Console
+                </p>
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <input ref={fileInputRef} type="file" accept=".csv" multiple onChange={handleFileUpload} className="hidden" />
+              <Button
+                onClick={() => fileInputRef.current?.click()}
+                variant="outline"
+                size="sm"
+              >
+                <Upload className="w-4 h-4 mr-2" /> Load CSV
+              </Button>
+              <Button
+                onClick={loadSampleData}
+                variant="outline"
+                size="sm"
+              >
+                <FileText className="w-4 h-4 mr-2" /> Load Sample
+              </Button>
+            </div>
+            {selectedFile && (
+              <div className="w-full text-xs md:w-auto">
+                <span className="inline-flex max-w-full items-center gap-2 rounded-full border border-border/80 bg-secondary/50 py-1 pl-2.5 pr-3 text-muted-foreground">
+                  <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-primary shadow-[0_0_8px] shadow-primary/70" />
+                  <span className="max-w-[200px] truncate font-medium text-foreground/90">
+                    {importedFileNames.length > 1
+                      ? `${importedFileNames.length} files merged`
+                      : selectedFile.name}
+                  </span>
+                  <span className="font-mono tabular-nums">{data.length} records</span>
+                  <span className="font-mono uppercase text-primary">{speedUnit}</span>
+                </span>
+                {importedFileNames.length > 1 && (
+                  <div className="mt-1 truncate text-[11px] text-muted-foreground/60">
+                    {importedFileNames.join(" → ")}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+          <div className="flex w-full items-center justify-end gap-2 md:w-auto">
+            <Link href="/changelogs">
+              <Button variant="outline" size="sm">
+                <History className="w-4 h-4 mr-2" />
+                <span className="hidden sm:inline">Changelogs</span>
+              </Button>
+            </Link>
             <Button
-              onClick={() => fileInputRef.current?.click()}
+              onClick={() => setShowTransmissionDialog(true)}
               variant="outline"
-              className="bg-gray-800 border-gray-600 hover:bg-gray-700"
+              size="sm"
+              className={data.length === 0 ? "opacity-50 cursor-not-allowed" : ""}
+              disabled={data.length === 0}
             >
-              <Upload className="w-4 h-4 mr-2" /> Load CSV
+              <Settings className="w-4 h-4 mr-2" />
+              <span className="hidden sm:inline">Transmission</span>
             </Button>
             <Button
-              onClick={loadSampleData}
+              onClick={() => setIsPlaying(!isPlaying)}
               variant="outline"
-              className="bg-gray-800 border-gray-600 hover:bg-gray-700"
+              size="sm"
+              className="data-[playing=true]:text-primary"
+              data-playing={isPlaying}
+              disabled={data.length === 0}
             >
-              <FileText className="w-4 h-4 mr-2" /> Load Sample
+              {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+            </Button>
+            <Button
+              onClick={() => setCurrentTime(0)}
+              variant="outline"
+              size="sm"
+              disabled={data.length === 0}
+            >
+              <RotateCcw className="w-4 h-4" />
             </Button>
           </div>
-          {selectedFile && (
-            <div className="text-sm text-gray-400 w-full md:w-auto mt-2 md:mt-0">
-              <span>
-                {importedFileNames.length > 1
-                  ? `${importedFileNames.length} files merged`
-                  : selectedFile.name}{" "}
-                ({data.length} records) - {speedUnit}
-              </span>
-              {importedFileNames.length > 1 && (
-                <div className="text-xs text-gray-500 mt-0.5">
-                  {importedFileNames.join(" → ")}
-                </div>
-              )}
-            </div>
-          )}
         </div>
-        <div className="flex items-center gap-2 mt-2 md:mt-0 w-full md:w-auto justify-end">
-          <Link href="/changelogs">
-            <Button variant="outline" size="sm" className="bg-gray-800 border-gray-600 hover:bg-gray-700">
-              <History className="w-4 h-4 mr-2" />
-              <span className="hidden sm:inline">Changelogs</span>
-            </Button>
-          </Link>
-          <Button
-            onClick={() => setShowTransmissionDialog(true)}
-            variant="outline"
-            size="sm"
-            className={`bg-gray-800 border-gray-600 hover:bg-gray-700 ${data.length === 0 ? "opacity-50 cursor-not-allowed" : ""}`}
-            disabled={data.length === 0}
-          >
-            <Settings className="w-4 h-4 mr-2" />
-            <span className="hidden sm:inline">Transmission</span>
-          </Button>
-          <Button
-            onClick={() => setIsPlaying(!isPlaying)}
-            variant="outline"
-            size="sm"
-            className="bg-gray-800 border-gray-600 hover:bg-gray-700"
-            disabled={data.length === 0}
-          >
-            {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
-          </Button>
-          <Button
-            onClick={() => setCurrentTime(0)}
-            variant="outline"
-            size="sm"
-            className="bg-gray-800 border-gray-600 hover:bg-gray-700"
-            disabled={data.length === 0}
-          >
-            <RotateCcw className="w-4 h-4" />
-          </Button>
-        </div>
-      </div>
+      </header>
+
+      <main className="mx-auto w-full max-w-[1700px] px-4 py-6 lg:px-6">
 
       {/* Missing PIDs Warning Dialog */}
       <AlertDialog open={showMissingPIDsDialog} onOpenChange={setShowMissingPIDsDialog}>
-        <AlertDialogContent className="bg-gray-800 border-gray-700 text-white max-w-2xl">
+        <AlertDialogContent className="max-w-2xl">
           <AlertDialogHeader>
             <AlertDialogTitle className="flex items-center gap-2 text-yellow-400">
               <AlertTriangle className="h-5 w-5" />
               Missing Crucial Data Detected
             </AlertDialogTitle>
-            <AlertDialogDescription className="text-gray-300">
+            <AlertDialogDescription className="text-foreground/80">
               Your datalog appears to be missing some important PIDs that are essential for the full functionality of
               this analyzer.
             </AlertDialogDescription>
           </AlertDialogHeader>
 
           <div className="space-y-4">
-            <div className="bg-gray-700 rounded-lg p-4">
+            <div className="rounded-lg border border-border/70 bg-secondary/50 p-4">
               <h4 className="font-semibold text-white mb-3">Missing PIDs:</h4>
               <div className="space-y-3">
                 {missingPIDs.missing.map((pid, index) => (
                   <div key={index} className="border-l-4 border-yellow-400 pl-4">
                     <div className="font-medium text-yellow-400">{pid.name}</div>
-                    <div className="text-sm text-gray-300 mt-1">{pid.description}</div>
-                    <div className="text-xs text-gray-400 mt-1">Affects: {pid.tabs.join(", ")} tabs</div>
-                    <div className="text-xs text-gray-500 mt-1">Looking for: {pid.keys.join(", ")}</div>
+                    <div className="text-sm text-foreground/80 mt-1">{pid.description}</div>
+                    <div className="text-xs text-muted-foreground mt-1">Affects: {pid.tabs.join(", ")} tabs</div>
+                    <div className="text-xs text-muted-foreground/60 mt-1">Looking for: {pid.keys.join(", ")}</div>
                   </div>
                 ))}
               </div>
@@ -1933,9 +1952,9 @@ export default function AutomotiveAnalyzer() {
               </div>
             )}
 
-            <div className="bg-blue-900/30 border border-blue-700 rounded-lg p-4">
-              <h4 className="font-semibold text-blue-400 mb-2">Recommendations:</h4>
-              <ul className="text-sm text-blue-300 space-y-1">
+            <div className="rounded-lg border border-primary/25 bg-primary/[0.08] p-4">
+              <h4 className="font-semibold text-primary mb-2">Recommendations:</h4>
+              <ul className="text-sm text-foreground/80 space-y-1">
                 <li>• Check your OBD scanner's PID logging settings</li>
                 <li>• Ensure your vehicle supports these PIDs</li>
                 <li>• Try enabling more PIDs in your logging software</li>
@@ -1947,7 +1966,7 @@ export default function AutomotiveAnalyzer() {
           <AlertDialogFooter>
             <AlertDialogAction
               onClick={() => setShowMissingPIDsDialog(false)}
-              className="bg-blue-600 hover:bg-blue-700"
+              className=""
             >
               Continue Anyway
             </AlertDialogAction>
@@ -1956,17 +1975,26 @@ export default function AutomotiveAnalyzer() {
       </AlertDialog>
 
       {isLoading && (
-        <div className="text-center py-8">
-          <div className="text-lg">Loading and parsing data...</div>
+        <div className="flex flex-col items-center justify-center gap-5 py-24 text-center">
+          <div className="h-10 w-10 animate-spin rounded-full border-2 border-border border-t-primary" />
+          <div className="text-xs font-semibold uppercase tracking-[0.22em] text-muted-foreground">
+            Loading and parsing data...
+          </div>
         </div>
       )}
       {data.length > 0 && (
         <>
-          <Card className="bg-gray-800 border-gray-700 p-4 mb-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <Card className="p-5 mb-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-5">
               <div>
-                <label className="text-sm font-medium mb-2 block">
-                  Current Time: {currentTime} / {data.length - 1} ({((currentTime / Math.max(1, data.length - 1)) * 100).toFixed(1)}%)
+                <label className="mb-3 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+                  <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                    Current Time
+                  </span>
+                  <span className="font-mono text-sm tabular-nums text-foreground">
+                    {currentTime} / {data.length - 1}{" "}
+                    <span className="text-primary">({((currentTime / Math.max(1, data.length - 1)) * 100).toFixed(1)}%)</span>
+                  </span>
                 </label>
                 <Slider
                   value={[currentTime]}
@@ -1977,9 +2005,17 @@ export default function AutomotiveAnalyzer() {
                 />
               </div>
               <div>
-                <label className="text-sm font-medium mb-2 block">
-                  Time Range: {timeRange[0]} - {timeRange[1]} ({timeRange[1] - timeRange[0] + 1} points,{" "}
-                  {(((timeRange[1] - timeRange[0] + 1) / data.length) * 100).toFixed(1)}%)
+                <label className="mb-3 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+                  <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                    Time Range
+                  </span>
+                  <span className="font-mono text-sm tabular-nums text-foreground">
+                    {timeRange[0]} - {timeRange[1]}{" "}
+                    <span className="text-primary">
+                      ({timeRange[1] - timeRange[0] + 1} points,{" "}
+                      {(((timeRange[1] - timeRange[0] + 1) / data.length) * 100).toFixed(1)}%)
+                    </span>
+                  </span>
                 </label>
                 <Slider
                   value={timeRange}
@@ -1990,18 +2026,18 @@ export default function AutomotiveAnalyzer() {
                 />
               </div>
             </div>
-            <div className="flex items-center gap-2 mt-3 pt-3 border-t border-gray-700">
+            <div className="flex items-center gap-2 mt-4 pt-4 border-t border-border/80">
               <Checkbox
                 checked={ignoreIdle}
                 onCheckedChange={(checked: boolean) => setIgnoreIdle(checked === true)}
               />
               <span className="text-sm font-medium">Ignore Idle</span>
-              <span className="text-xs text-gray-400">(Excludes speed = 0 from statistics and averages)</span>
+              <span className="text-xs text-muted-foreground">(Excludes speed = 0 from statistics and averages)</span>
             </div>
           </Card>
 
           <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-            <TabsList className="flex w-full overflow-x-auto bg-gray-800">
+            <TabsList className="flex w-full overflow-x-auto">
               <TabsTrigger value="overview" className="flex-1 min-w-[80px]">Overview</TabsTrigger>
               <TabsTrigger value="performance" className="flex-1 min-w-[80px]">Performance</TabsTrigger>
               <TabsTrigger value="engine" className="flex-1 min-w-[80px]">
@@ -2018,36 +2054,36 @@ export default function AutomotiveAnalyzer() {
             <TabsContent value="overview" className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-12 gap-4" style={{ height: `${STATIC_HEIGHT}px` }}>
                 <div className="col-span-1 md:col-span-2">
-                  <Card className="bg-gray-800 border-gray-700 h-full flex flex-col">
+                  <Card className="h-full flex flex-col">
                     <div className="p-4 pb-2 flex-shrink-0">
-                      <h3 className="font-semibold mb-3">Available PIDs ({metrics.length})</h3>
+                      <h3 className="mb-3 text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Available PIDs ({metrics.length})</h3>
                       <div className="flex gap-2 mb-3">
                         <div className="relative flex-1">
-                          <Search className="absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                          <Search className="absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                           <Input
                             placeholder="Search PIDs..."
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
-                            className="pl-8 bg-gray-700 border-gray-600 text-white placeholder:text-gray-400 h-8"
+                            className="pl-8 h-8"
                           />
                         </div>
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
-                            <Button variant="outline" size="sm" className="h-8 bg-gray-700 border-gray-600">
+                            <Button variant="outline" size="sm" className="h-8">
                               <ChevronDown className="h-4 w-4 mr-1" />
                               Sort
                             </Button>
                           </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end" className="bg-gray-800 border-gray-600 text-white">
+                          <DropdownMenuContent align="end" className="">
                             <DropdownMenuItem
                               onClick={() => setSortOption("default")}
-                              className={sortOption === "default" ? "bg-gray-700" : ""}
+                              className={sortOption === "default" ? "bg-accent" : ""}
                             >
                               Default Order
                             </DropdownMenuItem>
                             <DropdownMenuItem
                               onClick={() => setSortOption("alphabetical")}
-                              className={sortOption === "alphabetical" ? "bg-gray-700" : ""}
+                              className={sortOption === "alphabetical" ? "bg-accent" : ""}
                             >
                               Alphabetical
                             </DropdownMenuItem>
@@ -2067,7 +2103,7 @@ export default function AutomotiveAnalyzer() {
                         style={{
                           height: `${metricsListHeight}px`,
                           scrollbarWidth: "thin",
-                          scrollbarColor: "#4b5563 #1f2937",
+                          scrollbarColor: "#2c3447 #11141d",
                         }}
                       >
                         {filteredMetrics.length > 0 ? (
@@ -2090,21 +2126,21 @@ export default function AutomotiveAnalyzer() {
                                 />
                                 <span className="text-sm truncate">{metric.label}</span>
                                 {metric.unit && (
-                                  <span className="text-xs text-gray-400 flex-shrink-0">({metric.unit})</span>
+                                  <span className="text-xs text-muted-foreground flex-shrink-0">({metric.unit})</span>
                                 )}
-                                {isEmpty && <span className="text-xs text-gray-500 flex-shrink-0">∅</span>}
+                                {isEmpty && <span className="text-xs text-muted-foreground/60 flex-shrink-0">∅</span>}
                               </div>
                             )
                           })
                         ) : (
-                          <div className="text-center text-gray-400 py-4">No metrics found</div>
+                          <div className="text-center text-muted-foreground py-4">No metrics found</div>
                         )}
                       </div>
                     </div>
                     {currentDataPoint && (
-                      <div className="mt-auto p-4 pt-3 border-t border-gray-600 flex-shrink-0">
-                        <h4 className="font-medium mb-2">Current Values</h4>
-                        <div className="space-y-1 text-sm">
+                      <div className="mt-auto p-4 pt-3 border-t border-border/80 flex-shrink-0">
+                        <h4 className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Current Values</h4>
+                        <div className="space-y-1.5 text-sm [&>div>span:first-child]:text-muted-foreground [&>div>span+span]:font-mono [&>div>span+span]:tabular-nums">
                           <div className="flex justify-between">
                             <span>RPM:</span>
                             <span className="text-red-400">{formatValue(currentDataPoint.rpm, "RPM")}</span>
@@ -2145,7 +2181,7 @@ export default function AutomotiveAnalyzer() {
                                   } else if (shiftIndicator.shouldShift === "down") {
                                     return <span className="text-orange-400 font-bold">↓</span>
                                   }
-                                  return <span className="text-gray-400">•</span>
+                                  return <span className="text-muted-foreground">•</span>
                                 })()}
                             </div>
                           </div>
@@ -2159,7 +2195,7 @@ export default function AutomotiveAnalyzer() {
                               )
                               const shiftIndicator = getShiftIndicator(currentDataPoint.rpm, gear, transmissionConfig)
                               if (shiftIndicator.shouldShift !== "optimal" && shiftIndicator.shouldShift !== null) {
-                                return <div className="text-xs text-gray-400 mt-1">{shiftIndicator.reason}</div>
+                                return <div className="text-xs text-muted-foreground mt-1">{shiftIndicator.reason}</div>
                               }
                               return null
                             })()}
@@ -2169,23 +2205,23 @@ export default function AutomotiveAnalyzer() {
                   </Card>
                 </div>
                 <div className="col-span-1 md:col-span-7">
-                  <Card className="bg-gray-800 border-gray-700 p-4 h-full">
+                  <Card className="p-5 h-full">
                     <div className="flex items-center justify-between mb-4">
-                      <h3 className="font-semibold">General Overview</h3>
+                      <h3 className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">General Overview</h3>
                       <Button variant="ghost" size="sm">
                         <BarChart3 className="w-4 h-4" />
                       </Button>
                     </div>
                     <ResponsiveContainer width="100%" height="90%">
                       <ComposedChart data={finalChartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                        <XAxis dataKey="time" stroke="#9CA3AF" fontSize={12} />
-                        <YAxis stroke="#9CA3AF" fontSize={12} />
+                        <CartesianGrid strokeDasharray="3 3" stroke="#222a3c" />
+                        <XAxis dataKey="time" stroke="#7e899c" fontSize={12} />
+                        <YAxis stroke="#7e899c" fontSize={12} />
                         <Tooltip
                           contentStyle={{
-                            backgroundColor: "#1F2937",
-                            border: "1px solid #374151",
-                            borderRadius: "6px",
+                            backgroundColor: "#11141d",
+                            border: "1px solid #273043",
+                            borderRadius: "10px",
                           }}
                           formatter={tooltipFormatter}
                         />
@@ -2208,9 +2244,9 @@ export default function AutomotiveAnalyzer() {
                   </Card>
                 </div>
                 <div className="col-span-1 md:col-span-3">
-                  <Card className="bg-gray-800 border-gray-700 p-4 h-full">
-                    <h3 className="font-semibold mb-4">Session Statistics</h3>
-                    <div className="space-y-3 text-sm">
+                  <Card className="p-5 h-full">
+                    <h3 className="mb-4 text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Session Statistics</h3>
+                    <div className="space-y-2.5 text-sm [&>div>span:first-child]:text-muted-foreground [&>div>span+span]:font-mono [&>div>span+span]:text-[13px] [&>div>span+span]:tabular-nums">
                       <div className="flex justify-between">
                         <span>Max RPM:</span>
                         <span className="text-red-400 font-bold">{formatValue(stats.maxRPM, "RPM")}</span>
@@ -2233,7 +2269,7 @@ export default function AutomotiveAnalyzer() {
                         <span>Max Calculated Torque:</span>
                         <span className="text-lime-400 font-bold">{formatValue(stats.maxTorque, "N•m")} N•m</span>
                       </div>
-                      <div className="h-px bg-gray-700 my-2"></div>
+                      <div className="h-px bg-border/80 my-2"></div>
                       <div className="flex justify-between">
                         <span>Average Speed:</span>
                         <span className="text-green-400 font-bold">
@@ -2244,7 +2280,7 @@ export default function AutomotiveAnalyzer() {
                         <span>Average RPM:</span>
                         <span className="text-red-400 font-bold">{formatValue(stats.avgRPM, "RPM")}</span>
                       </div>
-                      <div className="h-px bg-gray-700 my-2"></div>
+                      <div className="h-px bg-border/80 my-2"></div>
                       <div className="flex justify-between">
                         <span>Average Coolant Temp:</span>
                         <span className="text-purple-400 font-bold">{formatValue(stats.avgCoolant, "°C")}°C</span>
@@ -2253,10 +2289,10 @@ export default function AutomotiveAnalyzer() {
                         <span>Average Intake Temp:</span>
                         <span className="text-orange-400 font-bold">{formatValue(stats.avgIntakeTemp, "°C")}°C</span>
                       </div>
-                      <div className="h-px bg-gray-700 my-2"></div>
+                      <div className="h-px bg-border/80 my-2"></div>
                       <div className="flex justify-between">
                         <span>Trip Duration:</span>
-                        <span className="text-gray-300">
+                        <span className="text-foreground/80">
                           {data.length > 0 && data[data.length - 1]?.tripDuration
                             ? (data[data.length - 1].tripDuration ?? 0) >= 60
                               ? `${Math.floor((data[data.length - 1].tripDuration ?? 0) / 60)}h ${Math.floor((data[data.length - 1].tripDuration ?? 0) % 60)}min`
@@ -2266,7 +2302,7 @@ export default function AutomotiveAnalyzer() {
                       </div>
                       <div className="flex justify-between">
                         <span>Trip Distance:</span>
-                        <span className="text-gray-300">
+                        <span className="text-foreground/80">
                           {data.length > 0 && data[data.length - 1]?.tripDistance
                             ? `${formatValue(data[data.length - 1].tripDistance ?? 0)} km`
                             : "N/A"}
@@ -2274,7 +2310,7 @@ export default function AutomotiveAnalyzer() {
                       </div>
                       <div className="flex justify-between">
                         <span>Trip Fuel Used:</span>
-                        <span className="text-gray-300">
+                        <span className="text-foreground/80">
                           {data.length > 0 && data[data.length - 1]?.tripFuel
                             ? `${formatValue(data[data.length - 1].tripFuel ?? 0)} L`
                             : "N/A"}
@@ -2282,7 +2318,7 @@ export default function AutomotiveAnalyzer() {
                       </div>
                       <div className="flex justify-between">
                         <span>Trip Fuel Economy:</span>
-                        <span className="text-gray-300">
+                        <span className="text-foreground/80">
                           {data.length > 0 && data[data.length - 1]?.tripFuelEconomy
                             ? `${formatValue(data[data.length - 1].tripFuelEconomy ?? 0)} L/100km`
                             : "N/A"}
@@ -2297,20 +2333,20 @@ export default function AutomotiveAnalyzer() {
             <TabsContent value="performance" className="space-y-0">
               <ErrorBoundary>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4" style={{ height: `${STATIC_HEIGHT}px` }}>
-                <Card className="bg-gray-800 border-gray-700 p-4 flex flex-col">
-                  <h3 className="font-semibold mb-4 flex-shrink-0">RPM vs Speed Analysis</h3>
+                <Card className="p-5 flex flex-col">
+                  <h3 className="mb-4 flex-shrink-0 text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">RPM vs Speed Analysis</h3>
                   <div className="flex-grow">
                     <ResponsiveContainer width="100%" height="100%">
                       <ComposedChart data={finalChartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                        <XAxis dataKey="time" stroke="#9CA3AF" fontSize={12} />
+                        <CartesianGrid strokeDasharray="3 3" stroke="#222a3c" />
+                        <XAxis dataKey="time" stroke="#7e899c" fontSize={12} />
                         <YAxis yAxisId="rpm" stroke="#ef4444" fontSize={12} orientation="left" />
                         <YAxis yAxisId="speed" stroke="#22c55e" fontSize={12} orientation="right" />
                         <Tooltip
                           contentStyle={{
-                            backgroundColor: "#1F2937",
-                            border: "1px solid #374151",
-                            borderRadius: "6px",
+                            backgroundColor: "#11141d",
+                            border: "1px solid #273043",
+                            borderRadius: "10px",
                           }}
                           formatter={tooltipFormatter}
                         />
@@ -2330,20 +2366,20 @@ export default function AutomotiveAnalyzer() {
                     </ResponsiveContainer>
                   </div>
                 </Card>
-                <Card className="bg-gray-800 border-gray-700 p-4 flex flex-col">
-                  <h3 className="font-semibold mb-4 flex-shrink-0">Throttle vs Speed</h3>
+                <Card className="p-5 flex flex-col">
+                  <h3 className="mb-4 flex-shrink-0 text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Throttle vs Speed</h3>
                   <div className="flex-grow">
                     <ResponsiveContainer width="100%" height="100%">
                       <ComposedChart data={finalChartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                        <XAxis dataKey="time" stroke="#9CA3AF" fontSize={12} />
+                        <CartesianGrid strokeDasharray="3 3" stroke="#222a3c" />
+                        <XAxis dataKey="time" stroke="#7e899c" fontSize={12} />
                         <YAxis yAxisId="throttle" stroke="#eab308" fontSize={12} orientation="left" />
                         <YAxis yAxisId="speed" stroke="#22c55e" fontSize={12} orientation="right" />
                         <Tooltip
                           contentStyle={{
-                            backgroundColor: "#1F2937",
-                            border: "1px solid #374151",
-                            borderRadius: "6px",
+                            backgroundColor: "#11141d",
+                            border: "1px solid #273043",
+                            borderRadius: "10px",
                           }}
                           formatter={tooltipFormatter}
                         />
@@ -2370,20 +2406,20 @@ export default function AutomotiveAnalyzer() {
                     </ResponsiveContainer>
                   </div>
                 </Card>
-                <Card className="bg-gray-800 border-gray-700 p-4 flex flex-col">
-                  <h3 className="font-semibold mb-4 flex-shrink-0">Power & Torque</h3>
+                <Card className="p-5 flex flex-col">
+                  <h3 className="mb-4 flex-shrink-0 text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Power & Torque</h3>
                   <div className="flex-grow">
                     <ResponsiveContainer width="100%" height="100%">
                       <ComposedChart data={finalChartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                        <XAxis dataKey="time" stroke="#9CA3AF" fontSize={12} />
+                        <CartesianGrid strokeDasharray="3 3" stroke="#222a3c" />
+                        <XAxis dataKey="time" stroke="#7e899c" fontSize={12} />
                         <YAxis yAxisId="left" stroke="#ec4899" orientation="left" />
                         <YAxis yAxisId="right" stroke="#84cc16" orientation="right" />
                         <Tooltip
                           contentStyle={{
-                            backgroundColor: "#1F2937",
-                            border: "1px solid #374151",
-                            borderRadius: "6px",
+                            backgroundColor: "#11141d",
+                            border: "1px solid #273043",
+                            borderRadius: "10px",
                           }}
                           formatter={tooltipFormatter}
                         />
@@ -2410,13 +2446,13 @@ export default function AutomotiveAnalyzer() {
                     </ResponsiveContainer>
                   </div>
                 </Card>
-                <Card className="bg-gray-800 border-gray-700 p-4 flex flex-col">
-                  <h3 className="font-semibold mb-4 flex-shrink-0">Gearbox Usage</h3>
+                <Card className="p-5 flex flex-col">
+                  <h3 className="mb-4 flex-shrink-0 text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Gearbox Usage</h3>
                   <div className="flex-grow">
                     <ResponsiveContainer width="100%" height="100%">
                       <ComposedChart data={finalChartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                        <XAxis dataKey="time" stroke="#9CA3AF" fontSize={12} />
+                        <CartesianGrid strokeDasharray="3 3" stroke="#222a3c" />
+                        <XAxis dataKey="time" stroke="#7e899c" fontSize={12} />
                         <YAxis
                           yAxisId="gear"
                           stroke="#b666d2"
@@ -2429,9 +2465,9 @@ export default function AutomotiveAnalyzer() {
                         <YAxis yAxisId="speed" stroke="#22c55e" fontSize={12} orientation="left" />
                         <Tooltip
                           contentStyle={{
-                            backgroundColor: "#1F2937",
-                            border: "1px solid #374151",
-                            borderRadius: "6px",
+                            backgroundColor: "#11141d",
+                            border: "1px solid #273043",
+                            borderRadius: "10px",
                           }}
                           formatter={(value: any, name: any) => {
                             if (name === "gear") {
@@ -2469,8 +2505,8 @@ export default function AutomotiveAnalyzer() {
                     </ResponsiveContainer>
                   </div>
                 </Card>
-                <Card className="bg-gray-800 border-gray-700 p-4 flex flex-col">
-                  <h3 className="font-semibold mb-4 flex-shrink-0">Gear Distribution</h3>
+                <Card className="p-5 flex flex-col">
+                  <h3 className="mb-4 flex-shrink-0 text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Gear Distribution</h3>
                   <div className="flex-grow">
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart
@@ -2491,14 +2527,14 @@ export default function AutomotiveAnalyzer() {
                         }
                         margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
                       >
-                        <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                        <XAxis dataKey="gear" stroke="#9CA3AF" fontSize={12} />
-                        <YAxis stroke="#9CA3AF" fontSize={12} allowDecimals={false} />
+                        <CartesianGrid strokeDasharray="3 3" stroke="#222a3c" />
+                        <XAxis dataKey="gear" stroke="#7e899c" fontSize={12} />
+                        <YAxis stroke="#7e899c" fontSize={12} allowDecimals={false} />
                         <Tooltip
                           contentStyle={{
-                            backgroundColor: "#1F2937",
-                            border: "1px solid #374151",
-                            borderRadius: "6px",
+                            backgroundColor: "#11141d",
+                            border: "1px solid #273043",
+                            borderRadius: "10px",
                           }}
                           formatter={(value: any, name: any, props: any) => [
                             `${value} samples (${props.payload.percentage}%)`,
@@ -2517,17 +2553,17 @@ export default function AutomotiveAnalyzer() {
             <TabsContent value="engine" className="space-y-0">
               <ErrorBoundary>
               <div className="grid grid-cols-2 gap-4" style={{ height: `${STATIC_HEIGHT}px` }}>
-                <Card className="bg-gray-800 border-gray-700 p-4 flex flex-col">
+                <Card className="p-5 flex flex-col">
                   <div className="flex items-center justify-between mb-4 flex-shrink-0">
-                    <h3 className="font-semibold">Engine Temperature</h3>
+                    <h3 className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Engine Temperature</h3>
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
-                        <Button variant="outline" size="sm" className="h-8 bg-gray-700 border-gray-600">
+                        <Button variant="outline" size="sm" className="h-8">
                           <ChevronDown className="h-4 w-4 mr-1" />
                           Sensors
                         </Button>
                       </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end" className="bg-gray-800 border-gray-600 text-white">
+                      <DropdownMenuContent align="end" className="">
                         {tempSensors.map((sensor) => (
                           <DropdownMenuItem
                             key={sensor.key}
@@ -2538,7 +2574,7 @@ export default function AutomotiveAnalyzer() {
                                   : [...prev, sensor.key],
                               )
                             }}
-                            className={selectedTempSensors.includes(sensor.key) ? "bg-gray-700" : ""}
+                            className={selectedTempSensors.includes(sensor.key) ? "bg-accent" : ""}
                           >
                             <div className="flex items-center space-x-2">
                               <div className="w-3 h-3 rounded" style={{ backgroundColor: sensor.color }}></div>
@@ -2552,14 +2588,14 @@ export default function AutomotiveAnalyzer() {
                   <div className="flex-grow">
                     <ResponsiveContainer width="100%" height="100%">
                       <AreaChart data={finalChartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                        <XAxis dataKey="time" stroke="#9CA3AF" fontSize={12} />
-                        <YAxis stroke="#9CA3AF" fontSize={12} />
+                        <CartesianGrid strokeDasharray="3 3" stroke="#222a3c" />
+                        <XAxis dataKey="time" stroke="#7e899c" fontSize={12} />
+                        <YAxis stroke="#7e899c" fontSize={12} />
                         <Tooltip
                           contentStyle={{
-                            backgroundColor: "#1F2937",
-                            border: "1px solid #374151",
-                            borderRadius: "6px",
+                            backgroundColor: "#11141d",
+                            border: "1px solid #273043",
+                            borderRadius: "10px",
                           }}
                           formatter={tooltipFormatter}
                         />
@@ -2585,19 +2621,19 @@ export default function AutomotiveAnalyzer() {
                     </ResponsiveContainer>
                   </div>
                 </Card>
-                <Card className="bg-gray-800 border-gray-700 p-4 flex flex-col">
-                  <h3 className="font-semibold mb-4 flex-shrink-0">Ignition Advance</h3>
+                <Card className="p-5 flex flex-col">
+                  <h3 className="mb-4 flex-shrink-0 text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Ignition Advance</h3>
                   <div className="flex-grow">
                     <ResponsiveContainer width="100%" height="100%">
                       <LineChart data={finalChartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                        <XAxis dataKey="time" stroke="#9CA3AF" fontSize={12} />
-                        <YAxis stroke="#9CA3AF" fontSize={12} domain={["dataMin - 5", "dataMax + 5"]} />
+                        <CartesianGrid strokeDasharray="3 3" stroke="#222a3c" />
+                        <XAxis dataKey="time" stroke="#7e899c" fontSize={12} />
+                        <YAxis stroke="#7e899c" fontSize={12} domain={["dataMin - 5", "dataMax + 5"]} />
                         <Tooltip
                           contentStyle={{
-                            backgroundColor: "#1F2937",
-                            border: "1px solid #374151",
-                            borderRadius: "6px",
+                            backgroundColor: "#11141d",
+                            border: "1px solid #273043",
+                            borderRadius: "10px",
                           }}
                           formatter={tooltipFormatter}
                         />
@@ -2615,19 +2651,19 @@ export default function AutomotiveAnalyzer() {
                     </ResponsiveContainer>
                   </div>
                 </Card>
-                <Card className="bg-gray-800 border-gray-700 p-4 flex flex-col">
-                  <h3 className="font-semibold mb-4 flex-shrink-0">Boost Pressure</h3>
+                <Card className="p-5 flex flex-col">
+                  <h3 className="mb-4 flex-shrink-0 text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Boost Pressure</h3>
                   <div className="flex-grow">
                     <ResponsiveContainer width="100%" height="100%">
                       <LineChart data={finalChartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                        <XAxis dataKey="time" stroke="#9CA3AF" fontSize={12} />
-                        <YAxis stroke="#9CA3AF" fontSize={12} domain={[(dataMin: number) => Math.min(dataMin - 0.2, -0.5), (dataMax: number) => Math.max(dataMax + 0.2, 0.5)]} tickFormatter={(v: number) => Number(v).toFixed(2)} />
+                        <CartesianGrid strokeDasharray="3 3" stroke="#222a3c" />
+                        <XAxis dataKey="time" stroke="#7e899c" fontSize={12} />
+                        <YAxis stroke="#7e899c" fontSize={12} domain={[(dataMin: number) => Math.min(dataMin - 0.2, -0.5), (dataMax: number) => Math.max(dataMax + 0.2, 0.5)]} tickFormatter={(v: number) => Number(v).toFixed(2)} />
                         <Tooltip
                           contentStyle={{
-                            backgroundColor: "#1F2937",
-                            border: "1px solid #374151",
-                            borderRadius: "6px",
+                            backgroundColor: "#11141d",
+                            border: "1px solid #273043",
+                            borderRadius: "10px",
                           }}
                           formatter={tooltipFormatter}
                         />
@@ -2639,19 +2675,19 @@ export default function AutomotiveAnalyzer() {
                     </ResponsiveContainer>
                   </div>
                 </Card>
-                <Card className="bg-gray-800 border-gray-700 p-4 flex flex-col">
-                  <h3 className="font-semibold mb-4 flex-shrink-0">Fuel Consumption</h3>
+                <Card className="p-5 flex flex-col">
+                  <h3 className="mb-4 flex-shrink-0 text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Fuel Consumption</h3>
                   <div className="flex-grow">
                     <ResponsiveContainer width="100%" height="100%">
                       <AreaChart data={finalChartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                        <XAxis dataKey="time" stroke="#9CA3AF" fontSize={12} />
-                        <YAxis stroke="#9CA3AF" fontSize={12} />
+                        <CartesianGrid strokeDasharray="3 3" stroke="#222a3c" />
+                        <XAxis dataKey="time" stroke="#7e899c" fontSize={12} />
+                        <YAxis stroke="#7e899c" fontSize={12} />
                         <Tooltip
                           contentStyle={{
-                            backgroundColor: "#1F2937",
-                            border: "1px solid #374151",
-                            borderRadius: "6px",
+                            backgroundColor: "#11141d",
+                            border: "1px solid #273043",
+                            borderRadius: "10px",
                           }}
                           formatter={tooltipFormatter}
                         />
@@ -2670,19 +2706,19 @@ export default function AutomotiveAnalyzer() {
                     </ResponsiveContainer>
                   </div>
                 </Card>
-                <Card className="bg-gray-800 border-gray-700 p-4 flex flex-col">
-                  <h3 className="font-semibold mb-4 flex-shrink-0">Throttle & Brake</h3>
+                <Card className="p-5 flex flex-col">
+                  <h3 className="mb-4 flex-shrink-0 text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Throttle & Brake</h3>
                   <div className="flex-grow">
                     <ResponsiveContainer width="100%" height="100%">
                       <ComposedChart data={finalChartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                        <XAxis dataKey="time" stroke="#9CA3AF" fontSize={12} />
-                        <YAxis stroke="#9CA3AF" fontSize={12} domain={[0, 100]} />
+                        <CartesianGrid strokeDasharray="3 3" stroke="#222a3c" />
+                        <XAxis dataKey="time" stroke="#7e899c" fontSize={12} />
+                        <YAxis stroke="#7e899c" fontSize={12} domain={[0, 100]} />
                         <Tooltip
                           contentStyle={{
-                            backgroundColor: "#1F2937",
-                            border: "1px solid #374151",
-                            borderRadius: "6px",
+                            backgroundColor: "#11141d",
+                            border: "1px solid #273043",
+                            borderRadius: "10px",
                           }}
                           formatter={tooltipFormatter}
                         />
@@ -2708,36 +2744,36 @@ export default function AutomotiveAnalyzer() {
             <TabsContent value="analysis" className="space-y-0">
               <div className="grid grid-cols-1 md:grid-cols-12 gap-4" style={{ height: `${pidAnalysisHeight}px` }}>
                 <div className="col-span-1 md:col-span-2">
-                  <Card className="bg-gray-800 border-gray-700 h-full flex flex-col">
+                  <Card className="h-full flex flex-col">
                     <div className="p-4 pb-2 flex-shrink-0">
-                      <h3 className="font-semibold mb-3">Available PIDs ({metrics.length})</h3>
+                      <h3 className="mb-3 text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Available PIDs ({metrics.length})</h3>
                       <div className="flex gap-2 mb-3">
                         <div className="relative flex-1">
-                          <Search className="absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                          <Search className="absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                           <Input
                             placeholder="Search PIDs..."
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
-                            className="pl-8 bg-gray-700 border-gray-600 text-white placeholder:text-gray-400 h-8"
+                            className="pl-8 h-8"
                           />
                         </div>
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
-                            <Button variant="outline" size="sm" className="h-8 bg-gray-700 border-gray-600">
+                            <Button variant="outline" size="sm" className="h-8">
                               <ChevronDown className="h-4 w-4 mr-1" />
                               Sort
                             </Button>
                           </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end" className="bg-gray-800 border-gray-600 text-white">
+                          <DropdownMenuContent align="end" className="">
                             <DropdownMenuItem
                               onClick={() => setSortOption("default")}
-                              className={sortOption === "default" ? "bg-gray-700" : ""}
+                              className={sortOption === "default" ? "bg-accent" : ""}
                             >
                               Default Order
                             </DropdownMenuItem>
                             <DropdownMenuItem
                               onClick={() => setSortOption("alphabetical")}
-                              className={sortOption === "alphabetical" ? "bg-gray-700" : ""}
+                              className={sortOption === "alphabetical" ? "bg-accent" : ""}
                             >
                               Alphabetical
                             </DropdownMenuItem>
@@ -2757,7 +2793,7 @@ export default function AutomotiveAnalyzer() {
                         style={{
                           height: `${metricsListHeight}px`,
                           scrollbarWidth: "thin",
-                          scrollbarColor: "#4b5563 #1f2937",
+                          scrollbarColor: "#2c3447 #11141d",
                         }}
                       >
                         {filteredMetrics.length > 0 ? (
@@ -2775,9 +2811,9 @@ export default function AutomotiveAnalyzer() {
                                 />
                                 <span className="text-sm truncate flex-1">{metric.label}</span>
                                 {metric.unit && (
-                                  <span className="text-xs text-gray-400 flex-shrink-0">({metric.unit})</span>
+                                  <span className="text-xs text-muted-foreground flex-shrink-0">({metric.unit})</span>
                                 )}
-                                {isEmpty && <span className="text-xs text-gray-500 flex-shrink-0">∅</span>}
+                                {isEmpty && <span className="text-xs text-muted-foreground/60 flex-shrink-0">∅</span>}
                                 <Button
                                   size="sm"
                                   variant="ghost"
@@ -2791,23 +2827,23 @@ export default function AutomotiveAnalyzer() {
                             )
                           })
                         ) : (
-                          <div className="text-center text-gray-400 py-4">No PIDs found</div>
+                          <div className="text-center text-muted-foreground py-4">No PIDs found</div>
                         )}
                       </div>
                     </div>
-                    <div className="mt-auto p-4 pt-3 border-t border-gray-600 flex-shrink-0">
-                      <h4 className="font-medium mb-3">Selected PIDs ({selectedPIDs.length})</h4>
+                    <div className="mt-auto p-4 pt-3 border-t border-border/80 flex-shrink-0">
+                      <h4 className="mb-3 text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Selected PIDs ({selectedPIDs.length})</h4>
                       {selectedPIDs.length > 0 ? (
                         <div className="space-y-2 text-sm max-h-32 overflow-y-auto">
                           {selectedPIDs.map((pidKey) => {
                             const metric = metrics.find((m) => m.key === pidKey)
                             if (!metric) return null
                             return (
-                              <div key={pidKey} className="flex items-center justify-between bg-gray-700 rounded p-1.5">
+                              <div key={pidKey} className="flex items-center justify-between rounded-md bg-secondary/60 p-1.5">
                                 <div className="flex items-center space-x-2">
                                   <div className="w-3 h-3 rounded" style={{ backgroundColor: metric.color }} />
                                   <span className="font-medium">{metric.label}</span>
-                                  {metric.unit && <span className="text-xs text-gray-400">({metric.unit})</span>}
+                                  {metric.unit && <span className="text-xs text-muted-foreground">({metric.unit})</span>}
                                 </div>
                                 <Button
                                   size="sm"
@@ -2822,14 +2858,14 @@ export default function AutomotiveAnalyzer() {
                           })}
                         </div>
                       ) : (
-                        <div className="text-xs text-gray-400">No PIDs selected</div>
+                        <div className="text-xs text-muted-foreground">No PIDs selected</div>
                       )}
                       {selectedPIDs.length > 0 && (
                         <Button
                           size="sm"
                           variant="outline"
                           onClick={() => setSelectedPIDs([])}
-                          className="w-full mt-3 h-7 text-xs bg-gray-700 border-gray-600"
+                          className="w-full mt-3 h-7 text-xs"
                         >
                           Clear All
                         </Button>
@@ -2838,13 +2874,13 @@ export default function AutomotiveAnalyzer() {
                   </Card>
                 </div>
                 <div className="col-span-1 md:col-span-10">
-                  <Card className="bg-gray-800 border-gray-700 h-full flex flex-col">
+                  <Card className="h-full flex flex-col">
                     <div className="p-4 pb-2 flex-shrink-0">
-                      <h3 className="font-semibold">PID Analysis Charts</h3>
+                      <h3 className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">PID Analysis Charts</h3>
                     </div>
                     <div className="flex-1 p-4 pt-0">
                       {selectedPIDs.length === 0 ? (
-                        <div className="h-full flex items-center justify-center text-gray-400">
+                        <div className="h-full flex items-center justify-center text-muted-foreground">
                           <div className="text-center">
                             <BarChart3 className="w-12 h-12 mx-auto mb-2 opacity-50" />
                             <p>Select PIDs from the left panel to start analysis</p>
@@ -2877,7 +2913,7 @@ export default function AutomotiveAnalyzer() {
                               : null
 
                             return (
-                              <div key={pidKey} className="bg-gray-700 rounded p-3 flex flex-col">
+                              <div key={pidKey} className="rounded-lg border border-border/70 bg-secondary/40 p-3 flex flex-col">
                                 <div className="flex items-center justify-between mb-2 flex-shrink-0">
                                   <h4 className="font-medium text-sm">{metric.label}</h4>
                                   <Button
@@ -2905,13 +2941,13 @@ export default function AutomotiveAnalyzer() {
                                       }}
                                     >
                                       <CartesianGrid strokeDasharray="3 3" stroke="#4b5563" />
-                                      <XAxis dataKey="time" stroke="#9CA3AF" fontSize={10} />
-                                      <YAxis stroke="#9CA3AF" fontSize={10} domain={["auto", "auto"]} />
+                                      <XAxis dataKey="time" stroke="#7e899c" fontSize={10} />
+                                      <YAxis stroke="#7e899c" fontSize={10} domain={["auto", "auto"]} />
                                       <Tooltip
                                         contentStyle={{
-                                          backgroundColor: "#1F2937",
-                                          border: "1px solid #374151",
-                                          borderRadius: "6px",
+                                          backgroundColor: "#11141d",
+                                          border: "1px solid #273043",
+                                          borderRadius: "10px",
                                           fontSize: "12px",
                                         }}
                                         formatter={tooltipFormatter}
@@ -2935,7 +2971,7 @@ export default function AutomotiveAnalyzer() {
                                       ? formatValue(currentPidValue, metric.unit)
                                       : "N/A"}
                                   </span>
-                                  <span className="text-xs text-gray-400 ml-1">{metric.unit}</span>
+                                  <span className="text-xs text-muted-foreground ml-1">{metric.unit}</span>
                                 </div>
                               </div>
                             )
@@ -2951,12 +2987,12 @@ export default function AutomotiveAnalyzer() {
             <TabsContent value="gps" className="space-y-0">
               <ErrorBoundary>
               <div style={{ height: `${STATIC_HEIGHT}px` }}>
-                <Card className="bg-gray-800 border-gray-700 p-4 h-full">
+                <Card className="p-5 h-full">
                   <div className="flex items-center justify-between mb-4">
-                    <h3 className="font-semibold">GPS Track Visualization</h3>
+                    <h3 className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">GPS Track Visualization</h3>
                     <div className="flex items-center gap-2">
                       <Map className="w-4 h-4" />
-                      <span className="text-sm text-gray-400">
+                      <span className="text-sm text-muted-foreground">
                         {/* Keep this predicate identical to gpsData (in GPSTrackMap) so the
                             count matches exactly what is drawn: count any finite fix except the
                             (0,0) no-fix sentinel, including valid equator/prime-meridian points. */}
@@ -2983,48 +3019,83 @@ export default function AutomotiveAnalyzer() {
         </>
       )}
       {data.length === 0 && !isLoading && (
-        <Card
-          className={`bg-gray-800 border-gray-700 p-8 text-center transition-all duration-200 ${
-            isDragOver ? "border-blue-500 bg-gray-700" : ""
-          }`}
-          onDrop={handleDrop}
-          onDragOver={handleDragOver}
-          onDragLeave={handleDragLeave}
-        >
-          <Upload className={`w-12 h-12 mx-auto mb-4 ${isDragOver ? "text-blue-400" : "text-gray-400"}`} />
-          <h3 className="text-lg font-semibold mb-2">
-            {isDragOver ? "Drop CSV file(s) here" : "Drag and drop CSV file(s) here"}
-          </h3>
-          <p className="text-gray-400 mb-4">Select one or multiple CSV files — multiple files will be merged automatically in order</p>
-          <div className="flex gap-4 justify-center">
-            <Button onClick={() => fileInputRef.current?.click()} className="bg-blue-600 hover:bg-blue-700">
-              <Upload className="w-4 h-4 mr-2" />
-              Choose CSV File(s)
-            </Button>
-            <Button
-              onClick={loadSampleData}
-              variant="outline"
-              className="border-gray-600 hover:bg-gray-700 bg-transparent"
-            >
-              <FileText className="w-4 h-4 mr-2" />
-              Load Sample Data
-            </Button>
+        <div className="relative mx-auto mt-6 w-full max-w-3xl md:mt-16">
+          <div
+            aria-hidden
+            className="pointer-events-none absolute -top-28 left-1/2 h-72 w-[34rem] max-w-full -translate-x-1/2 rounded-full bg-primary/10 blur-3xl"
+          />
+          <div className="relative mb-10 text-center">
+            <span className="inline-flex items-center gap-2 rounded-full border border-primary/25 bg-primary/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-primary">
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-primary" />
+              100% client-side · nothing leaves your browser
+            </span>
+            <h2 className="mt-6 text-balance text-4xl font-bold tracking-tight md:text-5xl">
+              Decode your <span className="text-primary">drive</span>
+            </h2>
+            <p className="mx-auto mt-4 max-w-xl text-pretty text-base text-muted-foreground">
+              Drop an OBD-II CSV log to explore RPM, speed, boost, gearbox usage and the GPS track — charted instantly,
+              right here on your machine.
+            </p>
           </div>
-        </Card>
+          <Card
+            className={`relative border-dashed p-10 text-center transition-all duration-200 ${
+              isDragOver
+                ? "border-primary/70 bg-primary/[0.06] shadow-[0_0_50px_-12px] shadow-primary/40"
+                : "hover:border-primary/40"
+            }`}
+            onDrop={handleDrop}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+          >
+            <div
+              className={`mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-2xl border transition-colors duration-200 ${
+                isDragOver
+                  ? "border-primary/50 bg-primary/15 text-primary"
+                  : "border-border bg-secondary/60 text-muted-foreground"
+              }`}
+            >
+              <Upload className="w-7 h-7" />
+            </div>
+            <h3 className="text-lg font-semibold mb-2">
+              {isDragOver ? "Drop CSV file(s) here" : "Drag and drop CSV file(s) here"}
+            </h3>
+            <p className="mx-auto mb-8 max-w-md text-sm text-muted-foreground">
+              Select one or multiple CSV files — multiple files will be merged automatically in order
+            </p>
+            <div className="flex flex-col justify-center gap-3 sm:flex-row">
+              <Button onClick={() => fileInputRef.current?.click()} className="">
+                <Upload className="w-4 h-4 mr-2" />
+                Choose CSV File(s)
+              </Button>
+              <Button
+                onClick={loadSampleData}
+                variant="outline"
+                className=""
+              >
+                <FileText className="w-4 h-4 mr-2" />
+                Load Sample Data
+              </Button>
+            </div>
+            <p className="mt-8 text-xs text-muted-foreground/70">
+              No log handy? <span className="font-medium text-muted-foreground">Load Sample Data</span> opens a bundled
+              demo drive so you can explore every tab.
+            </p>
+          </Card>
+        </div>
       )}
       {showTransmissionDialog && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <Card className="bg-gray-800 border-gray-700 w-full max-w-4xl max-h-[90vh] overflow-y-auto mx-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
+          <Card className="w-full max-w-4xl max-h-[90vh] overflow-y-auto shadow-2xl shadow-black/60">
             <div className="p-6">
               <div className="flex items-center justify-between mb-6">
-                <h2 className="text-xl font-bold text-white">Transmission Configuration</h2>
+                <h2 className="text-lg font-semibold tracking-tight">Transmission Configuration</h2>
                 <Button onClick={() => setShowTransmissionDialog(false)} variant="ghost" size="sm">
                   <X className="w-4 h-4" />
                 </Button>
               </div>
 
               <Tabs defaultValue="manual" className="space-y-4">
-                <TabsList className="flex w-full overflow-x-auto bg-gray-700">
+                <TabsList className="flex w-full overflow-x-auto">
                   <TabsTrigger value="manual" className="flex-1 min-w-[80px]">Manual</TabsTrigger>
                   <TabsTrigger value="presets" className="flex-1 min-w-[80px]">Presets</TabsTrigger>
                   <TabsTrigger value="auto" className="flex-1 min-w-[80px]">
@@ -3049,7 +3120,7 @@ export default function AutomotiveAnalyzer() {
                             finalDrive: Number.parseFloat(e.target.value) || 4.35,
                           }))
                         }
-                        className="bg-gray-700 border-gray-600 text-white"
+                        className=""
                       />
                     </div>
                     <div>
@@ -3063,7 +3134,7 @@ export default function AutomotiveAnalyzer() {
                             tyreDiameterMm: Number.parseInt(e.target.value) || 647,
                           }))
                         }
-                        className="bg-gray-700 border-gray-600 text-white"
+                        className=""
                       />
                     </div>
                   </div>
@@ -3080,7 +3151,7 @@ export default function AutomotiveAnalyzer() {
                             shiftRpm: Number.parseInt(e.target.value) || 6900,
                           }))
                         }
-                        className="bg-gray-700 border-gray-600 text-white"
+                        className=""
                       />
                     </div>
                     <div>
@@ -3114,7 +3185,7 @@ export default function AutomotiveAnalyzer() {
                             }
                           })
                         }}
-                        className="bg-gray-700 border-gray-600 text-white"
+                        className=""
                       />
                     </div>
                   </div>
@@ -3124,7 +3195,7 @@ export default function AutomotiveAnalyzer() {
                     <div className="grid grid-cols-4 gap-3">
                       {Array.from({ length: transmissionConfig.numberOfGears }, (_, i) => i + 1).map((gear) => (
                         <div key={gear}>
-                          <label className="block text-xs text-gray-400 mb-1">Gear {gear}</label>
+                          <label className="block text-xs text-muted-foreground mb-1">Gear {gear}</label>
                           <Input
                             type="number"
                             step="0.001"
@@ -3138,7 +3209,7 @@ export default function AutomotiveAnalyzer() {
                                 },
                               }))
                             }
-                            className="bg-gray-700 border-gray-600 text-white text-sm"
+                            className=" text-sm"
                           />
                         </div>
                       ))}
@@ -3148,7 +3219,7 @@ export default function AutomotiveAnalyzer() {
                     <label className="block text-sm font-medium text-white mb-3">Tire Size Calculator</label>
                     <div className="grid grid-cols-2 gap-4">
                       <div>
-                        <label className="block text-xs text-gray-400 mb-1">Tire Size (e.g., 235/35R19)</label>
+                        <label className="block text-xs text-muted-foreground mb-1">Tire Size (e.g., 235/35R19)</label>
                         <Input
                           type="text"
                           value={tireSizeInput}
@@ -3164,19 +3235,19 @@ export default function AutomotiveAnalyzer() {
                             }
                           }}
                           placeholder="235/35R19"
-                          className="bg-gray-700 border-gray-600 text-white text-sm"
+                          className=" text-sm"
                         />
                       </div>
                       <div>
-                        <label className="block text-xs text-gray-400 mb-1">Calculated Diameter</label>
-                        <div className="bg-gray-700 border border-gray-600 rounded px-3 py-2 text-sm text-white">
+                        <label className="block text-xs text-muted-foreground mb-1">Calculated Diameter</label>
+                        <div className="rounded-md border border-input bg-secondary/50 px-3 py-2 text-sm font-mono">
                           {calculateTireDiameter(tireWidth, tireAspectRatio, tireRimSize)} mm
                         </div>
                       </div>
                     </div>
                     <div className="grid grid-cols-3 gap-3 mt-2">
                       <div>
-                        <label className="block text-xs text-gray-400 mb-1">Width (mm)</label>
+                        <label className="block text-xs text-muted-foreground mb-1">Width (mm)</label>
                         <Input
                           type="number"
                           value={tireWidth}
@@ -3187,11 +3258,11 @@ export default function AutomotiveAnalyzer() {
                             const diameter = calculateTireDiameter(width, tireAspectRatio, tireRimSize)
                             setTransmissionConfig((prev) => ({ ...prev, tyreDiameterMm: diameter }))
                           }}
-                          className="bg-gray-700 border-gray-600 text-white text-xs"
+                          className=" text-xs"
                         />
                       </div>
                       <div>
-                        <label className="block text-xs text-gray-400 mb-1">Aspect Ratio (%)</label>
+                        <label className="block text-xs text-muted-foreground mb-1">Aspect Ratio (%)</label>
                         <Input
                           type="number"
                           value={tireAspectRatio}
@@ -3205,11 +3276,11 @@ export default function AutomotiveAnalyzer() {
                             const diameter = calculateTireDiameter(tireWidth, aspect, tireRimSize)
                             setTransmissionConfig((prev) => ({ ...prev, tyreDiameterMm: diameter }))
                           }}
-                          className="bg-gray-700 border-gray-600 text-white text-xs"
+                          className=" text-xs"
                         />
                       </div>
                       <div>
-                        <label className="block text-xs text-gray-400 mb-1">Rim Size (inches)</label>
+                        <label className="block text-xs text-muted-foreground mb-1">Rim Size (inches)</label>
                         <Input
                           type="number"
                           value={tireRimSize}
@@ -3220,7 +3291,7 @@ export default function AutomotiveAnalyzer() {
                             const diameter = calculateTireDiameter(tireWidth, tireAspectRatio, rim)
                             setTransmissionConfig((prev) => ({ ...prev, tyreDiameterMm: diameter }))
                           }}
-                          className="bg-gray-700 border-gray-600 text-white text-xs"
+                          className=" text-xs"
                         />
                       </div>
                     </div>
@@ -3230,31 +3301,31 @@ export default function AutomotiveAnalyzer() {
                 <TabsContent value="presets" className="space-y-4">
                   <div className="flex gap-2 mb-4">
                     <div className="relative flex-1">
-                      <Search className="absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                      <Search className="absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                       <Input
                         placeholder="Search presets..."
                         value={presetSearchQuery}
                         onChange={(e) => setPresetSearchQuery(e.target.value)}
-                        className="pl-8 bg-gray-700 border-gray-600 text-white placeholder:text-gray-400"
+                        className="pl-8  placeholder:text-muted-foreground"
                       />
                     </div>
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
-                        <Button variant="outline" size="sm" className="h-10 bg-gray-700 border-gray-600">
+                        <Button variant="outline" size="sm" className="h-10">
                           <ChevronDown className="h-4 w-4 mr-1" />
                           Sort
                         </Button>
                       </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end" className="bg-gray-800 border-gray-600 text-white">
+                      <DropdownMenuContent align="end" className="">
                         <DropdownMenuItem
                           onClick={() => setPresetSortOption("default")}
-                          className={presetSortOption === "default" ? "bg-gray-700" : ""}
+                          className={presetSortOption === "default" ? "bg-accent" : ""}
                         >
                           Default Order
                         </DropdownMenuItem>
                         <DropdownMenuItem
                           onClick={() => setPresetSortOption("alphabetical")}
-                          className={presetSortOption === "alphabetical" ? "bg-gray-700" : ""}
+                          className={presetSortOption === "alphabetical" ? "bg-accent" : ""}
                         >
                           Alphabetical
                         </DropdownMenuItem>
@@ -3263,7 +3334,7 @@ export default function AutomotiveAnalyzer() {
                   </div>
                   <div className="grid gap-4">
                     {filteredTransmissionPresets.map((preset, index) => (
-                      <Card key={index} className="bg-gray-700 border-gray-600 p-4">
+                      <Card key={index} className="border-border/70 bg-secondary/40 p-4">
                         <div className="flex items-center justify-between mb-2">
                           <h3 className="font-semibold text-white">{preset.name}</h3>
                           <Button
@@ -3272,18 +3343,18 @@ export default function AutomotiveAnalyzer() {
                               setTransmissionConfig(preset.config)
                               showToast(`Applied "${preset.name}" configuration`)
                             }}
-                            className="bg-blue-600 hover:bg-blue-700"
+                            className=""
                           >
                             Apply
                           </Button>
                         </div>
-                        <div className="grid grid-cols-2 gap-4 text-sm text-gray-300">
+                        <div className="grid grid-cols-2 gap-4 text-sm text-foreground/80">
                           <div>Gears: {preset.config.numberOfGears}</div>
                           <div>Final Drive: {preset.config.finalDrive}</div>
                           <div>Shift RPM: {preset.config.shiftRpm}</div>
                           <div>Tire: {preset.config.tyreDiameterMm}mm</div>
                         </div>
-                        <div className="mt-2 text-xs text-gray-400">
+                        <div className="mt-2 text-xs text-muted-foreground">
                           Ratios:{" "}
                           {Object.values(preset.config.gearRatios)
                             .map((r) => r.toFixed(3))
@@ -3307,7 +3378,7 @@ export default function AutomotiveAnalyzer() {
                     >
                       Analyze Current Data
                     </Button>
-                    <p className="text-sm text-gray-400 mt-2">
+                    <p className="text-sm text-muted-foreground mt-2">
                       {data.length < 100
                         ? `Need at least 100 data points (currently ${data.length})`
                         : `Analyze ${data.length} data points to detect gear ratios`}
@@ -3315,15 +3386,15 @@ export default function AutomotiveAnalyzer() {
                   </div>
 
                   {autoDetection && (
-                    <Card className="bg-gray-700 border-gray-600 p-4">
+                    <Card className="border-border/70 bg-secondary/40 p-4">
                       <h3 className="font-semibold text-white mb-3">Auto-Detection Results</h3>
                       <div className="grid grid-cols-2 gap-4 text-sm">
                         <div>
-                          <span className="text-gray-400">Detected Gears:</span>
+                          <span className="text-muted-foreground">Detected Gears:</span>
                           <span className="text-white ml-2">{autoDetection.detectedGears}</span>
                         </div>
                         <div>
-                          <span className="text-gray-400">Confidence:</span>
+                          <span className="text-muted-foreground">Confidence:</span>
                           <span className="text-white ml-2">{autoDetection.confidence.toFixed(1)}%</span>
                         </div>
                       </div>
@@ -3332,8 +3403,8 @@ export default function AutomotiveAnalyzer() {
                         <h4 className="text-sm font-medium text-white mb-2">Detected Gear Ratios:</h4>
                         <div className="grid grid-cols-3 gap-2 text-xs">
                           {Object.entries(autoDetection.gearRatios).map(([gear, ratio]) => (
-                            <div key={gear} className="bg-gray-800 p-2 rounded">
-                              <span className="text-gray-400">Gear {gear}:</span>
+                            <div key={gear} className="rounded-md bg-secondary/50 p-2">
+                              <span className="text-muted-foreground">Gear {gear}:</span>
                               <span className="text-white ml-1">{(ratio as number).toFixed(3)}</span>
                             </div>
                           ))}
@@ -3357,7 +3428,7 @@ export default function AutomotiveAnalyzer() {
                           })
                           showToast("Applied auto-detected transmission settings")
                         }}
-                        className="mt-4 bg-blue-600 hover:bg-blue-700"
+                        className="mt-4 "
                         size="sm"
                       >
                         Apply Auto-Detected Settings
@@ -3368,9 +3439,9 @@ export default function AutomotiveAnalyzer() {
 
                 <TabsContent value="import-export" className="space-y-4">
                   <div className="grid grid-cols-2 gap-4">
-                    <Card className="bg-gray-700 border-gray-600 p-4">
+                    <Card className="border-border/70 bg-secondary/40 p-4">
                       <h3 className="font-semibold text-white mb-3">Export Configuration</h3>
-                      <p className="text-sm text-gray-400 mb-4">
+                      <p className="text-sm text-muted-foreground mb-4">
                         Save your current transmission settings to a JSON file.
                       </p>
                       <Button
@@ -3381,9 +3452,9 @@ export default function AutomotiveAnalyzer() {
                       </Button>
                     </Card>
 
-                    <Card className="bg-gray-700 border-gray-600 p-4">
+                    <Card className="border-border/70 bg-secondary/40 p-4">
                       <h3 className="font-semibold text-white mb-3">Import Configuration</h3>
-                      <p className="text-sm text-gray-400 mb-4">Load transmission settings from a JSON file.</p>
+                      <p className="text-sm text-muted-foreground mb-4">Load transmission settings from a JSON file.</p>
                       <input
                         ref={transmissionFileInputRef}
                         type="file"
@@ -3401,7 +3472,7 @@ export default function AutomotiveAnalyzer() {
                       />
                       <Button
                         onClick={() => transmissionFileInputRef.current?.click()}
-                        className="w-full bg-blue-600 hover:bg-blue-700"
+                        className="w-full "
                       >
                         Import Settings
                       </Button>
@@ -3410,7 +3481,7 @@ export default function AutomotiveAnalyzer() {
                 </TabsContent>
               </Tabs>
 
-              <div className="flex justify-between pt-6 border-t border-gray-600">
+              <div className="flex justify-between pt-6 border-t border-border/80">
                 <Button
                   onClick={() => {
                     setTransmissionConfig({
@@ -3430,7 +3501,7 @@ export default function AutomotiveAnalyzer() {
                     showToast("Reset to default configuration")
                   }}
                   variant="outline"
-                  className="border-gray-600 hover:bg-gray-700"
+                  className=""
                 >
                   Reset to Default
                 </Button>
@@ -3449,7 +3520,7 @@ export default function AutomotiveAnalyzer() {
                     }
                     showToast("Transmission configuration applied")
                   }}
-                  className="bg-blue-600 hover:bg-blue-700"
+                  className=""
                 >
                   Apply Configuration
                 </Button>
@@ -3459,10 +3530,12 @@ export default function AutomotiveAnalyzer() {
         </div>
       )}
       {toastMessage && (
-        <div className="fixed bottom-6 right-6 z-[100] bg-gray-800 border border-gray-600 text-white px-4 py-3 rounded-lg shadow-lg animate-in fade-in slide-in-from-bottom-4 duration-300">
+        <div className="fixed bottom-6 right-6 z-[100] flex items-center gap-2.5 rounded-lg border border-border bg-popover px-4 py-3 text-sm text-foreground shadow-xl shadow-black/40 animate-in fade-in slide-in-from-bottom-4 duration-300">
+          <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-primary shadow-[0_0_8px] shadow-primary/70" />
           {toastMessage}
         </div>
       )}
+      </main>
     </div>
   )
 }
