@@ -21,6 +21,10 @@ import {
   History,
   AlertTriangle,
   Gauge,
+  Share2,
+  Copy,
+  Check,
+  Loader2,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
@@ -55,6 +59,11 @@ import {
 } from "@/components/ui/alert-dialog"
 import Link from "next/link"
 import { ErrorBoundary } from "@/components/error-boundary"
+
+// Toggles the optional "share a log via an expiring link" feature. The backend must also
+// be configured (see .env.example / README → "Sharing logs"). When false, the Share
+// button is hidden and the app stays 100% client-side.
+const SHARING_ENABLED = process.env.NEXT_PUBLIC_SHARING_ENABLED === "true"
 
 function safeMax(arr: number[]): number {
   return arr.reduce((a, b) => (b > a ? b : a), -Infinity)
@@ -954,6 +963,17 @@ export default function AutomotiveAnalyzer() {
   const [pidAnalysisHoveredTimeKey, setPidAnalysisHoveredTimeKey] = useState<number | null>(null)
   const [isDragOver, setIsDragOver] = useState(false)
   const [speedUnit, setSpeedUnit] = useState<"km/h" | "mph">("km/h")
+
+  // --- Sharing (optional; gated by SHARING_ENABLED) ---
+  // rawCsv retains the exact text of the loaded log so it can be POSTed to /api/share.
+  const [rawCsv, setRawCsv] = useState<string | null>(null)
+  const [isSharing, setIsSharing] = useState(false)
+  const [shareDialogOpen, setShareDialogOpen] = useState(false)
+  const [shareUrl, setShareUrl] = useState<string | null>(null)
+  const [shareExpiresAt, setShareExpiresAt] = useState<string | null>(null)
+  const [shareCopied, setShareCopied] = useState(false)
+  const [sharedNotice, setSharedNotice] = useState<{ expiresAt: string | null } | null>(null)
+  const sharedLoadedRef = useRef(false)
   const [showMissingPIDsDialog, setShowMissingPIDsDialog] = useState(false)
   const [toastMessage, setToastMessage] = useState<string | null>(null)
   const toastTimeoutRef = useRef<NodeJS.Timeout | null>(null)
@@ -1103,6 +1123,8 @@ export default function AutomotiveAnalyzer() {
   const parseCSV = useCallback(
     async (file: File) => {
       setIsLoading(true)
+      // Clear any "viewing a shared log" banner; the shared loader re-sets it after parse.
+      setSharedNotice(null)
       try {
         const text = await file.text()
         const lines = text.split(/\r?\n/).filter((line) => line.trim() && !line.trim().startsWith("#"))
@@ -1118,6 +1140,7 @@ export default function AutomotiveAnalyzer() {
           setTimeRange([0, 0])
           setCurrentTime(0)
           setMissingPIDs({ missing: [], hasCriticalMissing: false })
+          setRawCsv(null)
           showToast("The selected CSV file is empty or contains no data.")
           return
         }
@@ -1127,6 +1150,7 @@ export default function AutomotiveAnalyzer() {
           setTimeRange([0, 0])
           setCurrentTime(0)
           setMissingPIDs({ missing: [], hasCriticalMissing: false })
+          setRawCsv(null)
           showToast("The CSV file has a header row but no data rows.")
           return
         }
@@ -1531,6 +1555,7 @@ export default function AutomotiveAnalyzer() {
           setShowMissingPIDsDialog(true)
         }
 
+        setRawCsv(text)
         setMetrics(detectedMetrics)
         setData(parsedData)
         setTimeRange([0, Math.max(0, parsedData.length - 1)])
@@ -1560,6 +1585,97 @@ export default function AutomotiveAnalyzer() {
       setIsLoading(false)
     }
   }, [parseCSV])
+
+  // Create an expiring share link for the currently loaded log. POSTs the raw CSV to the
+  // server route, which stores it and returns a short id; the data leaves the browser only
+  // on this explicit action.
+  const handleShare = useCallback(async () => {
+    if (!rawCsv) {
+      showToast("Load a log before sharing.")
+      return
+    }
+    setShareCopied(false)
+    setIsSharing(true)
+    try {
+      const res = await fetch("/api/share", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ csv: rawCsv }),
+      })
+      if (!res.ok) {
+        showToast(
+          res.status === 413
+            ? "This log is too large to share."
+            : res.status === 501
+              ? "Sharing isn't configured on this instance."
+              : "Couldn't create a share link. Please try again.",
+        )
+        return
+      }
+      const json = (await res.json()) as { id: string; expiresAt?: string }
+      const url = `${window.location.origin}/?share=${json.id}`
+      setShareUrl(url)
+      setShareExpiresAt(json.expiresAt ?? null)
+      setShareDialogOpen(true)
+      // Best-effort auto-copy; the dialog also has a manual Copy button as a fallback.
+      try {
+        await navigator.clipboard.writeText(url)
+        setShareCopied(true)
+      } catch {
+        /* clipboard unavailable (insecure context / denied) — manual copy still works */
+      }
+    } catch {
+      showToast("Couldn't create a share link. Please try again.")
+    } finally {
+      setIsSharing(false)
+    }
+  }, [rawCsv, showToast])
+
+  const copyShareUrl = useCallback(async () => {
+    if (!shareUrl) return
+    try {
+      await navigator.clipboard.writeText(shareUrl)
+      setShareCopied(true)
+      window.setTimeout(() => setShareCopied(false), 2000)
+    } catch {
+      showToast("Couldn't copy — select the link and copy it manually.")
+    }
+  }, [shareUrl, showToast])
+
+  // On first load, if the URL carries ?share=<id>, fetch that shared log and render it.
+  useEffect(() => {
+    if (!SHARING_ENABLED || sharedLoadedRef.current) return
+    const shareId = new URLSearchParams(window.location.search).get("share")
+    if (!shareId) return
+    sharedLoadedRef.current = true
+    ;(async () => {
+      setIsLoading(true)
+      try {
+        const res = await fetch(`/api/share/${encodeURIComponent(shareId)}`)
+        if (!res.ok) {
+          showToast(
+            res.status === 404 || res.status === 410
+              ? "This shared log has expired or no longer exists."
+              : "Couldn't load the shared log.",
+          )
+          return
+        }
+        const json = (await res.json()) as { csv: string; expiresAt?: string }
+        const file = new File([json.csv], "shared-log.csv", { type: "text/csv" })
+        setSelectedFile(file)
+        setImportedFileNames(["shared-log.csv"])
+        await parseCSV(file)
+        // parseCSV clears any prior banner on entry, so set the notice afterwards.
+        setSharedNotice({ expiresAt: json.expiresAt ?? null })
+      } catch {
+        showToast("Couldn't load the shared log.")
+      } finally {
+        setIsLoading(false)
+      }
+    })()
+    // One-shot on mount; parseCSV/showToast are stable enough for this loader.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const handleDrop = useCallback(
     async (event: React.DragEvent<HTMLDivElement>) => {
@@ -1904,11 +2020,69 @@ export default function AutomotiveAnalyzer() {
             >
               <RotateCcw className="w-4 h-4" />
             </Button>
+            {SHARING_ENABLED && (
+              <Button
+                onClick={handleShare}
+                variant="outline"
+                size="sm"
+                disabled={data.length === 0 || isSharing}
+              >
+                {isSharing ? (
+                  <Loader2 className="h-4 w-4 animate-spin sm:mr-2" />
+                ) : (
+                  <Share2 className="h-4 w-4 sm:mr-2" />
+                )}
+                <span className="hidden sm:inline">{isSharing ? "Sharing…" : "Share"}</span>
+              </Button>
+            )}
           </div>
         </div>
       </header>
 
       <main className="mx-auto w-full max-w-[1700px] px-4 py-6 lg:px-6">
+
+      {sharedNotice && (
+        <div className="mb-4 flex flex-wrap items-center gap-2 rounded-lg border border-primary/25 bg-primary/[0.08] px-4 py-2.5 text-sm text-foreground/80">
+          <Share2 className="h-4 w-4 shrink-0 text-primary" />
+          <span className="font-medium text-foreground/90">You're viewing a shared log.</span>
+          {sharedNotice.expiresAt && (
+            <span className="text-muted-foreground">
+              This link expires {new Date(sharedNotice.expiresAt).toLocaleString()}.
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* Share link dialog */}
+      <AlertDialog open={shareDialogOpen} onOpenChange={setShareDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <Share2 className="h-5 w-5 text-primary" />
+              Shareable link created
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Anyone with this link can view this log
+              {shareExpiresAt ? ` until ${new Date(shareExpiresAt).toLocaleString()}` : ""}. The log is stored
+              on this instance's backend (not embedded in the link); the link stops working when it expires.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="flex items-center gap-2">
+            <Input
+              readOnly
+              value={shareUrl ?? ""}
+              onFocus={(e) => e.currentTarget.select()}
+              className="font-mono text-xs"
+            />
+            <Button type="button" variant="outline" size="sm" onClick={copyShareUrl} aria-label="Copy share link">
+              {shareCopied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+            </Button>
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogAction onClick={() => setShareDialogOpen(false)}>Done</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Missing PIDs Warning Dialog */}
       <AlertDialog open={showMissingPIDsDialog} onOpenChange={setShowMissingPIDsDialog}>

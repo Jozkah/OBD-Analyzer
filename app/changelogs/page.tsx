@@ -14,6 +14,18 @@ interface ChangelogEntry {
 
 const changelogs: ChangelogEntry[] = [
   {
+    version: "1.8.0",
+    date: "2026-06-10",
+    title: "Shareable, Expiring Log Links",
+    type: "feature",
+    description: [
+      "Added an optional Share button that creates a short link to the current log, which expires automatically (24h by default)",
+      "Opening a share link loads the log straight into the dashboard — handy for sending a drive to someone or pulling it up on another device",
+      "The feature is off unless a deployer configures it; with it off the app stays 100% client-side and nothing leaves the browser",
+      "Shared logs are stored gzipped behind a server-side route handler with a random, non-enumerable id; the browser never sees any database credentials",
+    ],
+  },
+  {
     version: "1.7.0",
     date: "2026-06-10",
     title: "Full Visual Redesign + Major QA Bug-Fix Pass",

@@ -2,7 +2,7 @@
 
 A fast, **fully client-side** dashboard for analyzing automotive telemetry logged from your car's OBD-II port. Drop in a CSV exported by an OBD-II scanner app and explore your drive across interactive charts and a GPS track map — no account, no server, no data ever leaves your browser.
 
-> All parsing and rendering happens locally in the browser. There is **no backend, no database, and no telemetry**. Host it as a static site or just run it locally.
+> All parsing and rendering happens locally in the browser. There is **no backend, no database, and no telemetry** — host it as a static site or just run it locally. *(The one optional exception is the [share-link feature](#sharing-logs-optional): if a deployer turns it on, clicking **Share** uploads that single log to the deployment's own backend. It's off by default.)*
 
 ## Why I built this
 
@@ -31,6 +31,7 @@ The upload screen, and the analysis dashboard loaded with the bundled sample log
 - **Gear estimation** — derives the engaged gear from speed + RPM using a configurable tyre size and gear ratios.
 - **Robust number parsing** — tolerates `.`/`,` decimal separators and ignores `#` comment lines.
 - **Polished dark "instrument cluster" UI** built with Tailwind CSS and shadcn/ui, with tabular-figure readouts that stay stable as values change.
+- **Optional expiring share links** — a deployer can enable a Share button that creates a short, self-expiring link to a log. Off by default; see [Sharing logs](#sharing-logs-optional).
 
 ## Supported input format
 
@@ -53,12 +54,33 @@ Open <http://localhost:3000> and upload a CSV (or the bundled sample).
 pnpm build && pnpm start
 ```
 
+## Sharing logs (optional)
+
+By default the app is 100% client-side and nothing you load ever leaves your browser. You can *optionally* enable a **Share** button that creates a short link to a log which **expires automatically**.
+
+When a deployment has this turned on, clicking **Share** uploads the current log to *that deployment's own backend* and returns a link like `https://your-host/?share=ab12CD…`. Anyone with the link sees the same dashboard until it expires (24h by default). This is the only time a log leaves the browser, and only on an explicit click.
+
+**How it works**
+
+- A Next.js route handler (`app/api/share`) stores the gzipped CSV in a Supabase table with an `expires_at`. Reads filter on it, so an expired link returns `404` immediately — even before cleanup deletes the row.
+- The browser only ever calls `/api/share`; it never talks to Supabase and never sees any Supabase key. The **service-role** key lives only in server-side environment variables.
+- Share ids are 72-bit random (not enumerable), and oversized logs are rejected (2 MB of CSV by default).
+
+**Enabling it**
+
+1. Run [`scripts/share-schema.sql`](scripts/share-schema.sql) once against a Supabase project to create the `obd_shares` table.
+2. Set the variables documented in [`.env.example`](.env.example): `NEXT_PUBLIC_SHARING_ENABLED=true`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` (and optionally `SHARE_TTL_HOURS` / `SHARE_MAX_BYTES`).
+3. Deploy to a Node/serverless host (e.g. Vercel). With the variables unset, the Share button stays hidden and the app remains a pure static site.
+
+> The share endpoint has no built-in rate limiting. If you expose it publicly, put it behind your host's rate limiter (e.g. Vercel/Upstash) to deter abuse.
+
 ## Tech stack
 
 - [Next.js 14](https://nextjs.org) (App Router) + React 18
 - TypeScript (strict — the build fails on type errors)
 - [Recharts](https://recharts.org) for charts, HTML Canvas for the GPS map
 - Tailwind CSS + [shadcn/ui](https://ui.shadcn.com) (Radix primitives)
+- [Supabase](https://supabase.com) — *optional*, used only by the share feature
 
 ## Project layout
 
@@ -67,9 +89,13 @@ app/page.tsx           # the whole app: CSV parsing, column/unit detection, tabs
 app/layout.tsx         # fonts (Inter + JetBrains Mono) and the dark theme shell
 app/globals.css        # design tokens / theme for the instrument-cluster look
 app/changelogs/        # changelog page
+app/api/share/         # optional share feature: server route handlers (create + fetch)
+lib/share.ts           # server-only share helpers (gzip, Supabase config)
 components/ui/          # shadcn/ui primitives
 components/error-boundary.tsx
 public/sample-data.csv # demo telemetry log
+scripts/share-schema.sql  # Supabase table for the optional share feature
+.env.example           # config for the optional share feature
 docs/                  # README screenshots
 ```
 
