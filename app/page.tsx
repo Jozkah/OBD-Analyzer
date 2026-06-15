@@ -1076,6 +1076,25 @@ async function mergeCSVFiles(orderedFiles: File[]): Promise<File> {
 
   const base = extractHeader(texts[0])
 
+  // Two logs of the SAME channels in the SAME order can still carry cosmetically
+  // different header labels — e.g. the OBDLink logger writes "Latitude (deg)" in
+  // some sessions and "Latitude" in others. Compare headers by a normalized form
+  // (strip parenthetical unit suffixes, collapse whitespace, lowercase) so those
+  // merge cleanly, while still refusing genuinely different or re-ordered layouts.
+  const normalizeHeader = (header: string): string =>
+    header
+      .split(",")
+      .map((cell) =>
+        cell
+          .replace(/\([^)]*\)/g, " ")
+          .replace(/\s+/g, " ")
+          .trim()
+          .toLowerCase(),
+      )
+      .join(",")
+
+  const baseKey = normalizeHeader(base.header)
+
   // First file: keep everything (comments + header + data)
   let merged = texts[0].trimEnd()
 
@@ -1088,7 +1107,7 @@ async function mergeCSVFiles(orderedFiles: File[]): Promise<File> {
     // An empty/comment-only segment contributes no rows; skip it rather than
     // aborting the whole merge with a "header differs" error.
     if (!cur.header) continue
-    if (cur.header !== base.header) {
+    if (normalizeHeader(cur.header) !== baseKey) {
       throw new Error(
         `Cannot merge "${orderedFiles[i].name}": its CSV header differs from "${orderedFiles[0].name}". ` +
           `Files must log the same PIDs in the same order to be merged.`,
@@ -2129,6 +2148,34 @@ export default function AutomotiveAnalyzer() {
     }
   }, [data, ignoreIdle])
 
+  // Trip Distance/Fuel/Duration are cumulative counters that RESET to 0 at the
+  // start of each logged trip, so when several files are merged the series resets
+  // at every file boundary and the last row only reflects the final trip. Sum the
+  // positive increments (each downward reset begins a new trip from its low point)
+  // to recover the true total across all merged trips. Fuel economy is a rate, so
+  // recompute it from the aggregate fuel and distance rather than summing.
+  const tripTotals = useMemo(() => {
+    const sumWithResets = (key: keyof DataPoint): number | null => {
+      let total = 0
+      let prev = 0
+      let seen = false
+      for (const point of data) {
+        const v = point[key] as number | undefined
+        if (typeof v !== "number" || isNaN(v)) continue
+        seen = true
+        if (v >= prev) total += v - prev
+        prev = v
+      }
+      return seen ? total : null
+    }
+    const distance = sumWithResets("tripDistance")
+    const fuel = sumWithResets("tripFuel")
+    const duration = sumWithResets("tripDuration")
+    const fuelEconomy =
+      fuel != null && distance != null && distance > 0 ? (fuel / distance) * 100 : null
+    return { distance, fuel, duration, fuelEconomy }
+  }, [data])
+
   const autoDetection = useMemo(() => {
     if (data.length > 100) {
       return detectGearRatios(data)
@@ -2709,35 +2756,29 @@ export default function AutomotiveAnalyzer() {
                       <div className="flex justify-between">
                         <span>Trip Duration:</span>
                         <span className="text-foreground/80">
-                          {data.length > 0 && data[data.length - 1]?.tripDuration
-                            ? (data[data.length - 1].tripDuration ?? 0) >= 60
-                              ? `${Math.floor((data[data.length - 1].tripDuration ?? 0) / 60)}h ${Math.floor((data[data.length - 1].tripDuration ?? 0) % 60)}min`
-                              : `${Math.floor(data[data.length - 1].tripDuration ?? 0)}min`
+                          {tripTotals.duration != null
+                            ? tripTotals.duration >= 60
+                              ? `${Math.floor(tripTotals.duration / 60)}h ${Math.floor(tripTotals.duration % 60)}min`
+                              : `${Math.floor(tripTotals.duration)}min`
                             : "N/A"}
                         </span>
                       </div>
                       <div className="flex justify-between">
                         <span>Trip Distance:</span>
                         <span className="text-foreground/80">
-                          {data.length > 0 && data[data.length - 1]?.tripDistance
-                            ? `${formatValue(data[data.length - 1].tripDistance ?? 0)} km`
-                            : "N/A"}
+                          {tripTotals.distance != null ? `${formatValue(tripTotals.distance)} km` : "N/A"}
                         </span>
                       </div>
                       <div className="flex justify-between">
                         <span>Trip Fuel Used:</span>
                         <span className="text-foreground/80">
-                          {data.length > 0 && data[data.length - 1]?.tripFuel
-                            ? `${formatValue(data[data.length - 1].tripFuel ?? 0)} L`
-                            : "N/A"}
+                          {tripTotals.fuel != null ? `${formatValue(tripTotals.fuel)} L` : "N/A"}
                         </span>
                       </div>
                       <div className="flex justify-between">
                         <span>Trip Fuel Economy:</span>
                         <span className="text-foreground/80">
-                          {data.length > 0 && data[data.length - 1]?.tripFuelEconomy
-                            ? `${formatValue(data[data.length - 1].tripFuelEconomy ?? 0)} L/100km`
-                            : "N/A"}
+                          {tripTotals.fuelEconomy != null ? `${formatValue(tripTotals.fuelEconomy)} L/100km` : "N/A"}
                         </span>
                       </div>
                     </div>
