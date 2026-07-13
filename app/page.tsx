@@ -854,6 +854,48 @@ export default function AutomotiveAnalyzer() {
         const timeColIdx = headers.findIndex((h) => h.toLowerCase() === "time")
         let rowCounter = 0
 
+        // Precompute, once per numeric column, which standard field(s) its header maps to, so
+        // the per-row loop below doesn't re-lowercase and re-scan every header on every row
+        // (#29 — this was O(rows × columns × ~25 substring checks)). The classification mirrors
+        // the original per-row mapping exactly, including the mutually-exclusive speed sub-cases
+        // and the independent (non-exclusive) metric matches.
+        const columnMeta = headers.map((header, colIdx) => {
+          if (!numericColumns[colIdx]) return null
+          const h = header.toLowerCase()
+          const speedKind: "max" | "gps" | "vehicle" | "other" | null = h.includes("speed")
+            ? h.includes("max")
+              ? "max"
+              : h.includes("gps")
+                ? "gps"
+                : h.includes("vehicle")
+                  ? "vehicle"
+                  : "other"
+            : null
+          return {
+            speedKind,
+            rpm: h.includes("rpm"),
+            throttle: h.includes("throttle"),
+            boost: h.includes("boost"),
+            coolant: h.includes("coolant"),
+            power: h.includes("power"),
+            torque: h.includes("torque"),
+            lat: h.includes("latitude"),
+            lng: h.includes("longitude"),
+            fuelRate: h.includes("fuel") && h.includes("rate"),
+            intakeTemp: h.includes("intake") && h.includes("temp"),
+            afr: h.includes("air/fuel") || h.includes("fuel/air") || h.includes("afr"),
+            ignAdv: h.includes("ignition") && h.includes("advance"),
+            catTemp: h.includes("catalyst") && h.includes("temp"),
+            oilTemp: h.includes("oil") && h.includes("temp"),
+            transTemp: h.includes("transmission") && h.includes("temp"),
+            exhaustTemp: h.includes("exhaust") && h.includes("temp"),
+            tripDuration: h.includes("trip") && h.includes("duration"),
+            tripDistance: h.includes("trip") && h.includes("distance"),
+            tripFuel: h.includes("trip") && h.includes("fuel") && !h.includes("economy"),
+            tripFuelEconomy: h.includes("trip") && h.includes("fuel") && h.includes("economy"),
+          }
+        })
+
         // Parse data with improved number parsing and unit conversion
         for (let i = 1; i < lines.length; i++) {
           const values = parseCsvLine(lines[i])
@@ -868,60 +910,48 @@ export default function AutomotiveAnalyzer() {
             timestamp: rawTime && rawTime.trim() ? rawTime : `${rowCounter}s`,
           } as DataPoint
 
-          headers.forEach((header, colIdx) => {
-            // Gate by column index (matches the index-keyed numericColumns above).
-            if (!numericColumns[colIdx]) return
-            const key = `col_${colIdx}`
-            const rawValue = values[colIdx]
-            const value = parseNumericValue(rawValue, commaMeaning)
-            dataPoint[key] = value
+          for (let colIdx = 0; colIdx < columnMeta.length; colIdx++) {
+            const m = columnMeta[colIdx]
+            // Gate by the precomputed metadata (non-null iff the column is numeric).
+            if (!m) continue
+            const value = parseNumericValue(values[colIdx], commaMeaning)
+            dataPoint[`col_${colIdx}`] = value
 
-            const lowerHeader = header.toLowerCase()
-
-            // Map to standard properties with unit conversion
-            if (lowerHeader.includes("rpm")) {
-              dataPoint.rpm = value
+            // Map to standard properties. Speed sub-cases are mutually exclusive (mirroring the
+            // original if/else-if); every other match is independent, so a header matching two
+            // categories still sets both.
+            if (m.rpm) dataPoint.rpm = value
+            if (m.speedKind === "max") {
+              // Store max speed separately, don't use it for real-time speed.
+              dataPoint.maxSpeed = value
+            } else if (m.speedKind === "gps") {
+              dataPoint.gpsSpeed = value
+              if (!dataPoint.speed) dataPoint.speed = value // GPS speed if no vehicle speed yet
+            } else if (m.speedKind === "vehicle") {
+              dataPoint.speed = value // vehicle speed is preferred
+            } else if (m.speedKind === "other") {
+              if (!dataPoint.speed) dataPoint.speed = value // any other speed if none set yet
             }
-            if (lowerHeader.includes("speed")) {
-              // Map to standard speed properties
-              if (lowerHeader.includes("max")) {
-                // Store max speed separately, don't use it for real-time speed
-                dataPoint.maxSpeed = value
-              } else if (lowerHeader.includes("gps")) {
-                dataPoint.gpsSpeed = value
-                // Use GPS speed if no vehicle speed is set yet
-                if (!dataPoint.speed) dataPoint.speed = value
-              } else if (lowerHeader.includes("vehicle")) {
-                // Vehicle speed is preferred for real-time speed
-                dataPoint.speed = value
-              } else if (!dataPoint.speed) {
-                // Use any other speed field if no speed is set yet
-                dataPoint.speed = value
-              }
-            }
-            if (lowerHeader.includes("throttle")) dataPoint.throttle = value
-            if (lowerHeader.includes("boost")) dataPoint.boost = value
-            if (lowerHeader.includes("coolant")) dataPoint.coolantTemp = value
-            if (lowerHeader.includes("power")) dataPoint.enginePower = value
-            if (lowerHeader.includes("torque")) dataPoint.engineTorque = value
-            if (lowerHeader.includes("latitude")) dataPoint.latitude = value
-            if (lowerHeader.includes("longitude")) dataPoint.longitude = value
-            if (lowerHeader.includes("fuel") && lowerHeader.includes("rate")) dataPoint.fuelRate = value
-            if (lowerHeader.includes("intake") && lowerHeader.includes("temp")) dataPoint.intakeTemp = value
-            if (lowerHeader.includes("air/fuel") || lowerHeader.includes("fuel/air") || lowerHeader.includes("afr"))
-              dataPoint.afr = value
-            if (lowerHeader.includes("ignition") && lowerHeader.includes("advance")) dataPoint.ignitionAdvance = value
-            if (lowerHeader.includes("catalyst") && lowerHeader.includes("temp")) dataPoint.catTemp = value
-            if (lowerHeader.includes("oil") && lowerHeader.includes("temp")) dataPoint.oilTemp = value
-            if (lowerHeader.includes("transmission") && lowerHeader.includes("temp")) dataPoint.transTemp = value
-            if (lowerHeader.includes("exhaust") && lowerHeader.includes("temp")) dataPoint.exhaustTemp = value
-            if (lowerHeader.includes("trip") && lowerHeader.includes("duration")) dataPoint.tripDuration = value
-            if (lowerHeader.includes("trip") && lowerHeader.includes("distance")) dataPoint.tripDistance = value
-            if (lowerHeader.includes("trip") && lowerHeader.includes("fuel") && !lowerHeader.includes("economy"))
-              dataPoint.tripFuel = value
-            if (lowerHeader.includes("trip") && lowerHeader.includes("fuel") && lowerHeader.includes("economy"))
-              dataPoint.tripFuelEconomy = value
-          })
+            if (m.throttle) dataPoint.throttle = value
+            if (m.boost) dataPoint.boost = value
+            if (m.coolant) dataPoint.coolantTemp = value
+            if (m.power) dataPoint.enginePower = value
+            if (m.torque) dataPoint.engineTorque = value
+            if (m.lat) dataPoint.latitude = value
+            if (m.lng) dataPoint.longitude = value
+            if (m.fuelRate) dataPoint.fuelRate = value
+            if (m.intakeTemp) dataPoint.intakeTemp = value
+            if (m.afr) dataPoint.afr = value
+            if (m.ignAdv) dataPoint.ignitionAdvance = value
+            if (m.catTemp) dataPoint.catTemp = value
+            if (m.oilTemp) dataPoint.oilTemp = value
+            if (m.transTemp) dataPoint.transTemp = value
+            if (m.exhaustTemp) dataPoint.exhaustTemp = value
+            if (m.tripDuration) dataPoint.tripDuration = value
+            if (m.tripDistance) dataPoint.tripDistance = value
+            if (m.tripFuel) dataPoint.tripFuel = value
+            if (m.tripFuelEconomy) dataPoint.tripFuelEconomy = value
+          }
 
           // Use GPS speed as fallback if vehicle speed is not available
           if (!dataPoint.speed && dataPoint.gpsSpeed) {
@@ -3437,14 +3467,20 @@ export default function AutomotiveAnalyzer() {
                   onClick={() => {
                     setShowTransmissionDialog(false)
                     if (data.length > 0) {
-                      const updatedData = data.map((point) => ({
-                        ...point,
-                        gear:
+                      // Recompute gear, but only clone the rows whose gear actually changes and
+                      // skip the state update entirely when nothing did — instead of spreading
+                      // every column of every row on each Apply (#34).
+                      let changed = false
+                      const updatedData = data.map((point) => {
+                        const newGear =
                           point.speed && point.rpm
                             ? calculateGear(point.speed, point.rpm, transmissionConfig, speedUnit)
-                            : point.gear,
-                      }))
-                      setData(updatedData)
+                            : point.gear
+                        if (newGear === point.gear) return point
+                        changed = true
+                        return { ...point, gear: newGear }
+                      })
+                      if (changed) setData(updatedData)
                     }
                     showToast("Transmission configuration applied")
                   }}
