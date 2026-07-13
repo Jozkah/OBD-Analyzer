@@ -65,6 +65,7 @@ import {
 import Link from "next/link"
 import { ErrorBoundary } from "@/components/error-boundary"
 import { parseNumericValue, isNumericCell, detectCommaMeaning, type CommaMeaning } from "@/lib/parse-number"
+import { parseLogTimeSeconds, detectAccelRuns } from "@/lib/accel-runs"
 
 // Toggles the optional "share a log via an expiring link" feature. The backend must also
 // be configured (see .env.example / README → "Sharing logs"). When false, the Share
@@ -2628,6 +2629,21 @@ export default function AutomotiveAnalyzer() {
     return max - min < 1 ? [] : pts
   }, [finalChartData, altitudeKey])
 
+  // Acceleration runs (0–100 km/h, 0–60 mph, ¼-mile). Only computed when the log has real
+  // per-sample clock timestamps — parseLogTimeSeconds returns null for index placeholders or
+  // malformed time columns, in which case the whole panel is hidden rather than showing times
+  // derived from a fake clock. Runs are found over the full log (idle standstills are needed
+  // to mark launches, so filteredData / ignore-idle isn't used here). Speed is normalized to
+  // km/h for the detector.
+  const accelRuns = useMemo(() => {
+    if (data.length < 3) return []
+    const times = parseLogTimeSeconds(data.map((d) => d.timestamp))
+    if (!times) return []
+    const toKmh = speedUnit === "mph" ? 1.609344 : 1
+    const speedsKmh = data.map((d) => (typeof d.speed === "number" && !isNaN(d.speed) ? d.speed * toKmh : 0))
+    return detectAccelRuns(times, speedsKmh)
+  }, [data, speedUnit])
+
   // Compute idle zones (consecutive ranges where speed === 0) for chart overlay
   const idleZones = useMemo(() => {
     if (!ignoreIdle || finalChartData.length === 0) return []
@@ -3447,7 +3463,27 @@ export default function AutomotiveAnalyzer() {
               </div>
             </TabsContent>
 
-            <TabsContent value="performance" className="space-y-0">
+            <TabsContent value="performance" className="space-y-4">
+              {accelRuns.length > 0 && (
+                <Card className="p-5">
+                  <div className="mb-4 flex items-center justify-between">
+                    <h2 className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Acceleration</h2>
+                    <Gauge className="w-4 h-4 text-muted-foreground" aria-hidden="true" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+                    {accelRuns.map((run) => (
+                      <div key={run.label}>
+                        <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{run.label}</div>
+                        <div className="font-mono text-2xl tabular-nums text-primary">{run.seconds.toFixed(2)}s</div>
+                        {run.detail && <div className="text-xs text-muted-foreground">{run.detail}</div>}
+                      </div>
+                    ))}
+                  </div>
+                  <p className="mt-3 text-xs text-muted-foreground">
+                    Best runs found in this log, timed from its per-sample timestamps.
+                  </p>
+                </Card>
+              )}
               <ErrorBoundary>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:h-[1000px]">
                 <Card className="p-5 flex flex-col">
