@@ -32,6 +32,11 @@ const nextConfig = {
   images: {
     unoptimized: true,
   },
+  // Tree-shake large barrel-imported packages so only the icons/chart pieces actually used
+  // ship in the bundle (lucide-react alone exposes 1000+ icons via a single import).
+  experimental: {
+    optimizePackageImports: ["lucide-react", "recharts"],
+  },
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }]
   },
