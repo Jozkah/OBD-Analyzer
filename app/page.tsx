@@ -666,11 +666,11 @@ function GPSTrackMap({ data, currentTime }: { data: DataPoint[]; currentTime: nu
       {data[currentTime] && (
         <div className="absolute bottom-3 left-3 rounded-lg border border-border/70 bg-background/85 px-3 py-2 shadow-lg shadow-black/30 backdrop-blur">
           <div className="font-mono text-base font-semibold tabular-nums text-primary">{data[currentTime].speed?.toFixed(1)} km/h</div>
-          <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Current Speed</div>
+          <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Current Speed</div>
         </div>
       )}
       {mapStyle !== "offline" && (
-        <div className="pointer-events-none absolute bottom-2 right-2 rounded bg-background/75 px-1.5 py-0.5 text-[9px] text-muted-foreground backdrop-blur">
+        <div className="pointer-events-none absolute bottom-2 right-2 rounded bg-background/75 px-1.5 py-0.5 text-[11px] text-muted-foreground backdrop-blur">
           {MAP_ATTRIBUTION[mapStyle]}
         </div>
       )}
@@ -904,7 +904,11 @@ function exportTransmissionConfig(config: TransmissionConfig): void {
   URL.revokeObjectURL(url)
 }
 
-function importTransmissionConfig(file: File, callback: (config: TransmissionConfig) => void): void {
+function importTransmissionConfig(
+  file: File,
+  callback: (config: TransmissionConfig) => void,
+  onError: (message: string) => void,
+): void {
   const reader = new FileReader()
   reader.onload = (e) => {
     try {
@@ -912,12 +916,13 @@ function importTransmissionConfig(file: File, callback: (config: TransmissionCon
       if (config.gearRatios && config.finalDrive && config.tyreDiameterMm) {
         callback(config)
       } else {
-        alert("Invalid transmission configuration file")
+        onError("That file isn't a valid transmission configuration.")
       }
     } catch (error) {
-      alert("Error reading transmission configuration file")
+      onError("Couldn't read that transmission configuration file.")
     }
   }
+  reader.onerror = () => onError("Couldn't read that transmission configuration file.")
   reader.readAsText(file)
 }
 
@@ -2393,7 +2398,7 @@ export default function AutomotiveAnalyzer() {
               </div>
               <div className="leading-tight">
                 <h1 className="text-base font-semibold tracking-tight">OBD Data Analyzer</h1>
-                <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">
                   Telemetry Console
                 </p>
               </div>
@@ -2428,7 +2433,7 @@ export default function AutomotiveAnalyzer() {
                   <span className="font-mono uppercase text-primary">{speedUnit}</span>
                 </span>
                 {importedFileNames.length > 1 && (
-                  <div className="mt-1 truncate text-[11px] text-muted-foreground/60">
+                  <div className="mt-1 truncate text-[11px] text-muted-foreground">
                     {importedFileNames.join(" → ")}
                   </div>
                 )}
@@ -2459,6 +2464,8 @@ export default function AutomotiveAnalyzer() {
               className="data-[playing=true]:text-primary"
               data-playing={isPlaying}
               disabled={data.length === 0}
+              aria-label={isPlaying ? "Pause playback" : "Play playback"}
+              aria-pressed={isPlaying}
             >
               {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
             </Button>
@@ -2467,6 +2474,7 @@ export default function AutomotiveAnalyzer() {
               variant="outline"
               size="sm"
               disabled={data.length === 0}
+              aria-label="Reset to start"
             >
               <RotateCcw className="w-4 h-4" />
             </Button>
@@ -2557,7 +2565,7 @@ export default function AutomotiveAnalyzer() {
                     <div className="font-medium text-yellow-400">{pid.name}</div>
                     <div className="text-sm text-foreground/80 mt-1">{pid.description}</div>
                     <div className="text-xs text-muted-foreground mt-1">Affects: {pid.tabs.join(", ")} tabs</div>
-                    <div className="text-xs text-muted-foreground/60 mt-1">Looking for: {pid.keys.join(", ")}</div>
+                    <div className="text-xs text-muted-foreground mt-1">Looking for: {pid.keys.join(", ")}</div>
                   </div>
                 ))}
               </div>
@@ -2599,7 +2607,11 @@ export default function AutomotiveAnalyzer() {
       </AlertDialog>
 
       {isLoading && (
-        <div className="flex flex-col items-center justify-center gap-5 py-24 text-center">
+        <div
+          role="status"
+          aria-live="polite"
+          className="flex flex-col items-center justify-center gap-5 py-24 text-center"
+        >
           <div className="h-10 w-10 animate-spin rounded-full border-2 border-border border-t-primary" />
           <div className="text-xs font-semibold uppercase tracking-[0.22em] text-muted-foreground">
             Loading and parsing data...
@@ -2752,7 +2764,7 @@ export default function AutomotiveAnalyzer() {
                                 {metric.unit && (
                                   <span className="text-xs text-muted-foreground flex-shrink-0">({metric.unit})</span>
                                 )}
-                                {isEmpty && <span className="text-xs text-muted-foreground/60 flex-shrink-0">∅</span>}
+                                {isEmpty && <span className="text-xs text-muted-foreground flex-shrink-0">∅</span>}
                               </div>
                             )
                           })
@@ -3415,13 +3427,14 @@ export default function AutomotiveAnalyzer() {
                                 {metric.unit && (
                                   <span className="text-xs text-muted-foreground flex-shrink-0">({metric.unit})</span>
                                 )}
-                                {isEmpty && <span className="text-xs text-muted-foreground/60 flex-shrink-0">∅</span>}
+                                {isEmpty && <span className="text-xs text-muted-foreground flex-shrink-0">∅</span>}
                                 <Button
                                   size="sm"
                                   variant="ghost"
                                   onClick={() => addPID(metric.key as string)}
                                   disabled={selectedPIDs.includes(metric.key as string)}
                                   className="h-8 w-8 p-0"
+                                  aria-label={`Add ${metric.label} to analysis`}
                                 >
                                   <Plus className="h-4 w-4" />
                                 </Button>
@@ -3452,6 +3465,7 @@ export default function AutomotiveAnalyzer() {
                                   variant="ghost"
                                   onClick={() => removePID(pidKey)}
                                   className="h-6 w-6 p-0"
+                                  aria-label={`Remove ${metric.label} from analysis`}
                                 >
                                   <X className="h-3 w-3" />
                                 </Button>
@@ -3523,6 +3537,7 @@ export default function AutomotiveAnalyzer() {
                                     variant="ghost"
                                     onClick={() => removePID(pidKey)}
                                     className="h-6 w-6 p-0"
+                                    aria-label={`Remove ${metric.label} chart`}
                                   >
                                     <X className="h-3 w-3" />
                                   </Button>
@@ -3620,7 +3635,7 @@ export default function AutomotiveAnalyzer() {
             className="pointer-events-none absolute -top-28 left-1/2 h-72 w-[34rem] max-w-full -translate-x-1/2 rounded-full bg-primary/10 blur-3xl"
           />
           <div className="relative mb-10 text-center">
-            <span className="inline-flex items-center gap-2 rounded-full border border-primary/25 bg-primary/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-primary">
+            <span className="inline-flex items-center gap-2 rounded-full border border-primary/25 bg-primary/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-primary">
               <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-primary" />
               100% client-side · nothing leaves your browser
             </span>
@@ -3671,7 +3686,7 @@ export default function AutomotiveAnalyzer() {
                 Load Sample Data
               </Button>
             </div>
-            <p className="mt-8 text-xs text-muted-foreground/70">
+            <p className="mt-8 text-xs text-muted-foreground">
               No log handy? <span className="font-medium text-muted-foreground">Load Sample Data</span> opens a bundled
               demo drive so you can explore every tab.
             </p>
@@ -3684,7 +3699,7 @@ export default function AutomotiveAnalyzer() {
             <div className="p-6">
               <div className="flex items-center justify-between mb-6">
                 <h2 className="text-lg font-semibold tracking-tight">Transmission Configuration</h2>
-                <Button onClick={() => setShowTransmissionDialog(false)} variant="ghost" size="sm">
+                <Button onClick={() => setShowTransmissionDialog(false)} variant="ghost" size="sm" aria-label="Close transmission configuration">
                   <X className="w-4 h-4" />
                 </Button>
               </div>
@@ -4057,10 +4072,14 @@ export default function AutomotiveAnalyzer() {
                         onChange={(e) => {
                           const file = e.target.files?.[0]
                           if (file) {
-                            importTransmissionConfig(file, (config) => {
-                              setTransmissionConfig(config)
-                              showToast("Transmission configuration imported successfully")
-                            })
+                            importTransmissionConfig(
+                              file,
+                              (config) => {
+                                setTransmissionConfig(config)
+                                showToast("Transmission configuration imported successfully")
+                              },
+                              showToast,
+                            )
                           }
                         }}
                         className="hidden"
@@ -4125,7 +4144,12 @@ export default function AutomotiveAnalyzer() {
         </div>
       )}
       {toastMessage && (
-        <div className="fixed bottom-6 right-6 z-[100] flex items-center gap-2.5 rounded-lg border border-border bg-popover px-4 py-3 text-sm text-foreground shadow-xl shadow-black/40 animate-in fade-in slide-in-from-bottom-4 duration-300">
+        <div
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
+          className="fixed bottom-6 right-6 z-[100] flex items-center gap-2.5 rounded-lg border border-border bg-popover px-4 py-3 text-sm text-foreground shadow-xl shadow-black/40 animate-in fade-in slide-in-from-bottom-4 duration-300"
+        >
           <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-primary shadow-[0_0_8px] shadow-primary/70" />
           {toastMessage}
         </div>
