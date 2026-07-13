@@ -64,6 +64,7 @@ import {
 } from "@/components/ui/alert-dialog"
 import Link from "next/link"
 import { ErrorBoundary } from "@/components/error-boundary"
+import { parseNumericValue, isNumericCell, detectCommaMeaning, type CommaMeaning } from "@/lib/parse-number"
 
 // Toggles the optional "share a log via an expiring link" feature. The backend must also
 // be configured (see .env.example / README → "Sharing logs"). When false, the Share
@@ -1210,68 +1211,8 @@ function parseTireSize(tireSize: string): { width: number; aspectRatio: number; 
   return { width, aspectRatio, rimSize }
 }
 
-// Helper function to normalize decimal separators and parse numbers.
-// Previously this did a single, non-global `value.replace(",", ".")` which only
-// swapped the FIRST comma. That corrupted thousands-grouped and European-format
-// numbers (e.g. "1,234.5" -> "1.234.5" -> 1.234, and "12.345" EU-thousands ->
-// 12.345 instead of 12345) — off by ~1000x with no error. This separator-aware
-// normalizer strips grouping separators based on which separator appears last,
-// so US ("1,234.5"), EU ("1.234,5") and plain ("12,5"/"12.5") all parse correctly.
-function parseNumericValue(value: string): number {
-  if (!value || typeof value !== "string") return 0
-
-  // Strip stray backslashes first. Some exporters (e.g. datalog.help / OBDLink) escape
-  // the decimal separator in GPS columns, writing latitude "01\.44" and longitude
-  // "-61\.13". Without this, Number.parseFloat stops at the backslash and truncates the
-  // value to its integer part (01\.44 -> 1, -61\.13 -> -61), collapsing every GPS fix
-  // onto one coordinate so the track map degenerates to "No track to plot". No legitimate
-  // numeric value contains a backslash, so removing them is safe for every column.
-  let s = value.trim().replace(/\\/g, "")
-  const hasComma = s.includes(",")
-  const hasDot = s.includes(".")
-
-  if (hasComma && hasDot) {
-    // Both separators present: the right-most one is the decimal point, the other is grouping.
-    if (s.lastIndexOf(",") > s.lastIndexOf(".")) {
-      s = s.replace(/\./g, "").replace(",", ".") // EU: 1.234,5 -> 1234.5
-    } else {
-      s = s.replace(/,/g, "") // US: 1,234.5 -> 1234.5
-    }
-  } else if (hasComma) {
-    const parts = s.split(",")
-    // Only MULTIPLE commas are unambiguous grouping (1,234,567). A single comma is
-    // an EU-style decimal separator (12,5 -> 12.5; 0,850 -> 0.85), so convert it
-    // rather than stripping it.
-    if (parts.length > 2) {
-      s = s.replace(/,/g, "")
-    } else {
-      s = s.replace(",", ".")
-    }
-  } else if (hasDot) {
-    const parts = s.split(".")
-    // Only MULTIPLE dots are unambiguous grouping (1.234.567). A single dot is a
-    // decimal point — including the very common 3-decimal sensor values like
-    // 14.700 or 0.850, which must NOT be read as thousands (that was a 1000x bug).
-    if (parts.length > 2) {
-      s = s.replace(/\./g, "")
-    }
-  }
-
-  const parsed = Number.parseFloat(s)
-  return isNaN(parsed) ? 0 : parsed
-}
-
-// True only when a raw cell is genuinely numeric. parseNumericValue can't be used to
-// decide this because it always coerces non-numeric input to 0 (never NaN), so a check
-// like `!isNaN(parseNumericValue(v))` is always true and would classify text/enum
-// columns ("OL"/"CL" fuel-system status, oxygen-sensor location, OBD cert strings) as
-// numeric — polluting the PID list with flat-zero traces. This requires at least one
-// digit and only digits, sign, separators or the exporter's stray backslash.
-function isNumericCell(value: string): boolean {
-  const s = value.replace(/\\/g, "").trim()
-  if (!s) return false
-  return /^[-+]?[\d.,]+$/.test(s) && /\d/.test(s)
-}
+// parseNumericValue / isNumericCell / detectCommaMeaning now live in lib/parse-number.ts
+// so they can be unit-tested in isolation; imported at the top of this file.
 
 // Helper function to detect speed unit from column names and data
 function detectSpeedUnit(headers: string[], data: any[]): "km/h" | "mph" {
@@ -1532,6 +1473,8 @@ export default function AutomotiveAnalyzer() {
   const [shareExpiresAt, setShareExpiresAt] = useState<string | null>(null)
   const [shareCopied, setShareCopied] = useState(false)
   const [sharedNotice, setSharedNotice] = useState<{ expiresAt: string | null } | null>(null)
+  // A ?share=<id> was seen on load and is awaiting the user's confirmation (see #25).
+  const [pendingShareId, setPendingShareId] = useState<string | null>(null)
   const sharedLoadedRef = useRef(false)
   const [showMissingPIDsDialog, setShowMissingPIDsDialog] = useState(false)
   const [toastMessage, setToastMessage] = useState<string | null>(null)
@@ -2094,6 +2037,12 @@ export default function AutomotiveAnalyzer() {
         // online after warm-up, a GPS lock, or a sparse PID) are still retained.
         // sampleData is kept limited to the first ~10 rows purely for unit detection.
         const sampleData: any[] = []
+        // Raw numeric-cell strings sampled across the file to decide, once, whether a lone
+        // comma is an EU decimal or a US thousands separator (see detectCommaMeaning / #18).
+        // Bounded so huge logs don't grow this unboundedly; the convention is a file-wide
+        // property, so a wide sample is plenty.
+        const commaSample: string[] = []
+        const COMMA_SAMPLE_CAP = 4000
         for (let i = 1; i < lines.length; i++) {
           const values = parseCsvLine(lines[i])
           const buildSample = i < Math.min(lines.length, 10)
@@ -2108,6 +2057,7 @@ export default function AutomotiveAnalyzer() {
               if (isNumericCell(value)) {
                 numericColumns[index] = true
                 if (buildSample) samplePoint[header] = parseNumericValue(value)
+                if (commaSample.length < COMMA_SAMPLE_CAP) commaSample.push(value)
               }
             }
           })
@@ -2115,6 +2065,9 @@ export default function AutomotiveAnalyzer() {
             sampleData.push(samplePoint)
           }
         }
+
+        // Decide the file's comma convention once; every numeric cell below is parsed with it.
+        const commaMeaning: CommaMeaning = detectCommaMeaning(commaSample)
 
         // Detect speed unit from headers and sample data
         const detectedSpeedUnit = detectSpeedUnit(headers, sampleData)
@@ -2189,7 +2142,7 @@ export default function AutomotiveAnalyzer() {
             if (!numericColumns[colIdx]) return
             const key = `col_${colIdx}`
             const rawValue = values[colIdx]
-            const value = parseNumericValue(rawValue)
+            const value = parseNumericValue(rawValue, commaMeaning)
             dataPoint[key] = value
 
             const lowerHeader = header.toLowerCase()
@@ -2399,13 +2352,21 @@ export default function AutomotiveAnalyzer() {
     }
   }, [shareUrl, showToast])
 
-  // On first load, if the URL carries ?share=<id>, fetch that shared log and render it.
+  // On first load, if the URL carries ?share=<id>, DON'T auto-fetch: a link shouldn't be
+  // able to silently pull remote content into the analyzer (spoofing) or overwrite whatever
+  // the user already has open. Record the id and ask for explicit confirmation first (#25).
   useEffect(() => {
     if (!SHARING_ENABLED || sharedLoadedRef.current) return
     const shareId = new URLSearchParams(window.location.search).get("share")
     if (!shareId) return
     sharedLoadedRef.current = true
-    ;(async () => {
+    setPendingShareId(shareId)
+  }, [])
+
+  // Actually fetch + render a shared log, only after the user confirms the prompt above.
+  const loadSharedLog = useCallback(
+    async (shareId: string) => {
+      setPendingShareId(null)
       setIsLoading(true)
       try {
         const res = await fetch(`/api/share/${encodeURIComponent(shareId)}`)
@@ -2429,10 +2390,31 @@ export default function AutomotiveAnalyzer() {
       } finally {
         setIsLoading(false)
       }
-    })()
-    // One-shot on mount; parseCSV/showToast are stable enough for this loader.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    },
+    [parseCSV, showToast],
+  )
+
+  // Dismiss the share prompt and drop the ?share= param so a refresh doesn't re-ask.
+  const dismissSharedPrompt = useCallback(() => {
+    setPendingShareId(null)
+    try {
+      const url = new URL(window.location.href)
+      url.searchParams.delete("share")
+      window.history.replaceState({}, "", url.toString())
+    } catch {
+      /* history API unavailable — the prompt is already dismissed in state */
+    }
   }, [])
+
+  // Escape cancels the share-confirmation prompt (parity with the other modals).
+  useEffect(() => {
+    if (!pendingShareId) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") dismissSharedPrompt()
+    }
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+  }, [pendingShareId, dismissSharedPrompt])
 
   const handleDrop = useCallback(
     async (event: React.DragEvent<HTMLDivElement>) => {
@@ -4202,6 +4184,41 @@ export default function AutomotiveAnalyzer() {
               No log handy? <span className="font-medium text-muted-foreground">Load Sample Data</span> opens a bundled
               demo drive so you can explore every tab.
             </p>
+          </Card>
+        </div>
+      )}
+      {pendingShareId && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="share-confirm-title"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) dismissSharedPrompt()
+          }}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
+        >
+          <Card className="w-full max-w-md p-6 shadow-2xl shadow-black/60">
+            <div className="flex items-start gap-3">
+              <Share2 className="mt-0.5 h-5 w-5 shrink-0 text-primary" aria-hidden="true" />
+              <div>
+                <h2 id="share-confirm-title" className="text-lg font-semibold tracking-tight">
+                  Load shared log?
+                </h2>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  This link is asking to open a shared log in the analyzer. It was created by
+                  whoever sent you the link — only load it if you trust the source. Loading it
+                  will replace anything you currently have open.
+                </p>
+              </div>
+            </div>
+            <div className="mt-5 flex justify-end gap-2">
+              <Button variant="outline" size="sm" onClick={dismissSharedPrompt}>
+                Cancel
+              </Button>
+              <Button size="sm" onClick={() => loadSharedLog(pendingShareId)} autoFocus>
+                Load shared log
+              </Button>
+            </div>
           </Card>
         </div>
       )}
