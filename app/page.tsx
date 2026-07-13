@@ -1439,8 +1439,55 @@ export default function AutomotiveAnalyzer() {
     return zones
   }, [finalChartData, ignoreIdle])
 
-  const enabledMetrics = metrics.filter((m) => m.enabled)
+  // Memoized so its reference is stable across playback ticks — see overviewChartElement (#28).
+  const enabledMetrics = useMemo(() => metrics.filter((m) => m.enabled), [metrics])
   const currentDataPoint = data[currentTime] || null
+
+  // The Overview chart depends only on the (memoized) data/config below — never on
+  // currentTime — yet it re-rendered on every 100 ms playback tick because the parent
+  // re-renders. Memoizing the element keeps its reference stable across ticks, so React
+  // skips re-rendering the whole Recharts subtree unless the underlying data actually
+  // changes (#28). Deps list every reactive value the chart reads.
+  const overviewChartElement = useMemo(
+    () => (
+      <ResponsiveContainer width="100%" height="100%">
+        <ComposedChart data={finalChartData} margin={{ top: 5, right: 30, left: 20, bottom: effectiveXMode === "distance" ? 20 : 5 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#222a3c" />
+          {effectiveXMode === "distance" ? (
+            <XAxis
+              dataKey="dist"
+              type="number"
+              domain={["dataMin", "dataMax"]}
+              stroke="#7e899c"
+              fontSize={12}
+              tickFormatter={(v) => Number(v).toFixed(1)}
+              label={{ value: "Distance (km)", position: "insideBottom", offset: -8, fill: "#7e899c", fontSize: 11 }}
+            />
+          ) : (
+            <XAxis dataKey="time" stroke="#7e899c" fontSize={12} />
+          )}
+          <YAxis stroke="#7e899c" fontSize={12} />
+          <Tooltip contentStyle={tooltipContentStyle} formatter={tooltipFormatter} />
+          {enabledMetrics.map((metric) => (
+            <Line
+              key={metric.key}
+              type="monotone"
+              dataKey={metric.key as string}
+              stroke={metric.color}
+              strokeWidth={2}
+              dot={false}
+              name={`${metric.label} (${metric.unit})`}
+            />
+          ))}
+          {effectiveXMode === "time" &&
+            idleZones.map((zone, i) => (
+              <ReferenceArea key={`idle-${i}`} x1={zone.x1} x2={zone.x2} fill="#ef4444" fillOpacity={0.08} stroke="#ef4444" strokeOpacity={0.2} strokeDasharray="4 4" />
+            ))}
+        </ComposedChart>
+      </ResponsiveContainer>
+    ),
+    [finalChartData, effectiveXMode, tooltipContentStyle, enabledMetrics, idleZones],
+  )
 
   const tempSensors = useMemo(() => {
     const sensors = []
@@ -2111,44 +2158,7 @@ export default function AutomotiveAnalyzer() {
                       </div>
                     </div>
                     <div ref={overviewChartRef} className="flex-grow min-h-[320px]">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <ComposedChart data={finalChartData} margin={{ top: 5, right: 30, left: 20, bottom: effectiveXMode === "distance" ? 20 : 5 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#222a3c" />
-                        {effectiveXMode === "distance" ? (
-                          <XAxis
-                            dataKey="dist"
-                            type="number"
-                            domain={["dataMin", "dataMax"]}
-                            stroke="#7e899c"
-                            fontSize={12}
-                            tickFormatter={(v) => Number(v).toFixed(1)}
-                            label={{ value: "Distance (km)", position: "insideBottom", offset: -8, fill: "#7e899c", fontSize: 11 }}
-                          />
-                        ) : (
-                          <XAxis dataKey="time" stroke="#7e899c" fontSize={12} />
-                        )}
-                        <YAxis stroke="#7e899c" fontSize={12} />
-                        <Tooltip
-                          contentStyle={tooltipContentStyle}
-                          formatter={tooltipFormatter}
-                        />
-                        {enabledMetrics.map((metric) => (
-                          <Line
-                            key={metric.key}
-                            type="monotone"
-                            dataKey={metric.key as string}
-                            stroke={metric.color}
-                            strokeWidth={2}
-                            dot={false}
-                            name={`${metric.label} (${metric.unit})`}
-                          />
-                        ))}
-                        {effectiveXMode === "time" &&
-                          idleZones.map((zone, i) => (
-                            <ReferenceArea key={`idle-${i}`} x1={zone.x1} x2={zone.x2} fill="#ef4444" fillOpacity={0.08} stroke="#ef4444" strokeOpacity={0.2} strokeDasharray="4 4" />
-                          ))}
-                      </ComposedChart>
-                    </ResponsiveContainer>
+                    {overviewChartElement}
                     </div>
                   </Card>
                 </div>
