@@ -1369,16 +1369,27 @@ export default function AutomotiveAnalyzer() {
     setCurrentTime((t) => Math.min(Math.max(t, timeRange[0]), timeRange[1]))
   }, [timeRange])
 
-  // Check if a metric has all zero values or is empty
-  const isEmptyPID = useCallback(
-    (metric: MetricConfig) => {
+  // Precompute the set of "empty" metric keys (all zero/null/undefined/NaN) in a single
+  // pass keyed only on [data, metrics]. Previously isEmptyPID did a full data.every() scan
+  // per metric on EVERY call — and filteredMetrics (which lists searchQuery in its deps)
+  // called it per metric on every keystroke, so filtering the PID list was O(metrics × n)
+  // per keystroke. This makes the per-metric check an O(1) Set lookup.
+  const emptyPidKeys = useMemo(() => {
+    const empty = new Set<string>()
+    for (const metric of metrics) {
       const key = metric.key as string
-      return data.every((point) => {
+      const allEmpty = data.every((point) => {
         const value = (point as any)[key]
         return value === 0 || value === null || value === undefined || isNaN(value)
       })
-    },
-    [data],
+      if (allEmpty) empty.add(key)
+    }
+    return empty
+  }, [data, metrics])
+
+  const isEmptyPID = useCallback(
+    (metric: MetricConfig) => emptyPidKeys.has(metric.key as string),
+    [emptyPidKeys],
   )
 
   const parseCSV = useCallback(
@@ -2033,6 +2044,40 @@ export default function AutomotiveAnalyzer() {
   }, [metrics, searchQuery, sortOption, showEmptyPIDs, isEmptyPID])
 
   const filteredData = useMemo(() => data.slice(timeRange[0], timeRange[1] + 1), [data, timeRange])
+
+  // GPS fix count for the tab header, memoized on [data]. This predicate duplicates the
+  // one inside GPSTrackMap; inlined in JSX it re-scanned the full dataset on every render
+  // (every 100ms tick while the GPS tab plays).
+  const gpsPointCount = useMemo(
+    () =>
+      data.filter(
+        (d) => Number.isFinite(d.latitude) && Number.isFinite(d.longitude) && !(d.latitude === 0 && d.longitude === 0),
+      ).length,
+    [data],
+  )
+
+  // Gear-distribution bars, memoized. Previously this was computed inline in JSX as
+  // numberOfGears separate O(n) filteredData.filter() scans, re-running on every render
+  // (i.e. every 100ms playback tick when the Performance tab is open). Now it's a single
+  // O(n) pass keyed on [filteredData, numberOfGears].
+  const gearDistribution = useMemo(() => {
+    const gears = transmissionConfig.numberOfGears
+    if (filteredData.length === 0 || gears <= 0) return []
+    const counts = new Array<number>(gears + 1).fill(0)
+    for (const d of filteredData) {
+      const g = d.gear
+      if (typeof g === "number" && g >= 1 && g <= gears) counts[g]++
+    }
+    return Array.from({ length: gears }, (_, i) => {
+      const gear = i + 1
+      const count = counts[gear]
+      return {
+        gear,
+        count,
+        percentage: count > 0 ? ((count / filteredData.length) * 100).toFixed(1) : "0.0",
+      }
+    })
+  }, [filteredData, transmissionConfig.numberOfGears])
 
   const finalChartData = useMemo(() => {
     const processed = filteredData.map((point) => {
@@ -2967,21 +3012,7 @@ export default function AutomotiveAnalyzer() {
                   <div className="flex-grow">
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart
-                        data={
-                          // Use full-resolution filteredData (within the selected range),
-                          // not the downsampled finalChartData (capped at ~500 points), so the
-                          // "N samples (P%)" tooltip reports real counts/percentages for large logs.
-                          filteredData.length > 0
-                            ? Array.from({ length: transmissionConfig.numberOfGears }, (_, i) => i + 1).map((g) => {
-                                const count = filteredData.filter((d) => d.gear === g).length
-                                return {
-                                  gear: g,
-                                  count: count,
-                                  percentage: count > 0 ? ((count / filteredData.length) * 100).toFixed(1) : "0.0",
-                                }
-                              })
-                            : []
-                        }
+                        data={gearDistribution}
                         margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
                       >
                         <CartesianGrid strokeDasharray="3 3" stroke="#222a3c" />
@@ -3453,14 +3484,7 @@ export default function AutomotiveAnalyzer() {
                         {/* Keep this predicate identical to gpsData (in GPSTrackMap) so the
                             count matches exactly what is drawn: count any finite fix except the
                             (0,0) no-fix sentinel, including valid equator/prime-meridian points. */}
-                        {
-                          data.filter(
-                            (d) =>
-                              Number.isFinite(d.latitude) &&
-                              Number.isFinite(d.longitude) &&
-                              !(d.latitude === 0 && d.longitude === 0),
-                          ).length
-                        }{" "}
+                        {gpsPointCount}{" "}
                         GPS points
                       </span>
                     </div>
