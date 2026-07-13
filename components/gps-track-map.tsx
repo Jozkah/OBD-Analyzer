@@ -58,6 +58,13 @@ export function GPSTrackMap({
   // Holds the teardown for an in-progress drag so we can also remove the window listeners
   // if the component unmounts mid-drag (or a mouseup is never delivered).
   const dragCleanupRef = useRef<(() => void) | null>(null)
+  // Offscreen cache of the STATIC scene (backdrop/tiles + track + start/finish). A 100 ms
+  // playback tick only moves the live marker, so we rebuild this buffer only when the scene
+  // itself changes (data, style, zoom/pan, a newly-loaded tile, or a resize) and otherwise
+  // just blit it and redraw the marker on top (#27). staticKeyRef fingerprints the inputs
+  // that require a rebuild.
+  const offscreenRef = useRef<HTMLCanvasElement | null>(null)
+  const staticKeyRef = useRef<string>("")
 
   const gpsData = useMemo(
     // Only discard the true "no fix" sentinel pair (0,0); a finite point that sits
@@ -151,8 +158,9 @@ export function GPSTrackMap({
     if (minSpeed !== speedRange.min || maxSpeed !== speedRange.max)
       setSpeedRange({ min: minSpeed, max: maxSpeed })
 
-    // Draws the route + markers on top of whatever backdrop is already on the canvas.
-    const paintRoute = () => {
+    // Draws the STATIC route + start/finish markers on top of whatever backdrop is already
+    // on the canvas (everything except the per-tick live position marker).
+    const paintStaticRoute = () => {
       ctx.lineJoin = "round"
       ctx.lineCap = "round"
       const path = gpsData.map((d) => toCanvas(d.latitude!, d.longitude!))
@@ -184,22 +192,6 @@ export function GPSTrackMap({
         }
       }
 
-      // Live position marker: map currentTime (an index into the FULL data array) onto the
-      // next GPS fix at/after it, so it never vanishes on rows that logged no fix.
-      const currentPoint = gpsData.find((p) => (p.time ?? 0) >= currentTime) ?? gpsData[gpsData.length - 1]
-      if (Number.isFinite(currentPoint?.latitude) && Number.isFinite(currentPoint?.longitude)) {
-        const c = toCanvas(currentPoint.latitude!, currentPoint.longitude!)
-        ctx.fillStyle = "#ef4444"
-        ctx.beginPath()
-        ctx.arc(c.x, c.y, 7, 0, 2 * Math.PI)
-        ctx.fill()
-        ctx.strokeStyle = "#ffffff"
-        ctx.lineWidth = 3
-        ctx.beginPath()
-        ctx.arc(c.x, c.y, 9, 0, 2 * Math.PI)
-        ctx.stroke()
-      }
-
       // Start / finish (combined into one "S/F" marker when they share a pixel).
       const s = toCanvas(gpsData[0].latitude!, gpsData[0].longitude!)
       const e = toCanvas(gpsData[gpsData.length - 1].latitude!, gpsData[gpsData.length - 1].longitude!)
@@ -223,6 +215,26 @@ export function GPSTrackMap({
       }
     }
 
+    // The live position marker — the ONLY element that changes on a 100 ms playback tick.
+    // Drawn on top of the (cached) static scene every frame.
+    const drawMarker = () => {
+      const currentPoint = gpsData.find((p) => (p.time ?? 0) >= currentTime) ?? gpsData[gpsData.length - 1]
+      if (Number.isFinite(currentPoint?.latitude) && Number.isFinite(currentPoint?.longitude)) {
+        const c = toCanvas(currentPoint.latitude!, currentPoint.longitude!)
+        ctx.fillStyle = "#ef4444"
+        ctx.beginPath()
+        ctx.arc(c.x, c.y, 7, 0, 2 * Math.PI)
+        ctx.fill()
+        ctx.strokeStyle = "#ffffff"
+        ctx.lineWidth = 3
+        ctx.beginPath()
+        ctx.arc(c.x, c.y, 9, 0, 2 * Math.PI)
+        ctx.stroke()
+      }
+    }
+
+    // Paints the whole static scene (backdrop + route + start/finish) to the visible canvas.
+    const drawStaticScene = () => {
     // ---- Offline style: no network at all, just a dark backdrop + grid under the track.
     if (mapStyle === "offline") {
       const g = ctx.createLinearGradient(0, 0, 0, height)
@@ -248,7 +260,7 @@ export function GPSTrackMap({
         ctx.stroke()
       }
       ctx.setLineDash([])
-      paintRoute()
+      paintStaticRoute()
       return
     }
 
@@ -298,7 +310,41 @@ export function GPSTrackMap({
         }
       }
     }
-    paintRoute()
+    paintStaticRoute()
+    }
+
+    // Rebuild the offscreen static buffer only when the scene (NOT currentTime) changes;
+    // otherwise reuse it. A playback tick then only blits the cached scene and redraws the
+    // marker, instead of re-compositing every tile and re-stroking the whole track each 100 ms
+    // (#27). staticKey fingerprints every input that affects the static scene.
+    const staticKey = `${targetW}x${targetH}|${z}|${originX}|${originY}|${mapStyle}|${tileVersion}|${gpsData.length}|${minSpeed}|${maxSpeed}|${degenerate}`
+    let off = offscreenRef.current
+    if (!off) {
+      off = document.createElement("canvas")
+      offscreenRef.current = off
+    }
+    if (staticKey !== staticKeyRef.current || off.width !== targetW || off.height !== targetH) {
+      // Scene changed: paint it fresh onto the visible canvas (the backdrop fill overwrites
+      // any previous marker), then snapshot the marker-less result into the offscreen buffer.
+      drawStaticScene()
+      off.width = targetW
+      off.height = targetH
+      const offCtx = off.getContext("2d")
+      if (offCtx) {
+        offCtx.setTransform(1, 0, 0, 1, 0, 0)
+        offCtx.clearRect(0, 0, targetW, targetH)
+        offCtx.drawImage(canvas, 0, 0)
+      }
+      staticKeyRef.current = staticKey
+    } else {
+      // Scene unchanged (typically a playback tick): blit the cached static scene back,
+      // clearing the previous marker in the process.
+      ctx.setTransform(1, 0, 0, 1, 0, 0)
+      ctx.clearRect(0, 0, targetW, targetH)
+      ctx.drawImage(off, 0, 0)
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+    }
+    drawMarker()
   }, [gpsData, currentTime, mapStyle, data, tileVersion, view])
 
   // Mouse-wheel zoom toward the cursor. A native non-passive listener lets us
