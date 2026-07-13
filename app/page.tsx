@@ -556,13 +556,19 @@ function GPSTrackMap({ data, currentTime }: { data: DataPoint[]; currentTime: nu
   // Tear down any in-progress drag listeners if the GPS tab unmounts mid-drag.
   useEffect(() => () => dragCleanupRef.current?.(), [])
 
-  // Drag to pan. Computed from the drag-start origin each move so it stays smooth even as
-  // the projection ref updates between renders.
-  const onCanvasMouseDown = (e: React.MouseEvent) => {
+  // Drag to pan, via Pointer Events so it works for mouse AND touch (single finger).
+  // Computed from the drag-start origin each move so it stays smooth even as the
+  // projection ref updates between renders. Two-finger pinch zoom isn't handled here —
+  // the on-map +/- buttons cover zoom on touch — but the canvas has touch-action: none so
+  // a one-finger pan doesn't also scroll the page.
+  const onCanvasPointerDown = (e: React.PointerEvent) => {
     const p = projRef.current
     if (!p) return
+    // Only start a pan for the primary pointer; ignore extra fingers (avoids fighting the
+    // browser's own gesture handling on multi-touch).
+    if (!e.isPrimary) return
     const start = { ox: p.originX, oy: p.originY, z: p.z, w: p.width, h: p.height, mx: e.clientX, my: e.clientY }
-    const move = (ev: MouseEvent) => {
+    const move = (ev: PointerEvent) => {
       const c = mercatorUnpx(
         start.ox - (ev.clientX - start.mx) + start.w / 2,
         start.oy - (ev.clientY - start.my) + start.h / 2,
@@ -571,21 +577,45 @@ function GPSTrackMap({ data, currentTime }: { data: DataPoint[]; currentTime: nu
       setView({ zoom: start.z, centerLat: c.lat, centerLng: c.lng })
     }
     const up = () => {
-      window.removeEventListener("mousemove", move)
-      window.removeEventListener("mouseup", up)
+      window.removeEventListener("pointermove", move)
+      window.removeEventListener("pointerup", up)
+      window.removeEventListener("pointercancel", up)
       dragCleanupRef.current = null
       setDragging(false)
     }
-    window.addEventListener("mousemove", move)
-    window.addEventListener("mouseup", up)
-    // Same teardown, callable from the unmount effect so a dropped mouseup / mid-drag tab
+    window.addEventListener("pointermove", move)
+    window.addEventListener("pointerup", up)
+    window.addEventListener("pointercancel", up)
+    // Same teardown, callable from the unmount effect so a dropped pointerup / mid-drag tab
     // switch can't leak the listeners or keep calling setView on a dead component.
     dragCleanupRef.current = () => {
-      window.removeEventListener("mousemove", move)
-      window.removeEventListener("mouseup", up)
+      window.removeEventListener("pointermove", move)
+      window.removeEventListener("pointerup", up)
+      window.removeEventListener("pointercancel", up)
       dragCleanupRef.current = null
     }
     setDragging(true)
+  }
+
+  // Keyboard pan/zoom so the map is operable without a mouse. Arrow keys pan by ~50px,
+  // +/- (or =) zoom, and 0 resets to the auto-fit view.
+  const onCanvasKeyDown = (e: React.KeyboardEvent) => {
+    const p = projRef.current
+    if (!p) return
+    const panBy = (dx: number, dy: number) => {
+      const c = mercatorUnpx(p.originX + p.width / 2 + dx, p.originY + p.height / 2 + dy, p.z)
+      setView({ zoom: p.z, centerLat: c.lat, centerLng: c.lng })
+    }
+    const STEP = 50
+    switch (e.key) {
+      case "ArrowLeft": e.preventDefault(); panBy(-STEP, 0); break
+      case "ArrowRight": e.preventDefault(); panBy(STEP, 0); break
+      case "ArrowUp": e.preventDefault(); panBy(0, -STEP); break
+      case "ArrowDown": e.preventDefault(); panBy(0, STEP); break
+      case "+": case "=": e.preventDefault(); zoomByButton(1); break
+      case "-": case "_": e.preventDefault(); zoomByButton(-1); break
+      case "0": e.preventDefault(); setView(null); break
+    }
   }
 
   // Zoom buttons keep the current centre and step the zoom by one level.
@@ -614,8 +644,16 @@ function GPSTrackMap({ data, currentTime }: { data: DataPoint[]; currentTime: nu
     <div className="h-full relative">
       <canvas
         ref={canvasRef}
-        onMouseDown={onCanvasMouseDown}
-        className={`w-full h-full rounded ${dragging ? "cursor-grabbing" : "cursor-grab"}`}
+        onPointerDown={onCanvasPointerDown}
+        onKeyDown={onCanvasKeyDown}
+        tabIndex={0}
+        role="img"
+        aria-label={
+          trackDegenerate
+            ? `GPS map: the vehicle was stationary (${gpsData.length} fixes within ~20 m).`
+            : `GPS route map, ${gpsData.length} points. Focus it and use arrow keys to pan, plus or minus to zoom, and 0 to reset the view.`
+        }
+        className={`w-full h-full touch-none rounded outline-none focus-visible:ring-2 focus-visible:ring-primary ${dragging ? "cursor-grabbing" : "cursor-grab"}`}
       />
       {trackDegenerate && (
         <div className="pointer-events-none absolute inset-x-0 top-3 flex justify-center">
@@ -1458,6 +1496,49 @@ export default function AutomotiveAnalyzer() {
   const [autoDetectionResults, setAutoDetectionResults] = useState<any>(null)
   const [showAutoDetection, setShowAutoDetection] = useState(false)
   const [showTransmissionDialog, setShowTransmissionDialog] = useState(false)
+  // Accessibility for the (custom, non-Radix) Transmission Configuration modal: trap focus
+  // inside it while open, focus the first control on open, close on Escape, and return
+  // focus to the trigger on close. Paired with role="dialog"/aria-modal on the overlay.
+  const transmissionDialogRef = useRef<HTMLDivElement>(null)
+  const transmissionPrevFocusRef = useRef<HTMLElement | null>(null)
+  useEffect(() => {
+    if (!showTransmissionDialog) return
+    transmissionPrevFocusRef.current = document.activeElement as HTMLElement | null
+    const container = transmissionDialogRef.current
+    const focusable = () =>
+      container
+        ? Array.from(
+            container.querySelectorAll<HTMLElement>(
+              'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])',
+            ),
+          ).filter((el) => el.offsetParent !== null)
+        : []
+    focusable()[0]?.focus()
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault()
+        setShowTransmissionDialog(false)
+        return
+      }
+      if (e.key !== "Tab") return
+      const items = focusable()
+      if (items.length === 0) return
+      const first = items[0]
+      const last = items[items.length - 1]
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault()
+        last.focus()
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault()
+        first.focus()
+      }
+    }
+    document.addEventListener("keydown", onKey)
+    return () => {
+      document.removeEventListener("keydown", onKey)
+      transmissionPrevFocusRef.current?.focus?.()
+    }
+  }, [showTransmissionDialog])
   const [tireWidth, setTireWidth] = useState(235)
   const [tireAspectRatio, setTireAspectRatio] = useState(35)
   const [tireRimSize, setTireRimSize] = useState(19)
@@ -3792,11 +3873,21 @@ export default function AutomotiveAnalyzer() {
         </div>
       )}
       {showTransmissionDialog && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
+        <div
+          ref={transmissionDialogRef}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="transmission-dialog-title"
+          onClick={(e) => {
+            // Click on the backdrop (outside the Card) closes the dialog.
+            if (e.target === e.currentTarget) setShowTransmissionDialog(false)
+          }}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
+        >
           <Card className="w-full max-w-4xl max-h-[90vh] overflow-y-auto shadow-2xl shadow-black/60">
             <div className="p-6">
               <div className="flex items-center justify-between mb-6">
-                <h2 className="text-lg font-semibold tracking-tight">Transmission Configuration</h2>
+                <h2 id="transmission-dialog-title" className="text-lg font-semibold tracking-tight">Transmission Configuration</h2>
                 <Button onClick={() => setShowTransmissionDialog(false)} variant="ghost" size="sm" aria-label="Close transmission configuration">
                   <X className="w-4 h-4" />
                 </Button>
