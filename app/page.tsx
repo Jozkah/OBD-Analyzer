@@ -2493,6 +2493,7 @@ export default function AutomotiveAnalyzer() {
               <Checkbox
                 checked={ignoreIdle}
                 onCheckedChange={(checked: boolean) => setIgnoreIdle(checked === true)}
+                aria-label="Ignore idle — exclude speed = 0 from statistics and averages"
               />
               <span className="text-sm font-medium">Ignore Idle</span>
               <span className="text-xs text-muted-foreground">(Excludes speed = 0 from statistics and averages)</span>
@@ -2524,7 +2525,7 @@ export default function AutomotiveAnalyzer() {
                         <div className="relative flex-1">
                           <Search className="absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                           <Input
-                            placeholder="Search PIDs..."
+                            placeholder="Search PIDs..." aria-label="Search PIDs"
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
                             className="pl-8 h-8"
@@ -2552,7 +2553,7 @@ export default function AutomotiveAnalyzer() {
                             </DropdownMenuItem>
                             <div className="px-2 py-1.5">
                               <div className="flex items-center space-x-2">
-                                <Checkbox checked={showEmptyPIDs} onCheckedChange={(checked) => setShowEmptyPIDs(checked === true)} />
+                                <Checkbox checked={showEmptyPIDs} onCheckedChange={(checked) => setShowEmptyPIDs(checked === true)} aria-label="Show empty PIDs (all-zero channels)" />
                                 <span className="text-sm">Show Empty PIDs</span>
                               </div>
                             </div>
@@ -2582,6 +2583,7 @@ export default function AutomotiveAnalyzer() {
                                 <Checkbox
                                   checked={metric.enabled}
                                   onCheckedChange={() => toggleMetric(originalIndex)}
+                                  aria-label={`Show ${metric.label} on the chart`}
                                 />
                                 <div
                                   className="w-3 h-3 rounded flex-shrink-0"
@@ -3208,7 +3210,7 @@ export default function AutomotiveAnalyzer() {
                         <div className="relative flex-1">
                           <Search className="absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                           <Input
-                            placeholder="Search PIDs..."
+                            placeholder="Search PIDs..." aria-label="Search PIDs"
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
                             className="pl-8 h-8"
@@ -3236,7 +3238,7 @@ export default function AutomotiveAnalyzer() {
                             </DropdownMenuItem>
                             <div className="px-2 py-1.5">
                               <div className="flex items-center space-x-2">
-                                <Checkbox checked={showEmptyPIDs} onCheckedChange={(checked) => setShowEmptyPIDs(checked === true)} />
+                                <Checkbox checked={showEmptyPIDs} onCheckedChange={(checked) => setShowEmptyPIDs(checked === true)} aria-label="Show empty PIDs (all-zero channels)" />
                                 <span className="text-sm">Show Empty PIDs</span>
                               </div>
                             </div>
@@ -3568,6 +3570,7 @@ export default function AutomotiveAnalyzer() {
                     <div>
                       <label className="block text-sm font-medium text-white mb-2">Final Drive Ratio</label>
                       <Input
+                        aria-label="Final Drive Ratio"
                         type="number"
                         step="0.01"
                         value={transmissionConfig.finalDrive}
@@ -3583,6 +3586,7 @@ export default function AutomotiveAnalyzer() {
                     <div>
                       <label className="block text-sm font-medium text-white mb-2">Tyre Diameter (mm)</label>
                       <Input
+                        aria-label="Tyre Diameter in millimetres"
                         type="number"
                         value={transmissionConfig.tyreDiameterMm}
                         onChange={(e) =>
@@ -3600,6 +3604,7 @@ export default function AutomotiveAnalyzer() {
                     <div>
                       <label className="block text-sm font-medium text-white mb-2">Shift RPM</label>
                       <Input
+                        aria-label="Shift RPM"
                         type="number"
                         value={transmissionConfig.shiftRpm}
                         onChange={(e) =>
@@ -3614,6 +3619,7 @@ export default function AutomotiveAnalyzer() {
                     <div>
                       <label className="block text-sm font-medium text-white mb-2">Number of Gears</label>
                       <Input
+                        aria-label="Number of Gears"
                         type="number"
                         min="3"
                         max="10"
@@ -3654,6 +3660,7 @@ export default function AutomotiveAnalyzer() {
                         <div key={gear}>
                           <label className="block text-xs text-muted-foreground mb-1">Gear {gear}</label>
                           <Input
+                            aria-label={`Gear ${gear} ratio`}
                             type="number"
                             step="0.001"
                             value={transmissionConfig.gearRatios[gear] || 1.0}
@@ -3678,6 +3685,7 @@ export default function AutomotiveAnalyzer() {
                       <div>
                         <label className="block text-xs text-muted-foreground mb-1">Tire Size (e.g., 235/35R19)</label>
                         <Input
+                          aria-label="Tire size, e.g. 235/35R19"
                           type="text"
                           value={tireSizeInput}
                           onChange={(e) => {
@@ -3706,6 +3714,7 @@ export default function AutomotiveAnalyzer() {
                       <div>
                         <label className="block text-xs text-muted-foreground mb-1">Width (mm)</label>
                         <Input
+                          aria-label="Tire width in millimetres"
                           type="number"
                           value={tireWidth}
                           onChange={(e) => {
@@ -3721,6 +3730,7 @@ export default function AutomotiveAnalyzer() {
                       <div>
                         <label className="block text-xs text-muted-foreground mb-1">Aspect Ratio (%)</label>
                         <Input
+                          aria-label="Tire aspect ratio in percent"
                           type="number"
                           value={tireAspectRatio}
                           onChange={(e) => {
@@ -3739,6 +3749,7 @@ export default function AutomotiveAnalyzer() {
                       <div>
                         <label className="block text-xs text-muted-foreground mb-1">Rim Size (inches)</label>
                         <Input
+                          aria-label="Rim size in inches"
                           type="number"
                           value={tireRimSize}
                           onChange={(e) => {
@@ -3760,7 +3771,7 @@ export default function AutomotiveAnalyzer() {
                     <div className="relative flex-1">
                       <Search className="absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                       <Input
-                        placeholder="Search presets..."
+                        placeholder="Search presets..." aria-label="Search transmission presets"
                         value={presetSearchQuery}
                         onChange={(e) => setPresetSearchQuery(e.target.value)}
                         className="pl-8  placeholder:text-muted-foreground"
