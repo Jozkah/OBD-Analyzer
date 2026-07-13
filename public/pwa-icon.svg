@@ -1,0 +1,10 @@
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <!-- Full-bleed dark background so the icon is maskable-safe (no transparent corners). -->
+  <rect width="512" height="512" fill="#05070d" />
+  <!-- Electric-cyan gauge glyph, centred within the maskable safe zone. -->
+  <g transform="translate(96,112) scale(13.33)" fill="none" stroke="#22d3ee"
+     stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="m12 14 4-4" />
+    <path d="M3.34 19a10 10 0 1 1 17.32 0" />
+  </g>
+</svg>
