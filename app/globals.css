@@ -4,8 +4,11 @@
 
 @layer base {
   /*
-   * Dark-only "instrument cluster" theme.
-   * Deep blue-black layered surfaces with a single electric-cyan accent.
+   * "Instrument cluster" theme.
+   * Dark is the default (deep blue-black layered surfaces, electric-cyan accent);
+   * `.light` swaps in a daylight palette (bright cluster glass) using the same accent.
+   * The theme class is applied to <html> by an inline pre-hydration script (see layout.tsx)
+   * so there is no flash, and toggled at runtime by the Sun/Moon control in the app bar.
    */
   :root,
   .dark {
@@ -35,6 +38,38 @@
     --chart-4: 280 65% 60%;
     --chart-5: 340 75% 55%;
   }
+
+  /*
+   * Light "daylight cluster" palette. Cool off-white layered surfaces with a slightly
+   * deepened cyan accent so it keeps AA contrast on white. Chart hues are darkened a
+   * touch versus the dark theme so the same 5-series lines stay legible on a light plot.
+   */
+  .light {
+    --background: 210 40% 98%;
+    --foreground: 224 40% 12%;
+    --card: 0 0% 100%;
+    --card-foreground: 224 40% 12%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 224 40% 12%;
+    --primary: 191 91% 38%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 214 32% 93%;
+    --secondary-foreground: 224 40% 14%;
+    --muted: 214 30% 94%;
+    --muted-foreground: 220 12% 40%;
+    --accent: 210 40% 90%;
+    --accent-foreground: 224 40% 14%;
+    --destructive: 0 72% 48%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 214 25% 84%;
+    --input: 214 25% 82%;
+    --ring: 191 91% 38%;
+    --chart-1: 191 91% 38%;
+    --chart-2: 160 70% 34%;
+    --chart-3: 28 85% 45%;
+    --chart-4: 272 60% 50%;
+    --chart-5: 340 75% 48%;
+  }
 }
 
 @layer base {
@@ -43,6 +78,9 @@
   }
   html {
     color-scheme: dark;
+  }
+  html.light {
+    color-scheme: light;
   }
   body {
     @apply bg-background text-foreground antialiased;

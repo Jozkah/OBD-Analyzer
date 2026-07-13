@@ -28,6 +28,8 @@ import {
   Minus,
   Maximize2,
   Download,
+  Sun,
+  Moon,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
@@ -1466,6 +1468,45 @@ export default function AutomotiveAnalyzer() {
     if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current)
     toastTimeoutRef.current = setTimeout(() => setToastMessage(null), 3000)
   }, [])
+
+  // --- Theme (light / dark) ---
+  // The pre-hydration script in layout.tsx has already applied the correct class to <html>;
+  // here we read it back on mount (so the button shows the right icon) and let the user flip
+  // it, persisting the choice under the same "obd-theme" key the script reads.
+  const [theme, setTheme] = useState<"light" | "dark">("dark")
+  useEffect(() => {
+    setTheme(document.documentElement.classList.contains("light") ? "light" : "dark")
+  }, [])
+  const toggleTheme = useCallback(() => {
+    setTheme((prev) => {
+      const next = prev === "dark" ? "light" : "dark"
+      const el = document.documentElement
+      el.classList.remove("light", "dark")
+      el.classList.add(next)
+      el.style.colorScheme = next
+      try {
+        localStorage.setItem("obd-theme", next)
+      } catch {
+        /* localStorage may be unavailable (private mode); the in-memory toggle still works */
+      }
+      return next
+    })
+  }, [])
+  // Shared Recharts tooltip surface, theme-aware so the popover reads as a light card in
+  // light mode instead of a hard black box. Reused by every chart's <Tooltip contentStyle>.
+  const tooltipContentStyle = useMemo<React.CSSProperties>(
+    () =>
+      theme === "light"
+        ? {
+            backgroundColor: "#ffffff",
+            border: "1px solid #d0d7e2",
+            borderRadius: "10px",
+            color: "#0f172a",
+            boxShadow: "0 4px 16px rgba(15,23,42,0.12)",
+          }
+        : { backgroundColor: "#11141d", border: "1px solid #273043", borderRadius: "10px" },
+    [theme],
+  )
   const [missingPIDs, setMissingPIDs] = useState<{ missing: typeof CRUCIAL_PIDS; hasCriticalMissing: boolean }>({
     missing: [],
     hasCriticalMissing: false,
@@ -2701,6 +2742,15 @@ export default function AutomotiveAnalyzer() {
             )}
           </div>
           <div className="flex w-full items-center justify-end gap-2 md:w-auto">
+            <Button
+              onClick={toggleTheme}
+              variant="outline"
+              size="sm"
+              aria-label={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
+              title={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
+            >
+              {theme === "dark" ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+            </Button>
             <Link href="/changelogs">
               <Button variant="outline" size="sm">
                 <History className="w-4 h-4 mr-2" />
@@ -2945,22 +2995,24 @@ export default function AutomotiveAnalyzer() {
           </Card>
 
           <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-            <TabsList className="flex w-full overflow-x-auto">
-              <TabsTrigger value="overview" className="flex-1 min-w-[80px]">Overview</TabsTrigger>
-              <TabsTrigger value="performance" className="flex-1 min-w-[80px]">Performance</TabsTrigger>
-              <TabsTrigger value="engine" className="flex-1 min-w-[80px]">
+            {/* Mobile: wrap to multiple rows so every tab stays visible and tappable (no
+                horizontally-scrolled, half-clipped tabs). Desktop: single flush row. */}
+            <TabsList className="flex w-full flex-wrap gap-1 h-auto py-1 md:h-11 md:flex-nowrap md:py-1">
+              <TabsTrigger value="overview" className="flex-1 min-w-[92px]">Overview</TabsTrigger>
+              <TabsTrigger value="performance" className="flex-1 min-w-[92px]">Performance</TabsTrigger>
+              <TabsTrigger value="engine" className="flex-1 min-w-[92px]">
                 Engine
               </TabsTrigger>
-              <TabsTrigger value="analysis" className="flex-1 min-w-[80px]">
+              <TabsTrigger value="analysis" className="flex-1 min-w-[92px]">
                 PID Analysis
               </TabsTrigger>
-              <TabsTrigger value="gps" className="flex-1 min-w-[80px]">
+              <TabsTrigger value="gps" className="flex-1 min-w-[92px]">
                 GPS Track
               </TabsTrigger>
             </TabsList>
 
             <TabsContent value="overview" className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-12 gap-4" style={{ height: `${STATIC_HEIGHT}px` }}>
+              <div className="grid grid-cols-1 md:grid-cols-12 gap-4 md:h-[1000px]">
                 <div className="col-span-1 md:col-span-2">
                   <Card className="h-full flex flex-col">
                     <div className="p-4 pb-2 flex-shrink-0">
@@ -3011,7 +3063,8 @@ export default function AutomotiveAnalyzer() {
                         style={{
                           height: `${metricsListHeight}px`,
                           scrollbarWidth: "thin",
-                          scrollbarColor: "#2c3447 #11141d",
+                          scrollbarColor:
+                            theme === "light" ? "#c2cbd9 #eef1f6" : "#2c3447 #11141d",
                         }}
                       >
                         {filteredMetrics.length > 0 ? (
@@ -3114,22 +3167,19 @@ export default function AutomotiveAnalyzer() {
                   </Card>
                 </div>
                 <div className="col-span-1 md:col-span-7">
-                  <Card className="p-5 h-full">
-                    <div className="flex items-center justify-between mb-4">
+                  <Card className="p-5 h-full flex flex-col">
+                    <div className="flex items-center justify-between mb-4 flex-shrink-0">
                       <h2 className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">General Overview</h2>
                       <BarChart3 className="w-4 h-4 text-muted-foreground" aria-hidden="true" />
                     </div>
-                    <ResponsiveContainer width="100%" height="90%">
+                    <div className="flex-grow min-h-[320px]">
+                    <ResponsiveContainer width="100%" height="100%">
                       <ComposedChart data={finalChartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#222a3c" />
                         <XAxis dataKey="time" stroke="#7e899c" fontSize={12} />
                         <YAxis stroke="#7e899c" fontSize={12} />
                         <Tooltip
-                          contentStyle={{
-                            backgroundColor: "#11141d",
-                            border: "1px solid #273043",
-                            borderRadius: "10px",
-                          }}
+                          contentStyle={tooltipContentStyle}
                           formatter={tooltipFormatter}
                         />
                         {enabledMetrics.map((metric) => (
@@ -3148,6 +3198,7 @@ export default function AutomotiveAnalyzer() {
                         ))}
                       </ComposedChart>
                     </ResponsiveContainer>
+                    </div>
                   </Card>
                 </div>
                 <div className="col-span-1 md:col-span-3">
@@ -3233,10 +3284,10 @@ export default function AutomotiveAnalyzer() {
 
             <TabsContent value="performance" className="space-y-0">
               <ErrorBoundary>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4" style={{ height: `${STATIC_HEIGHT}px` }}>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:h-[1000px]">
                 <Card className="p-5 flex flex-col">
                   <h2 className="mb-4 flex-shrink-0 text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">RPM vs Speed Analysis</h2>
-                  <div className="flex-grow">
+                  <div className="flex-grow min-h-[280px]">
                     <ResponsiveContainer width="100%" height="100%">
                       <ComposedChart data={finalChartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#222a3c" />
@@ -3244,11 +3295,7 @@ export default function AutomotiveAnalyzer() {
                         <YAxis yAxisId="rpm" stroke="#ef4444" fontSize={12} orientation="left" label={{ value: "RPM", angle: -90, position: "insideLeft", fill: "#ef4444", fontSize: 11 }} />
                         <YAxis yAxisId="speed" stroke="#22c55e" fontSize={12} orientation="right" label={{ value: "Speed", angle: 90, position: "insideRight", fill: "#22c55e", fontSize: 11 }} />
                         <Tooltip
-                          contentStyle={{
-                            backgroundColor: "#11141d",
-                            border: "1px solid #273043",
-                            borderRadius: "10px",
-                          }}
+                          contentStyle={tooltipContentStyle}
                           formatter={tooltipFormatter}
                         />
                         <Line yAxisId="rpm" dataKey="rpm" stroke="#ef4444" strokeWidth={2} dot={false} name="RPM" />
@@ -3269,7 +3316,7 @@ export default function AutomotiveAnalyzer() {
                 </Card>
                 <Card className="p-5 flex flex-col">
                   <h2 className="mb-4 flex-shrink-0 text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Throttle vs Speed</h2>
-                  <div className="flex-grow">
+                  <div className="flex-grow min-h-[280px]">
                     <ResponsiveContainer width="100%" height="100%">
                       <ComposedChart data={finalChartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#222a3c" />
@@ -3277,11 +3324,7 @@ export default function AutomotiveAnalyzer() {
                         <YAxis yAxisId="throttle" stroke="#eab308" fontSize={12} orientation="left" label={{ value: "Throttle %", angle: -90, position: "insideLeft", fill: "#eab308", fontSize: 11 }} />
                         <YAxis yAxisId="speed" stroke="#22c55e" fontSize={12} orientation="right" label={{ value: "Speed", angle: 90, position: "insideRight", fill: "#22c55e", fontSize: 11 }} />
                         <Tooltip
-                          contentStyle={{
-                            backgroundColor: "#11141d",
-                            border: "1px solid #273043",
-                            borderRadius: "10px",
-                          }}
+                          contentStyle={tooltipContentStyle}
                           formatter={tooltipFormatter}
                         />
                         <Line
@@ -3309,7 +3352,7 @@ export default function AutomotiveAnalyzer() {
                 </Card>
                 <Card className="p-5 flex flex-col">
                   <h2 className="mb-4 flex-shrink-0 text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Power & Torque</h2>
-                  <div className="flex-grow">
+                  <div className="flex-grow min-h-[280px]">
                     <ResponsiveContainer width="100%" height="100%">
                       <ComposedChart data={finalChartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#222a3c" />
@@ -3317,11 +3360,7 @@ export default function AutomotiveAnalyzer() {
                         <YAxis yAxisId="left" stroke="#ec4899" orientation="left" label={{ value: "Power (hp)", angle: -90, position: "insideLeft", fill: "#ec4899", fontSize: 11 }} />
                         <YAxis yAxisId="right" stroke="#84cc16" orientation="right" label={{ value: "Torque (N·m)", angle: 90, position: "insideRight", fill: "#84cc16", fontSize: 11 }} />
                         <Tooltip
-                          contentStyle={{
-                            backgroundColor: "#11141d",
-                            border: "1px solid #273043",
-                            borderRadius: "10px",
-                          }}
+                          contentStyle={tooltipContentStyle}
                           formatter={tooltipFormatter}
                         />
                         <Area
@@ -3349,7 +3388,7 @@ export default function AutomotiveAnalyzer() {
                 </Card>
                 <Card className="p-5 flex flex-col">
                   <h2 className="mb-4 flex-shrink-0 text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Gearbox Usage</h2>
-                  <div className="flex-grow">
+                  <div className="flex-grow min-h-[280px]">
                     <ResponsiveContainer width="100%" height="100%">
                       <ComposedChart data={finalChartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#222a3c" />
@@ -3366,11 +3405,7 @@ export default function AutomotiveAnalyzer() {
                         />
                         <YAxis yAxisId="speed" stroke="#22c55e" fontSize={12} orientation="left" label={{ value: "Speed", angle: -90, position: "insideLeft", fill: "#22c55e", fontSize: 11 }} />
                         <Tooltip
-                          contentStyle={{
-                            backgroundColor: "#11141d",
-                            border: "1px solid #273043",
-                            borderRadius: "10px",
-                          }}
+                          contentStyle={tooltipContentStyle}
                           formatter={(value: any, name: any) => {
                             if (name === "gear") {
                               // Clamp to the configured gear count, not a hard-coded 6, so
@@ -3409,7 +3444,7 @@ export default function AutomotiveAnalyzer() {
                 </Card>
                 <Card className="p-5 flex flex-col">
                   <h2 className="mb-4 flex-shrink-0 text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Gear Distribution</h2>
-                  <div className="flex-grow">
+                  <div className="flex-grow min-h-[280px]">
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart
                         data={gearDistribution}
@@ -3419,11 +3454,7 @@ export default function AutomotiveAnalyzer() {
                         <XAxis dataKey="gear" stroke="#7e899c" fontSize={12} />
                         <YAxis stroke="#7e899c" fontSize={12} allowDecimals={false} />
                         <Tooltip
-                          contentStyle={{
-                            backgroundColor: "#11141d",
-                            border: "1px solid #273043",
-                            borderRadius: "10px",
-                          }}
+                          contentStyle={tooltipContentStyle}
                           formatter={(value: any, name: any, props: any) => [
                             `${value} samples (${props.payload.percentage}%)`,
                             `Gear ${props.payload.gear}`,
@@ -3440,7 +3471,7 @@ export default function AutomotiveAnalyzer() {
 
             <TabsContent value="engine" className="space-y-0">
               <ErrorBoundary>
-              <div className="grid grid-cols-2 gap-4" style={{ height: `${STATIC_HEIGHT}px` }}>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:h-[1000px]">
                 <Card className="p-5 flex flex-col">
                   <div className="flex items-center justify-between mb-4 flex-shrink-0">
                     <h2 className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Engine Temperature</h2>
@@ -3473,18 +3504,14 @@ export default function AutomotiveAnalyzer() {
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </div>
-                  <div className="flex-grow">
+                  <div className="flex-grow min-h-[280px]">
                     <ResponsiveContainer width="100%" height="100%">
                       <AreaChart data={finalChartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#222a3c" />
                         <XAxis dataKey="time" stroke="#7e899c" fontSize={12} />
                         <YAxis stroke="#7e899c" fontSize={12} />
                         <Tooltip
-                          contentStyle={{
-                            backgroundColor: "#11141d",
-                            border: "1px solid #273043",
-                            borderRadius: "10px",
-                          }}
+                          contentStyle={tooltipContentStyle}
                           formatter={tooltipFormatter}
                         />
                         {selectedTempSensors.map((sensorKey) => {
@@ -3511,18 +3538,14 @@ export default function AutomotiveAnalyzer() {
                 </Card>
                 <Card className="p-5 flex flex-col">
                   <h2 className="mb-4 flex-shrink-0 text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Ignition Advance</h2>
-                  <div className="flex-grow">
+                  <div className="flex-grow min-h-[280px]">
                     <ResponsiveContainer width="100%" height="100%">
                       <LineChart data={finalChartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#222a3c" />
                         <XAxis dataKey="time" stroke="#7e899c" fontSize={12} />
                         <YAxis stroke="#7e899c" fontSize={12} domain={["dataMin - 5", "dataMax + 5"]} />
                         <Tooltip
-                          contentStyle={{
-                            backgroundColor: "#11141d",
-                            border: "1px solid #273043",
-                            borderRadius: "10px",
-                          }}
+                          contentStyle={tooltipContentStyle}
                           formatter={tooltipFormatter}
                         />
                         <Line
@@ -3541,18 +3564,14 @@ export default function AutomotiveAnalyzer() {
                 </Card>
                 <Card className="p-5 flex flex-col">
                   <h2 className="mb-4 flex-shrink-0 text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Boost Pressure</h2>
-                  <div className="flex-grow">
+                  <div className="flex-grow min-h-[280px]">
                     <ResponsiveContainer width="100%" height="100%">
                       <LineChart data={finalChartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#222a3c" />
                         <XAxis dataKey="time" stroke="#7e899c" fontSize={12} />
                         <YAxis stroke="#7e899c" fontSize={12} domain={[(dataMin: number) => Math.min(dataMin - 0.2, -0.5), (dataMax: number) => Math.max(dataMax + 0.2, 0.5)]} tickFormatter={(v: number) => Number(v).toFixed(2)} />
                         <Tooltip
-                          contentStyle={{
-                            backgroundColor: "#11141d",
-                            border: "1px solid #273043",
-                            borderRadius: "10px",
-                          }}
+                          contentStyle={tooltipContentStyle}
                           formatter={tooltipFormatter}
                         />
                         <Line dataKey="boost" stroke="#06b6d4" strokeWidth={3} dot={false} name="Boost (bar)" />
@@ -3565,18 +3584,14 @@ export default function AutomotiveAnalyzer() {
                 </Card>
                 <Card className="p-5 flex flex-col">
                   <h2 className="mb-4 flex-shrink-0 text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Fuel Consumption</h2>
-                  <div className="flex-grow">
+                  <div className="flex-grow min-h-[280px]">
                     <ResponsiveContainer width="100%" height="100%">
                       <AreaChart data={finalChartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#222a3c" />
                         <XAxis dataKey="time" stroke="#7e899c" fontSize={12} />
                         <YAxis stroke="#7e899c" fontSize={12} />
                         <Tooltip
-                          contentStyle={{
-                            backgroundColor: "#11141d",
-                            border: "1px solid #273043",
-                            borderRadius: "10px",
-                          }}
+                          contentStyle={tooltipContentStyle}
                           formatter={tooltipFormatter}
                         />
                         <Area
@@ -3596,18 +3611,14 @@ export default function AutomotiveAnalyzer() {
                 </Card>
                 <Card className="p-5 flex flex-col">
                   <h2 className="mb-4 flex-shrink-0 text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Throttle & Brake</h2>
-                  <div className="flex-grow">
+                  <div className="flex-grow min-h-[280px]">
                     <ResponsiveContainer width="100%" height="100%">
                       <ComposedChart data={finalChartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#222a3c" />
                         <XAxis dataKey="time" stroke="#7e899c" fontSize={12} />
                         <YAxis stroke="#7e899c" fontSize={12} domain={[0, 100]} />
                         <Tooltip
-                          contentStyle={{
-                            backgroundColor: "#11141d",
-                            border: "1px solid #273043",
-                            borderRadius: "10px",
-                          }}
+                          contentStyle={tooltipContentStyle}
                           formatter={tooltipFormatter}
                         />
                         <Area
@@ -3630,7 +3641,7 @@ export default function AutomotiveAnalyzer() {
             </TabsContent>
 
             <TabsContent value="analysis" className="space-y-0">
-              <div className="grid grid-cols-1 md:grid-cols-12 gap-4" style={{ height: `${pidAnalysisHeight}px` }}>
+              <div className="grid grid-cols-1 md:grid-cols-12 gap-4 max-md:!h-auto" style={{ height: `${pidAnalysisHeight}px` }}>
                 <div className="col-span-1 md:col-span-2">
                   <Card className="h-full flex flex-col">
                     <div className="p-4 pb-2 flex-shrink-0">
@@ -3681,7 +3692,8 @@ export default function AutomotiveAnalyzer() {
                         style={{
                           height: `${metricsListHeight}px`,
                           scrollbarWidth: "thin",
-                          scrollbarColor: "#2c3447 #11141d",
+                          scrollbarColor:
+                            theme === "light" ? "#c2cbd9 #eef1f6" : "#2c3447 #11141d",
                         }}
                       >
                         {filteredMetrics.length > 0 ? (
@@ -3816,7 +3828,7 @@ export default function AutomotiveAnalyzer() {
                                     <X className="h-3 w-3" />
                                   </Button>
                                 </div>
-                                <div className="flex-grow">
+                                <div className="flex-grow min-h-[280px]">
                                   <ResponsiveContainer width="100%" height="100%">
                                     <LineChart
                                       data={finalChartData}
@@ -3877,7 +3889,7 @@ export default function AutomotiveAnalyzer() {
 
             <TabsContent value="gps" className="space-y-0">
               <ErrorBoundary>
-              <div style={{ height: `${STATIC_HEIGHT}px` }}>
+              <div className="h-[520px] md:h-[1000px]">
                 <Card className="p-5 h-full">
                   <div className="flex items-center justify-between mb-4">
                     <h2 className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">GPS Track Visualization</h2>
