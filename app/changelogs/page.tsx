@@ -14,6 +14,22 @@ interface ChangelogEntry {
 
 const changelogs: ChangelogEntry[] = [
   {
+    version: "2.1.0",
+    date: "2026-07-13",
+    title: "Light Theme, Mobile Fixes, New Views & Offline Support",
+    type: "feature",
+    description: [
+      "New: a light/dark theme toggle in the app bar — the dark 'instrument cluster' look is still the default, with a new daylight theme that follows your system preference and remembers your choice (charts, tooltips and scrollbars all adapt)",
+      "New: an Acceleration panel on the Performance tab showing your best 0–100 km/h, 0–60 mph and ¼-mile (with trap speed), timed from the log's real per-sample timestamps — it only appears when a log has trustworthy timestamps, so the numbers are never guessed",
+      "New: a distance-based X-axis option on the overview chart (plot against distance travelled instead of sample index) and an elevation profile chart on the GPS tab, drawn from the log's altitude",
+      "New: export the overview chart as a PNG, completing the export set alongside the existing CSV and GPS-map-PNG exports",
+      "New: the app is now an installable PWA that works offline — add it to your home screen / install it, and it keeps working with no connection once loaded",
+      "Fixed mobile layout: charts no longer collapse to zero height on phones (the General Overview chart was invisible), and the tab bar now wraps so every tab stays visible instead of scrolling off-screen",
+      "More accurate number parsing: logs that write thousands-separated integers (e.g. RPM '3,500') are now detected per-file and read correctly, without regressing European decimal logs",
+      "Safety: opening a shared-log link now asks for confirmation before loading, instead of silently pulling remote content into the analyzer",
+    ],
+  },
+  {
     version: "2.0.0",
     date: "2026-07-13",
     title: "Reliability, Security, Accessibility & Performance Overhaul",
