@@ -1369,6 +1369,48 @@ export default function AutomotiveAnalyzer() {
     setCurrentTime((t) => Math.min(Math.max(t, timeRange[0]), timeRange[1]))
   }, [timeRange])
 
+  // Keyboard shortcuts for playback/scrubbing. Space toggles play/pause; ArrowLeft/Right
+  // step one sample (Shift = 10); Home/End jump to the range start/end. Ignored while a
+  // text field is focused so typing in the search/config inputs isn't hijacked.
+  useEffect(() => {
+    if (data.length === 0) return
+    const onKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null
+      const tag = target?.tagName
+      if (tag === "INPUT" || tag === "TEXTAREA" || target?.isContentEditable) return
+      const [lo, hi] = timeRange
+      const step = e.shiftKey ? 10 : 1
+      switch (e.key) {
+        case " ":
+          e.preventDefault()
+          setIsPlaying((p) => !p)
+          break
+        case "ArrowLeft":
+          e.preventDefault()
+          setIsPlaying(false)
+          setCurrentTime((t) => Math.max(lo, t - step))
+          break
+        case "ArrowRight":
+          e.preventDefault()
+          setIsPlaying(false)
+          setCurrentTime((t) => Math.min(hi, t + step))
+          break
+        case "Home":
+          e.preventDefault()
+          setIsPlaying(false)
+          setCurrentTime(lo)
+          break
+        case "End":
+          e.preventDefault()
+          setIsPlaying(false)
+          setCurrentTime(hi)
+          break
+      }
+    }
+    window.addEventListener("keydown", onKeyDown)
+    return () => window.removeEventListener("keydown", onKeyDown)
+  }, [data.length, timeRange])
+
   // Check if a metric has all zero values or is empty
   const isEmptyPID = useCallback(
     (metric: MetricConfig) => {
