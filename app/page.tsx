@@ -1316,6 +1316,35 @@ export default function AutomotiveAnalyzer() {
     shiftRpm: 6900,
     numberOfGears: 6,
   })
+  // Persist the transmission configuration across visits — it's the most tedious thing to
+  // set up (gear ratios, final drive, tyre diameter). Loaded once on mount (in an effect,
+  // not initial state, to avoid an SSR hydration mismatch); saved on change. The save is
+  // gated on configLoadedRef so the initial default render can't clobber a stored value
+  // before the load runs. Speed unit is auto-detected per file, and map style is local to
+  // the GPS component, so neither is persisted here.
+  const configLoadedRef = useRef(false)
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("obd.transmissionConfig")
+      if (saved) {
+        const parsed = JSON.parse(saved)
+        if (parsed && parsed.gearRatios && parsed.finalDrive && parsed.tyreDiameterMm && parsed.numberOfGears) {
+          setTransmissionConfig(parsed)
+        }
+      }
+    } catch {
+      /* corrupt/unavailable storage — fall back to defaults */
+    }
+    configLoadedRef.current = true
+  }, [])
+  useEffect(() => {
+    if (!configLoadedRef.current) return
+    try {
+      localStorage.setItem("obd.transmissionConfig", JSON.stringify(transmissionConfig))
+    } catch {
+      /* storage full/unavailable — non-fatal */
+    }
+  }, [transmissionConfig])
   const [transmissionPresets] = useState<{ name: string; config: TransmissionConfig }[]>([
     {
       name: "Peugeot 308 GTi (T9 EA71)",
