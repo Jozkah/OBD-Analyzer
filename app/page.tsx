@@ -793,18 +793,27 @@ function getShiftIndicator(
   return { shouldShift: "optimal", reason: "Optimal gear" }
 }
 
-function detectGearRatios(data: DataPoint[]): any {
+function detectGearRatios(data: DataPoint[], speedUnit: "km/h" | "mph" = "km/h"): any {
   if (data.length < 100) return null
 
-  // Filter data with valid speed and RPM
-  const validData = data.filter((d) => d.speed > 5 && d.rpm > 1000 && d.speed < 200 && d.rpm < 8000)
+  // Normalize speed to km/h up front. calculateGear already does this, but the bucketing
+  // and gear-ratio math below assume km/h; on an mph log the same road speed is ~1.6x
+  // smaller, inflating rpm/speed and pushing nearly every sample into a lower-gear bucket
+  // — skewing the detected ratios, gear count and confidence, then writing bad values
+  // into the config on "Apply".
+  const toKmh = (s: number) => (speedUnit === "mph" ? s * 1.60934 : s)
+
+  // Filter data with valid speed and RPM (thresholds are in km/h)
+  const validData = data
+    .map((d) => ({ ...d, speed: toKmh(d.speed) }))
+    .filter((d) => d.speed > 5 && d.rpm > 1000 && d.speed < 200 && d.rpm < 8000)
   if (validData.length < 50) return null
 
   // Group data by estimated gear (rough calculation)
   const gearGroups: { [key: number]: Array<{ speed: number; rpm: number; ratio: number }> } = {}
 
   validData.forEach((point) => {
-    // Estimate gear based on speed/RPM ratio
+    // Estimate gear based on speed/RPM ratio (speed already normalized to km/h)
     const ratio = point.rpm / point.speed
     let estimatedGear = 1
 
@@ -955,7 +964,13 @@ function parseTireSize(tireSize: string): { width: number; aspectRatio: number; 
 function parseNumericValue(value: string): number {
   if (!value || typeof value !== "string") return 0
 
-  let s = value.trim()
+  // Strip stray backslashes first. Some exporters (e.g. datalog.help / OBDLink) escape
+  // the decimal separator in GPS columns, writing latitude "01\.44" and longitude
+  // "-61\.13". Without this, Number.parseFloat stops at the backslash and truncates the
+  // value to its integer part (01\.44 -> 1, -61\.13 -> -61), collapsing every GPS fix
+  // onto one coordinate so the track map degenerates to "No track to plot". No legitimate
+  // numeric value contains a backslash, so removing them is safe for every column.
+  let s = value.trim().replace(/\\/g, "")
   const hasComma = s.includes(",")
   const hasDot = s.includes(".")
 
@@ -988,6 +1003,18 @@ function parseNumericValue(value: string): number {
 
   const parsed = Number.parseFloat(s)
   return isNaN(parsed) ? 0 : parsed
+}
+
+// True only when a raw cell is genuinely numeric. parseNumericValue can't be used to
+// decide this because it always coerces non-numeric input to 0 (never NaN), so a check
+// like `!isNaN(parseNumericValue(v))` is always true and would classify text/enum
+// columns ("OL"/"CL" fuel-system status, oxygen-sensor location, OBD cert strings) as
+// numeric — polluting the PID list with flat-zero traces. This requires at least one
+// digit and only digits, sign, separators or the exporter's stray backslash.
+function isNumericCell(value: string): boolean {
+  const s = value.replace(/\\/g, "").trim()
+  if (!s) return false
+  return /^[-+]?[\d.,]+$/.test(s) && /\d/.test(s)
 }
 
 // Helper function to detect speed unit from column names and data
@@ -1078,22 +1105,34 @@ async function mergeCSVFiles(orderedFiles: File[]): Promise<File> {
 
   // Two logs of the SAME channels in the SAME order can still carry cosmetically
   // different header labels — e.g. the OBDLink logger writes "Latitude (deg)" in
-  // some sessions and "Latitude" in others. Compare headers by a normalized form
-  // (strip parenthetical unit suffixes, collapse whitespace, lowercase) so those
-  // merge cleanly, while still refusing genuinely different or re-ordered layouts.
-  const normalizeHeader = (header: string): string =>
-    header
-      .split(",")
-      .map((cell) =>
-        cell
-          .replace(/\([^)]*\)/g, " ")
-          .replace(/\s+/g, " ")
-          .trim()
-          .toLowerCase(),
-      )
-      .join(",")
+  // some sessions and "Latitude" in others. Compare each column by its unit-stripped
+  // name so those merge cleanly, while still refusing genuinely different or re-ordered
+  // layouts.
+  const cellName = (cell: string): string =>
+    cell.replace(/\([^)]*\)/g, " ").replace(/\s+/g, " ").trim().toLowerCase()
+  // The unit (parenthetical suffix), normalized. Empty when the column has no unit.
+  const cellUnit = (cell: string): string => {
+    const m = cell.match(/\(([^)]*)\)\s*$/)
+    return m ? m[1].replace(/\s+/g, "").toLowerCase() : ""
+  }
 
-  const baseKey = normalizeHeader(base.header)
+  // Headers are compatible when they have the same column count, matching column names,
+  // and — crucially — no column where BOTH sides declare a unit that differs. This still
+  // allows "Latitude (deg)" vs "Latitude" (one unit missing) to merge, but refuses
+  // "Speed (km/h)" vs "Speed (mph)" or "Boost (bar)" vs "Boost (psi)", which would
+  // otherwise silently mix incompatible units into one column with no warning.
+  const headersCompatible = (a: string, b: string): boolean => {
+    const ca = a.split(",")
+    const cb = b.split(",")
+    if (ca.length !== cb.length) return false
+    for (let k = 0; k < ca.length; k++) {
+      if (cellName(ca[k]) !== cellName(cb[k])) return false
+      const ua = cellUnit(ca[k])
+      const ub = cellUnit(cb[k])
+      if (ua && ub && ua !== ub) return false
+    }
+    return true
+  }
 
   // First file: keep everything (comments + header + data)
   let merged = texts[0].trimEnd()
@@ -1107,7 +1146,7 @@ async function mergeCSVFiles(orderedFiles: File[]): Promise<File> {
     // An empty/comment-only segment contributes no rows; skip it rather than
     // aborting the whole merge with a "header differs" error.
     if (!cur.header) continue
-    if (normalizeHeader(cur.header) !== baseKey) {
+    if (!headersCompatible(base.header, cur.header)) {
       throw new Error(
         `Cannot merge "${orderedFiles[i].name}": its CSV header differs from "${orderedFiles[0].name}". ` +
           `Files must log the same PIDs in the same order to be merged.`,
@@ -1224,6 +1263,9 @@ export default function AutomotiveAnalyzer() {
   const [pidAnalysisHoveredTimeKey, setPidAnalysisHoveredTimeKey] = useState<number | null>(null)
   const [isDragOver, setIsDragOver] = useState(false)
   const [speedUnit, setSpeedUnit] = useState<"km/h" | "mph">("km/h")
+  // Raw unit of the "Trip Duration" column (e.g. "min" or "sec"), captured at parse time
+  // so the Trip Duration readout can normalize to minutes instead of assuming minutes.
+  const [tripDurationUnit, setTripDurationUnit] = useState<string>("min")
 
   // --- Sharing (optional; gated by SHARING_ENABLED) ---
   // rawCsv retains the exact text of the loaded log so it can be POSTed to /api/share.
@@ -1636,10 +1678,12 @@ export default function AutomotiveAnalyzer() {
             if (header.toLowerCase() === "time") return
             const value = values[index]
             if (value && value.trim() !== "") {
-              const numericValue = parseNumericValue(value)
-              if (!isNaN(numericValue)) {
+              // Only flag the column numeric when the cell is actually numeric — see
+              // isNumericCell. A column that is text in every row stays excluded instead
+              // of becoming a zero-valued PID.
+              if (isNumericCell(value)) {
                 numericColumns[index] = true
-                if (buildSample) samplePoint[header] = numericValue
+                if (buildSample) samplePoint[header] = parseNumericValue(value)
               }
             }
           })
@@ -1651,6 +1695,14 @@ export default function AutomotiveAnalyzer() {
         // Detect speed unit from headers and sample data
         const detectedSpeedUnit = detectSpeedUnit(headers, sampleData)
         setSpeedUnit(detectedSpeedUnit)
+
+        // Capture the Trip Duration column's unit so the readout can normalize to minutes
+        // rather than assuming the raw value is already in minutes (some loggers emit
+        // seconds, which would otherwise print e.g. a 30-minute trip as "30h 0min").
+        const tripDurHeader = headers.find(
+          (h) => h.toLowerCase().includes("trip") && h.toLowerCase().includes("duration"),
+        )
+        setTripDurationUnit(tripDurHeader ? extractUnit(tripDurHeader) || "min" : "min")
 
         let metricIndex = 0
         headers.forEach((header, colIdx) => {
@@ -1822,7 +1874,18 @@ export default function AutomotiveAnalyzer() {
         setTimeRange([0, Math.max(0, parsedData.length - 1)])
         setCurrentTime(0)
       } catch (error) {
+        // Any unexpected parse failure (beyond the empty / header-only cases handled
+        // above) previously vanished into the console, leaving the user with a
+        // disappearing spinner and no feedback or recovery path. Reset to a clean
+        // "no data" state and surface a message so they can re-upload.
         console.error("Error parsing CSV:", error)
+        setMetrics([])
+        setData([])
+        setTimeRange([0, 0])
+        setCurrentTime(0)
+        setMissingPIDs({ missing: [], hasCriticalMissing: false })
+        setRawCsv(null)
+        showToast("Couldn't parse this CSV file. Check the format and try again.")
       } finally {
         setIsLoading(false)
       }
@@ -2170,18 +2233,29 @@ export default function AutomotiveAnalyzer() {
     }
     const distance = sumWithResets("tripDistance")
     const fuel = sumWithResets("tripFuel")
-    const duration = sumWithResets("tripDuration")
+    const rawDuration = sumWithResets("tripDuration")
+    // Normalize the summed duration to minutes based on the column's detected unit, so the
+    // "Xh Ymin" readout is correct for loggers that emit seconds as well as minutes.
+    const durationUnit = tripDurationUnit.toLowerCase()
+    const durationMinutes =
+      rawDuration == null
+        ? null
+        : /^(s|sec|second)/.test(durationUnit)
+          ? rawDuration / 60
+          : /^(h|hr|hour)/.test(durationUnit)
+            ? rawDuration * 60
+            : rawDuration
     const fuelEconomy =
       fuel != null && distance != null && distance > 0 ? (fuel / distance) * 100 : null
-    return { distance, fuel, duration, fuelEconomy }
-  }, [data])
+    return { distance, fuel, duration: durationMinutes, fuelEconomy }
+  }, [data, tripDurationUnit])
 
   const autoDetection = useMemo(() => {
     if (data.length > 100) {
-      return detectGearRatios(data)
+      return detectGearRatios(data, speedUnit)
     }
     return null
-  }, [data])
+  }, [data, speedUnit])
 
   // Dedupe inside the functional updater against the latest state (not a closed-over,
   // possibly stale selectedPIDs) and drop the [selectedPIDs] dep so the callback identity
@@ -2671,9 +2745,7 @@ export default function AutomotiveAnalyzer() {
                   <Card className="p-5 h-full">
                     <div className="flex items-center justify-between mb-4">
                       <h3 className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">General Overview</h3>
-                      <Button variant="ghost" size="sm">
-                        <BarChart3 className="w-4 h-4" />
-                      </Button>
+                      <BarChart3 className="w-4 h-4 text-muted-foreground" aria-hidden="true" />
                     </div>
                     <ResponsiveContainer width="100%" height="90%">
                       <ComposedChart data={finalChartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
@@ -3826,7 +3898,7 @@ export default function AutomotiveAnalyzer() {
                   <div className="text-center">
                     <Button
                       onClick={() => {
-                        const results = detectGearRatios(data)
+                        const results = detectGearRatios(data, speedUnit)
                         setAutoDetectionResults(results)
                         setShowAutoDetection(true)
                       }}
