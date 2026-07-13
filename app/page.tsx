@@ -300,7 +300,15 @@ const MAP_ATTRIBUTION: Record<MapStyle, string> = {
 }
 
 // Enhanced GPS Track Map Component with offline + opt-in tile map bases
-function GPSTrackMap({ data, currentTime }: { data: DataPoint[]; currentTime: number }) {
+function GPSTrackMap({
+  data,
+  currentTime,
+  onNotify,
+}: {
+  data: DataPoint[]
+  currentTime: number
+  onNotify?: (msg: string) => void
+}) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   // Default to "offline" so the GPS map makes NO external requests unless the user opts in
   // by choosing a real tile style.
@@ -553,6 +561,10 @@ function GPSTrackMap({ data, currentTime }: { data: DataPoint[]; currentTime: nu
         } else if (!failed.has(url) && !inFlight.has(url)) {
           inFlight.add(url)
           const im = new Image()
+          // Request tiles with CORS so the canvas isn't tainted and can be exported to PNG.
+          // All three providers (Esri/OSM/OpenTopoMap) send Access-Control-Allow-Origin; a
+          // provider that didn't would just fail to load and be marked failed, as before.
+          im.crossOrigin = "anonymous"
           im.onload = () => {
             inFlight.delete(url)
             cache.set(url, im)
@@ -659,6 +671,32 @@ function GPSTrackMap({ data, currentTime }: { data: DataPoint[]; currentTime: nu
       case "+": case "=": e.preventDefault(); zoomByButton(1); break
       case "-": case "_": e.preventDefault(); zoomByButton(-1); break
       case "0": e.preventDefault(); setView(null); break
+    }
+  }
+
+  // Export the current map view (route + backdrop + markers) as a PNG download. Tiles are
+  // loaded with crossOrigin so the canvas isn't tainted; if a browser still blocks the
+  // export we surface a friendly note rather than throwing.
+  const exportPng = () => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    try {
+      canvas.toBlob((blob) => {
+        if (!blob) {
+          onNotify?.("Couldn't export the map image.")
+          return
+        }
+        const url = URL.createObjectURL(blob)
+        const link = document.createElement("a")
+        link.href = url
+        link.download = "gps-track.png"
+        document.body.appendChild(link)
+        link.click()
+        document.body.removeChild(link)
+        URL.revokeObjectURL(url)
+      }, "image/png")
+    } catch {
+      onNotify?.("Couldn't export the map — try the Offline basemap.")
     }
   }
 
@@ -793,6 +831,16 @@ function GPSTrackMap({ data, currentTime }: { data: DataPoint[]; currentTime: nu
           title="Fit track to view"
         >
           <Maximize2 className="h-4 w-4" />
+        </Button>
+        <Button
+          size="icon"
+          variant="secondary"
+          className="h-8 w-8 shadow-lg shadow-black/30"
+          onClick={exportPng}
+          aria-label="Save map as PNG"
+          title="Save map as PNG"
+        >
+          <Download className="h-4 w-4" />
         </Button>
       </div>
     </div>
@@ -3845,7 +3893,7 @@ export default function AutomotiveAnalyzer() {
                     </div>
                   </div>
                   <div className="h-[calc(100%-3rem)]">
-                    <GPSTrackMap data={data} currentTime={currentTime} />
+                    <GPSTrackMap data={data} currentTime={currentTime} onNotify={showToast} />
                   </div>
                 </Card>
               </div>
