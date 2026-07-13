@@ -14,6 +14,23 @@ interface ChangelogEntry {
 
 const changelogs: ChangelogEntry[] = [
   {
+    version: "2.0.0",
+    date: "2026-07-13",
+    title: "Reliability, Security, Accessibility & Performance Overhaul",
+    type: "improvement",
+    description: [
+      "Fixed the GPS track failing to render for datalog.help / OBDLink logs — GPS coordinates written with an escaped decimal (e.g. 01\\.44) were being truncated to whole numbers, collapsing the whole route to a single point; the map, and the bundled sample log, now draw correctly",
+      "Stopped text/status columns (fuel-system status, oxygen-sensor location, OBD certification, etc.) from appearing as empty zero-valued metrics in the PID list",
+      "Corrected gear-ratio auto-detection and the Trip Duration readout for mph / seconds-based logs, and multi-file merges now refuse to silently mix columns logged in different units (km/h vs mph, bar vs psi)",
+      "Malformed CSV files now show a clear error and reset to a clean state instead of failing silently with a disappearing spinner",
+      "Hardened the optional Share feature: per-IP rate limiting, same-site-only writes, a CSV-shape check on uploads, and site-wide security headers (Content-Security-Policy, X-Frame-Options, and more)",
+      "Accessibility pass (WCAG AA): stronger text contrast, screen-reader names on every icon button and form field, live-region announcements for toasts and loading, and support for the reduced-motion preference",
+      "Performance: memoized several heavy per-render calculations (PID list filtering, gear distribution, GPS point count) so large logs and playback stay smooth",
+      "New: keyboard shortcuts for playback — Space to play/pause, ← / → to step (Shift for a bigger jump), Home / End to jump to the range ends",
+      "Added an automated test suite and continuous-integration checks, plus richer link previews (OpenGraph / Twitter cards) when sharing the site",
+    ],
+  },
+  {
     version: "1.9.0",
     date: "2026-06-10",
     title: "Interactive GPS Map: Real Basemaps + Pan & Zoom",
