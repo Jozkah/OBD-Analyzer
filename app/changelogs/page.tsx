@@ -14,6 +14,19 @@ interface ChangelogEntry {
 
 const changelogs: ChangelogEntry[] = [
   {
+    version: "2.2.0",
+    date: "2026-07-13",
+    title: "Performance & Maintainability",
+    type: "improvement",
+    description: [
+      "Smoother playback: the overview chart no longer re-renders on every playback frame — only the moving readout updates — so scrubbing and playing a large log stays fluid",
+      "Faster, lighter GPS map: the map now redraws only the moving position marker on each frame instead of repainting the whole route and map tiles, and the map code is split into its own bundle that loads only when you open the GPS tab",
+      "Faster CSV loading: column detection is computed once per file instead of re-scanning every column on every row, so large logs import more quickly",
+      "Lighter 'Apply' in the transmission dialog — applying a configuration now only touches the rows whose gear actually changes",
+      "Under the hood: the ~4,700-line main file was split into focused, unit-tested modules (number parsing, gear math, GPS projection, exports, the map component, and more), making the app easier to maintain and safer to change",
+    ],
+  },
+  {
     version: "2.1.0",
     date: "2026-07-13",
     title: "Light Theme, Mobile Fixes, New Views & Offline Support",
