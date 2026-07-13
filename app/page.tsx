@@ -27,6 +27,7 @@ import {
   Loader2,
   Minus,
   Maximize2,
+  Download,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
@@ -906,6 +907,43 @@ function exportTransmissionConfig(config: TransmissionConfig): void {
   const link = document.createElement("a")
   link.href = url
   link.download = "transmission-config.json"
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+  URL.revokeObjectURL(url)
+}
+
+// Build a CSV of the processed/normalized data for the rows in [lo, hi] (inclusive),
+// using each detected metric's original column name as the header plus a leading Time
+// column. This exports the merged, unit-normalized data actually being analyzed — useful
+// after merging multiple files or trimming to a section — not just the raw upload.
+function buildWindowCsv(data: DataPoint[], metrics: MetricConfig[], lo: number, hi: number): string {
+  const escape = (v: string | number): string => {
+    const s = String(v)
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
+  }
+  const cols = metrics.filter((m) => typeof m.key === "string")
+  const header = ["Time", ...cols.map((m) => m.originalName || m.label)]
+  const lines = [header.map(escape).join(",")]
+  const end = Math.min(hi, data.length - 1)
+  for (let i = Math.max(0, lo); i <= end; i++) {
+    const point = data[i]
+    const row: (string | number)[] = [point?.timestamp ?? ""]
+    for (const m of cols) {
+      const v = (point as any)?.[m.key as string]
+      row.push(typeof v === "number" && !isNaN(v) ? v : "")
+    }
+    lines.push(row.map(escape).join(","))
+  }
+  return lines.join("\n")
+}
+
+function downloadCsv(csv: string, filename: string): void {
+  const blob = new Blob([csv], { type: "text/csv" })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement("a")
+  link.href = url
+  link.download = filename
   document.body.appendChild(link)
   link.click()
   document.body.removeChild(link)
@@ -2005,6 +2043,15 @@ export default function AutomotiveAnalyzer() {
     }
   }, [parseCSV])
 
+  // Export the processed data for the current Time Range window as a CSV download.
+  const handleExportCsv = useCallback(() => {
+    if (data.length === 0) return
+    const csv = buildWindowCsv(data, metrics, timeRange[0], timeRange[1])
+    const base = (importedFileNames[0] || "obd-log").replace(/\.csv$/i, "")
+    downloadCsv(csv, `${base}-export.csv`)
+    showToast("Exported the current window as CSV.")
+  }, [data, metrics, timeRange, importedFileNames, showToast])
+
   // Create an expiring share link for the currently loaded log. POSTs the raw CSV to the
   // server route, which stores it and returns a short id; the data leaves the browser only
   // on this explicit action.
@@ -2514,6 +2561,17 @@ export default function AutomotiveAnalyzer() {
               aria-label="Reset to start"
             >
               <RotateCcw className="w-4 h-4" />
+            </Button>
+            <Button
+              onClick={handleExportCsv}
+              variant="outline"
+              size="sm"
+              disabled={data.length === 0}
+              aria-label="Export current window as CSV"
+              title="Export the current time-range window as CSV"
+            >
+              <Download className="w-4 h-4 sm:mr-2" />
+              <span className="hidden sm:inline">Export</span>
             </Button>
             {SHARING_ENABLED && (
               <Button
