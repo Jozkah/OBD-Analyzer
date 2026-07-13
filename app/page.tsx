@@ -62,8 +62,6 @@ import {
 } from "@/components/ui/alert-dialog"
 import Link from "next/link"
 import { ErrorBoundary } from "@/components/error-boundary"
-import { PerformanceCharts } from "@/components/performance-charts"
-import { EngineCharts } from "@/components/engine-charts"
 import { parseNumericValue, isNumericCell, detectCommaMeaning, type CommaMeaning } from "@/lib/parse-number"
 import { parseLogTimeSeconds, detectAccelRuns } from "@/lib/accel-runs"
 import type { DataPoint, MetricConfig, TransmissionConfig } from "@/types/obd"
@@ -88,6 +86,21 @@ const GPSTrackMap = dynamic(() => import("@/components/gps-track-map").then((m) 
   loading: () => (
     <div className="flex h-full items-center justify-center text-sm text-muted-foreground">Loading map…</div>
   ),
+})
+
+// Code-split the non-default chart tabs too (#33): the Performance and Engine grids (and the
+// Recharts config they carry) load only when their tab is first opened, so a visitor who
+// stays on the default Overview tab never downloads them. A brief skeleton covers the swap.
+const chartTabFallback = () => (
+  <div className="flex h-[400px] items-center justify-center text-sm text-muted-foreground">Loading charts…</div>
+)
+const PerformanceCharts = dynamic(
+  () => import("@/components/performance-charts").then((m) => m.PerformanceCharts),
+  { ssr: false, loading: chartTabFallback },
+)
+const EngineCharts = dynamic(() => import("@/components/engine-charts").then((m) => m.EngineCharts), {
+  ssr: false,
+  loading: chartTabFallback,
 })
 
 // Toggles the optional "share a log via an expiring link" feature. The backend must also
