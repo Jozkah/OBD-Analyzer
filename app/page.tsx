@@ -1473,6 +1473,8 @@ export default function AutomotiveAnalyzer() {
   // The pre-hydration script in layout.tsx has already applied the correct class to <html>;
   // here we read it back on mount (so the button shows the right icon) and let the user flip
   // it, persisting the choice under the same "obd-theme" key the script reads.
+  // Overview chart X-axis: sample index ("time") or cumulative distance ("distance").
+  const [overviewXMode, setOverviewXMode] = useState<"time" | "distance">("time")
   const [theme, setTheme] = useState<"light" | "dark">("dark")
   useEffect(() => {
     setTheme(document.documentElement.classList.contains("light") ? "light" : "dark")
@@ -2487,7 +2489,29 @@ export default function AutomotiveAnalyzer() {
     })
   }, [filteredData, transmissionConfig.numberOfGears])
 
+  // Metric key that holds altitude (parsed from an "Altitude (m)" column), if present.
+  // Used for the elevation profile and to know whether to offer it at all.
+  const altitudeKey = useMemo(() => {
+    const m = metrics.find(
+      (mc) =>
+        mc.label === "Altitude" ||
+        /altitude|elevation/i.test(mc.originalName || "") ||
+        (mc.unit === "m" && /alt/i.test(mc.label)),
+    )
+    return m ? (m.key as string) : null
+  }, [metrics])
+
   const finalChartData = useMemo(() => {
+    // Cumulative distance (km) per sample, so charts can be plotted against distance
+    // travelled instead of sample index. Prefer a real Trip Distance PID when the log has
+    // one (handling its periodic reset-to-zero); otherwise integrate speed with a nominal
+    // 1 s sample interval — the absolute scale may differ if the log isn't ~1 Hz, but the
+    // shape (where each corner falls) is what makes distance alignment useful.
+    const hasTripDistance = filteredData.some(
+      (p) => typeof p.tripDistance === "number" && !isNaN(p.tripDistance as number),
+    )
+    let cumDist = 0
+    let prevTrip: number | null = null
     const processed = filteredData.map((point) => {
       const chartPoint: DataPoint = { ...point }
       metrics.forEach((metricConfig) => {
@@ -2495,6 +2519,25 @@ export default function AutomotiveAnalyzer() {
         const value = (point as any)[key]
         chartPoint[key] = typeof value === "number" && !isNaN(value) ? value : 0
       })
+      if (hasTripDistance) {
+        const td =
+          typeof point.tripDistance === "number" && !isNaN(point.tripDistance as number)
+            ? (point.tripDistance as number)
+            : prevTrip ?? 0
+        if (prevTrip !== null) {
+          const delta = td - prevTrip
+          // Only count small forward increments as travel. Negative deltas are counter
+          // resets, and large jumps (e.g. a leading 0.00 sentinel jumping to a trip
+          // odometer already reading ~8 km) are baseline shifts, not distance covered in
+          // one sample — both re-baseline without adding to the accumulated distance.
+          if (delta >= 0 && delta < 2) cumDist += delta
+        }
+        prevTrip = td
+      } else {
+        const spd = typeof point.speed === "number" && !isNaN(point.speed) ? point.speed : 0
+        cumDist += spd / 3600 // km travelled in a nominal 1 s step
+      }
+      chartPoint.dist = Math.round(cumDist * 1000) / 1000
       return chartPoint
     })
     if (processed.length > 500) {
@@ -2506,6 +2549,27 @@ export default function AutomotiveAnalyzer() {
     }
     return processed
   }, [filteredData, metrics])
+
+  // Distance-axis is only meaningful once the vehicle has actually covered ground.
+  const hasDistance = useMemo(
+    () => finalChartData.length > 1 && (finalChartData[finalChartData.length - 1].dist ?? 0) > 0.05,
+    [finalChartData],
+  )
+  const effectiveXMode = overviewXMode === "distance" && hasDistance ? "distance" : "time"
+
+  // Elevation profile: altitude (m) vs cumulative distance (km). Only built when the log
+  // actually carries a varying altitude channel, so the panel stays hidden otherwise.
+  const elevationData = useMemo(() => {
+    if (!altitudeKey) return []
+    const pts = finalChartData
+      .map((p) => ({ dist: p.dist ?? 0, time: p.time, altitude: Number((p as any)[altitudeKey]) }))
+      .filter((p) => Number.isFinite(p.altitude))
+    if (pts.length < 2) return []
+    const min = Math.min(...pts.map((p) => p.altitude))
+    const max = Math.max(...pts.map((p) => p.altitude))
+    // Flat/constant altitude (e.g. a placeholder 0 column) isn't worth a chart.
+    return max - min < 1 ? [] : pts
+  }, [finalChartData, altitudeKey])
 
   // Compute idle zones (consecutive ranges where speed === 0) for chart overlay
   const idleZones = useMemo(() => {
@@ -3170,13 +3234,47 @@ export default function AutomotiveAnalyzer() {
                   <Card className="p-5 h-full flex flex-col">
                     <div className="flex items-center justify-between mb-4 flex-shrink-0">
                       <h2 className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">General Overview</h2>
-                      <BarChart3 className="w-4 h-4 text-muted-foreground" aria-hidden="true" />
+                      <div className="flex items-center gap-3">
+                        {hasDistance && (
+                          <div className="flex items-center rounded-md border border-border/80 p-0.5 text-[11px] font-medium" role="group" aria-label="Chart X axis">
+                            <button
+                              type="button"
+                              onClick={() => setOverviewXMode("time")}
+                              aria-pressed={effectiveXMode === "time"}
+                              className={`rounded px-2 py-0.5 transition-colors ${effectiveXMode === "time" ? "bg-secondary text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+                            >
+                              Time
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setOverviewXMode("distance")}
+                              aria-pressed={effectiveXMode === "distance"}
+                              className={`rounded px-2 py-0.5 transition-colors ${effectiveXMode === "distance" ? "bg-secondary text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+                            >
+                              Distance
+                            </button>
+                          </div>
+                        )}
+                        <BarChart3 className="w-4 h-4 text-muted-foreground" aria-hidden="true" />
+                      </div>
                     </div>
                     <div className="flex-grow min-h-[320px]">
                     <ResponsiveContainer width="100%" height="100%">
-                      <ComposedChart data={finalChartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+                      <ComposedChart data={finalChartData} margin={{ top: 5, right: 30, left: 20, bottom: effectiveXMode === "distance" ? 20 : 5 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#222a3c" />
-                        <XAxis dataKey="time" stroke="#7e899c" fontSize={12} />
+                        {effectiveXMode === "distance" ? (
+                          <XAxis
+                            dataKey="dist"
+                            type="number"
+                            domain={["dataMin", "dataMax"]}
+                            stroke="#7e899c"
+                            fontSize={12}
+                            tickFormatter={(v) => Number(v).toFixed(1)}
+                            label={{ value: "Distance (km)", position: "insideBottom", offset: -8, fill: "#7e899c", fontSize: 11 }}
+                          />
+                        ) : (
+                          <XAxis dataKey="time" stroke="#7e899c" fontSize={12} />
+                        )}
                         <YAxis stroke="#7e899c" fontSize={12} />
                         <Tooltip
                           contentStyle={tooltipContentStyle}
@@ -3193,9 +3291,10 @@ export default function AutomotiveAnalyzer() {
                             name={`${metric.label} (${metric.unit})`}
                           />
                         ))}
-                        {idleZones.map((zone, i) => (
-                          <ReferenceArea key={`idle-${i}`} x1={zone.x1} x2={zone.x2} fill="#ef4444" fillOpacity={0.08} stroke="#ef4444" strokeOpacity={0.2} strokeDasharray="4 4" />
-                        ))}
+                        {effectiveXMode === "time" &&
+                          idleZones.map((zone, i) => (
+                            <ReferenceArea key={`idle-${i}`} x1={zone.x1} x2={zone.x2} fill="#ef4444" fillOpacity={0.08} stroke="#ef4444" strokeOpacity={0.2} strokeDasharray="4 4" />
+                          ))}
                       </ComposedChart>
                     </ResponsiveContainer>
                     </div>
@@ -3887,7 +3986,7 @@ export default function AutomotiveAnalyzer() {
               </div>
             </TabsContent>
 
-            <TabsContent value="gps" className="space-y-0">
+            <TabsContent value="gps" className="space-y-4">
               <ErrorBoundary>
               <div className="h-[520px] md:h-[1000px]">
                 <Card className="p-5 h-full">
@@ -3909,6 +4008,49 @@ export default function AutomotiveAnalyzer() {
                   </div>
                 </Card>
               </div>
+              {elevationData.length > 1 && (
+                <Card className="p-5">
+                  <div className="mb-4 flex items-center justify-between">
+                    <h2 className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Elevation Profile</h2>
+                    <span className="text-sm text-muted-foreground">altitude vs distance</span>
+                  </div>
+                  <div className="h-[240px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart data={elevationData} margin={{ top: 5, right: 30, left: 20, bottom: 20 }}>
+                        <defs>
+                          <linearGradient id="elevationFill" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stopColor="#22c55e" stopOpacity={0.5} />
+                            <stop offset="100%" stopColor="#22c55e" stopOpacity={0.05} />
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#222a3c" />
+                        <XAxis
+                          dataKey="dist"
+                          type="number"
+                          domain={["dataMin", "dataMax"]}
+                          stroke="#7e899c"
+                          fontSize={12}
+                          tickFormatter={(v) => Number(v).toFixed(1)}
+                          label={{ value: "Distance (km)", position: "insideBottom", offset: -8, fill: "#7e899c", fontSize: 11 }}
+                        />
+                        <YAxis
+                          stroke="#7e899c"
+                          fontSize={12}
+                          domain={["dataMin - 5", "dataMax + 5"]}
+                          tickFormatter={(v) => Math.round(Number(v)).toString()}
+                          label={{ value: "Altitude (m)", angle: -90, position: "insideLeft", fill: "#7e899c", fontSize: 11 }}
+                        />
+                        <Tooltip
+                          contentStyle={tooltipContentStyle}
+                          formatter={(value) => [`${Math.round(Number(value))} m`, "Altitude"]}
+                          labelFormatter={(v) => `${Number(v).toFixed(2)} km`}
+                        />
+                        <Area type="monotone" dataKey="altitude" stroke="#22c55e" strokeWidth={2} fill="url(#elevationFill)" dot={false} />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </div>
+                </Card>
+              )}
               </ErrorBoundary>
             </TabsContent>
           </Tabs>
