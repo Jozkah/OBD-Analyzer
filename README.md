@@ -20,18 +20,24 @@ The upload screen, and the analysis dashboard loaded with the bundled sample log
 
 ## Features
 
-- **CSV upload** — single or multiple files; multi-file logs from the same session are merged in order.
-- **Automatic column detection** — recognizes common OBD-II PID column names (Engine RPM, Vehicle speed, throttle position, coolant/intake temps, MAP/boost, MAF, lambda, GPS, etc.) and infers units, so exports from different apps "just work".
+- **CSV upload** — single or multiple files (multi-file logs from the same session are merged in order), by drag-and-drop or file picker.
+- **Automatic column detection** — recognizes common OBD-II PID column names (Engine RPM, Vehicle speed, throttle position, coolant/intake temps, MAP/boost, MAF, lambda, GPS, altitude, etc.) and infers units, so exports from different apps "just work".
 - **Five analysis tabs:**
-  - **Overview** — session summary stats (duration, distance, max/avg speed, …).
-  - **Performance** — throttle, brake, boost and speed over time.
-  - **Engine** — RPM, coolant/intake temperature, fuel trims.
+  - **Overview** — session summary stats (duration, distance, max/avg speed, …) plus a combined chart you can plot against **time or distance travelled**.
+  - **Performance** — throttle / boost / speed over time, gearbox usage, and an **Acceleration** panel that finds your best **0–100 km/h, 0–60 mph and ¼-mile** runs (shown only when the log carries reliable per-sample timestamps, so the numbers are never guessed).
+  - **Engine** — RPM, coolant / intake / catalyst temperature, ignition advance, boost, fuel.
   - **PID Analysis** — every detected channel as a searchable table; optionally hide all-zero PIDs.
-  - **GPS Track** — a pannable, zoomable map of your route, colored by speed, with start/finish/current markers. Defaults to an **Offline** basemap (no network); optionally switch to real **Satellite / Street / Terrain** tiles (see [GPS map basemaps](#gps-map-basemaps)).
+  - **GPS Track** — a pannable, zoomable map of your route colored by speed, with start / finish / current markers and an **elevation profile**. Defaults to an **Offline** basemap (no network); optionally switch to real **Satellite / Street / Terrain** tiles (see [GPS map basemaps](#gps-map-basemaps)).
+- **Playback** — scrub or play back the drive, with keyboard shortcuts (Space to play/pause, ← / → to step, Home / End to jump to the ends).
+- **Exports** — download the current time-range window as **CSV**, or the overview chart and the GPS map as **PNG**.
+- **Light & dark themes** — a dark "instrument cluster" default and a daylight theme; follows your system preference and remembers your choice.
+- **Installable, offline-capable PWA** — add it to your home screen and it keeps working with no connection once loaded.
 - **Gear estimation** — derives the engaged gear from speed + RPM using a configurable tyre size and gear ratios.
-- **Robust number parsing** — tolerates `.`/`,` decimal separators and ignores `#` comment lines.
-- **Polished dark "instrument cluster" UI** built with Tailwind CSS and shadcn/ui, with tabular-figure readouts that stay stable as values change.
-- **Optional expiring share links** — a deployer can enable a Share button that creates a short, self-expiring link to a log. Off by default; see [Sharing logs](#sharing-logs-optional).
+- **Robust number parsing** — handles `.` / `,` decimal separators (decided per file, so US thousands-grouped integers like `3,500` aren't misread as `3.5`), strips `#` comment lines, and tolerates exporter quirks such as backslash-escaped GPS decimals.
+- **Off-main-thread parsing** — logs are parsed in a Web Worker, so importing a large file keeps the UI responsive.
+- **Optional expiring share links** — a deployer can enable a Share button that creates a short, self-expiring link to a log. Off by default; opening a share link asks for confirmation before loading. See [Sharing logs](#sharing-logs-optional).
+
+The UI is a dark/light "instrument cluster" theme built with Tailwind CSS and shadcn/ui, with tabular-figure readouts that stay stable as values change.
 
 ## Supported input format
 
@@ -52,6 +58,14 @@ Open <http://localhost:3210> and upload a CSV (or the bundled sample). *(The dev
 
 ```bash
 pnpm build && pnpm start
+```
+
+### Tests
+
+The pure logic (number parsing, acceleration-run detection, share helpers) has a [Vitest](https://vitest.dev) suite:
+
+```bash
+pnpm test
 ```
 
 ## Sharing logs (optional)
@@ -93,27 +107,43 @@ No API keys are required. These providers have fair-use tile policies suitable f
 - [Next.js 14](https://nextjs.org) (App Router) + React 18
 - TypeScript (strict — the build fails on type errors)
 - [Recharts](https://recharts.org) for charts, HTML Canvas for the GPS map
+- A **Web Worker** for off-main-thread CSV parsing, plus a service worker + manifest for the installable, offline PWA
 - Tailwind CSS + [shadcn/ui](https://ui.shadcn.com) (Radix primitives)
+- [Vitest](https://vitest.dev) for the unit tests
 - [Supabase](https://supabase.com) — *optional*, used only by the share feature
 
 ## Project layout
 
 ```
-app/page.tsx           # the whole app: CSV parsing, column/unit detection, tabs, charts, GPS map
-app/layout.tsx         # fonts (Inter + JetBrains Mono) and the dark theme shell
-app/globals.css        # design tokens / theme for the instrument-cluster look
-app/changelogs/        # changelog page
-app/api/share/         # optional share feature: server route handlers (create + fetch)
-lib/share.ts           # server-only share helpers (gzip, Supabase config)
-components/ui/          # shadcn/ui primitives
-components/error-boundary.tsx
-public/sample-data.csv # demo telemetry log
-scripts/share-schema.sql  # Supabase table for the optional share feature
-.env.example           # config for the optional share feature
-docs/                  # README screenshots
+app/page.tsx                       # main client component: state, tabs, playback, dashboard shell
+app/layout.tsx                     # fonts, metadata, no-flash theme bootstrap, PWA registration
+app/manifest.ts                    # web app manifest (installable PWA)
+app/globals.css                    # design tokens / light + dark instrument-cluster theme
+app/changelogs/                    # changelog page
+app/api/share/                     # optional share feature: server route handlers (create + fetch)
+components/gps-track-map.tsx        # the GPS canvas map (pan / zoom / tiles / speed-colored track)
+components/performance-charts.tsx   # Performance-tab chart grid (memoized, lazy-loaded)
+components/engine-charts.tsx        # Engine-tab chart grid (memoized, lazy-loaded)
+components/pwa-register.tsx         # service-worker registration
+components/ui/                      # shadcn/ui primitives
+lib/parse-csv.ts                    # pure CSV parser (text → typed result)
+lib/parse-csv.worker.ts             # runs the parser in a Web Worker
+lib/parse-number.ts                # separator-aware number parsing            (+ .test.ts)
+lib/accel-runs.ts                  # acceleration-run detection                (+ .test.ts)
+lib/gear.ts                        # gear estimation + shift logic
+lib/mercator.ts                    # Web-Mercator projection + map tile sources
+lib/chart-export.ts                # chart → PNG export
+lib/csv.ts lib/format.ts lib/stats.ts lib/downsample.ts lib/tire.ts …  # focused helpers
+lib/share.ts                       # server-only share helpers (gzip, Supabase config)
+types/obd.ts                       # shared domain types
+public/sw.js                       # service worker (offline caching)
+public/sample-data.csv             # demo telemetry log
+scripts/share-schema.sql           # Supabase table for the optional share feature
+.env.example                       # config for the optional share feature
+docs/                              # README screenshots
 ```
 
-The app is intentionally a single rich client component; contributions that split it into smaller modules are welcome.
+The pure logic — CSV parsing, gear math, map projection, acceleration detection, exports — lives in small, unit-tested `lib/` modules; the heavy chart tabs and the GPS map are their own components and are code-split so they load on demand.
 
 ## License
 
