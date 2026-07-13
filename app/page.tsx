@@ -76,7 +76,17 @@ import { detectSpeedUnit } from "@/lib/speed-unit"
 import { exportChartPng } from "@/lib/chart-export"
 import { defaultMetrics, CRUCIAL_PIDS } from "@/lib/constants"
 import { checkMissingCrucialPIDs } from "@/lib/crucial-pids"
-import { GPSTrackMap } from "@/components/gps-track-map"
+import dynamic from "next/dynamic"
+
+// Code-split the GPS map: its canvas + tile logic (and the map projection helpers it pulls
+// in) only load when the GPS Track tab is opened, keeping them out of the initial bundle
+// (#33). ssr:false because it renders to a <canvas> and reads window/DOM directly.
+const GPSTrackMap = dynamic(() => import("@/components/gps-track-map").then((m) => m.GPSTrackMap), {
+  ssr: false,
+  loading: () => (
+    <div className="flex h-full items-center justify-center text-sm text-muted-foreground">Loading map…</div>
+  ),
+})
 
 // Toggles the optional "share a log via an expiring link" feature. The backend must also
 // be configured (see .env.example / README → "Sharing logs"). When false, the Share
