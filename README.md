@@ -72,7 +72,7 @@ When a deployment has this turned on, clicking **Share** uploads the current log
 2. Set the variables documented in [`.env.example`](.env.example): `NEXT_PUBLIC_SHARING_ENABLED=true`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` (and optionally `SHARE_TTL_HOURS` / `SHARE_MAX_BYTES`).
 3. Deploy to a Node/serverless host (e.g. Vercel). With the variables unset, the Share button stays hidden and the app remains a pure static site.
 
-> The share endpoint has no built-in rate limiting. If you expose it publicly, put it behind your host's rate limiter (e.g. Vercel/Upstash) to deter abuse.
+> **Abuse controls.** The share endpoint applies a best-effort **per-IP rate limit** (10 requests/min), a **same-site origin check** (cross-site writes are rejected), and a minimal **CSV-shape check** on the payload. The rate limiter is in-memory and per-instance, so a serverless deployment with many instances should still put a shared limiter (e.g. Vercel/Upstash) in front for hard guarantees. The endpoint remains unauthenticated by design — don't enable sharing on an untrusted public deployment without additional controls.
 
 ## GPS map basemaps
 
