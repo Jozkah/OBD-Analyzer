@@ -33,3 +33,7 @@ next-env.d.ts
 /playwright-report/
 /blob-report/
 /playwright/.cache/
+
+# pnpm writes this locally to persist build-script approvals; it is not a
+# workspace and must not be committed (pnpm 9 in CI reads it as an empty workspace).
+pnpm-workspace.yaml
