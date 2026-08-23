@@ -18,26 +18,34 @@ The upload screen, and the analysis dashboard loaded with the bundled sample log
 
 ![OBD Analyzer — analysis dashboard](docs/screenshot-dashboard.png)
 
+The daylight theme, and the responsive mobile layout (bottom navigation, no wrapped tabs):
+
+![OBD Analyzer — light theme](docs/screenshot-overview-light.png)
+
+![OBD Analyzer — mobile](docs/screenshot-mobile.png)
+
 ## Features
 
-- **CSV upload** — single or multiple files (multi-file logs from the same session are merged in order), by drag-and-drop or file picker.
+- **CSV upload** — single or multiple files (multi-file logs from the same session are merged in order), by drag-and-drop or file picker, with a clear explanation of merging vs. loading independent sessions.
 - **Automatic column detection** — recognizes common OBD-II PID column names (Engine RPM, Vehicle speed, throttle position, coolant/intake temps, MAP/boost, MAF, lambda, GPS, altitude, etc.) and infers units, so exports from different apps "just work".
-- **Five analysis tabs:**
-  - **Overview** — session summary stats (duration, distance, max/avg speed, …) plus a combined chart you can plot against **time or distance travelled**.
-  - **Performance** — throttle / boost / speed over time, gearbox usage, and an **Acceleration** panel that finds your best **0–100 km/h, 0–60 mph and ¼-mile** runs (shown only when the log carries reliable per-sample timestamps, so the numbers are never guessed).
-  - **Engine** — RPM, coolant / intake / catalyst temperature, ignition advance, boost, fuel.
-  - **PID Analysis** — every detected channel as a searchable table; optionally hide all-zero PIDs.
-  - **GPS Track** — a pannable, zoomable map of your route colored by speed, with start / finish / current markers and an **elevation profile**. Defaults to an **Offline** basemap (no network); optionally switch to real **Satellite / Street / Terrain** tiles (see [GPS map basemaps](#gps-map-basemaps)).
-- **Playback** — scrub or play back the drive, with keyboard shortcuts (Space to play/pause, ← / → to step, Home / End to jump to the ends).
+- **Post-import Session Summary & Data Health** — right after import you get a summary (duration, distance, max/avg speed & RPM, boost peak, temperature ranges, sample count & effective sampling rate, GPS coverage, detected units and transmission) plus a **Data Health** panel that flags missing critical/optional PIDs, unreliable or duplicate timestamps, recording gaps, empty/constant channels, outliers and GPS dropouts — each with the feature it affects and what to do about it.
+- **Responsive dashboard shell** — a left navigation rail on desktop (collapses to icons) and a compact bottom navigation on mobile, so the primary sections never wrap into multiple rows of tabs.
+- **Sticky playback bar with honest time** — shows **real elapsed time** (`M:SS`) when the log has trustworthy timestamps, and explicitly labels the position as a **sample index** when it doesn't — never calling a row number "time". Includes 0.5× / 1× / 2× / 4× speed, jump-to-ends and the existing keyboard shortcuts (Space, ← / →, Home / End).
+- **Analysis sections:**
+  - **Session Summary (Overview)** — the summary/health above, a focused telemetry chart with **channel presets, search-to-add and removable colour chips** (no permanently-tall checkbox panel), plotted against **time or distance travelled**, plus detected acceleration runs and a route preview.
+  - **Performance** — grouped charts: RPM vs speed, throttle vs speed, power & torque, gearbox usage and gear distribution, each with a title, description and an empty state when the channel is absent.
+  - **Engine** — temperatures, ignition advance, boost/MAP, fuel and throttle/brake.
+  - **Data Channels** (formerly PID Analysis) — a searchable, category/status-filterable explorer table with per-channel min/max/current, a sparkline and a health status, pinning, and a multi-select synced **inspector** for comparing channels.
+  - **Route** — a responsive, map-first workspace: a pannable, zoomable map of your route colored by speed, with start / finish / current markers and a collapsible **elevation profile**. Defaults to an **Offline** basemap (no network, now theme-aware); optionally switch to real **Satellite / Street / Terrain** tiles (see [GPS map basemaps](#gps-map-basemaps)).
 - **Exports** — download the current time-range window as **CSV**, or the overview chart and the GPS map as **PNG**.
-- **Light & dark themes** — a dark "instrument cluster" default and a daylight theme; follows your system preference and remembers your choice.
+- **Light & dark themes** — a dark "instrument cluster" default and a daylight theme built entirely on semantic design tokens (status, chart grid/axis/tooltip, sidebar, telemetry series), so both themes are consistent with no hardcoded-theme failures; follows your system preference and remembers your choice.
 - **Installable, offline-capable PWA** — add it to your home screen and it keeps working with no connection once loaded.
 - **Gear estimation** — derives the engaged gear from speed + RPM using a configurable tyre size and gear ratios.
 - **Robust number parsing** — handles `.` / `,` decimal separators (decided per file, so US thousands-grouped integers like `3,500` aren't misread as `3.5`), strips `#` comment lines, and tolerates exporter quirks such as backslash-escaped GPS decimals.
 - **Off-main-thread parsing** — logs are parsed in a Web Worker, so importing a large file keeps the UI responsive.
 - **Optional expiring share links** — a deployer can enable a Share button that creates a short, self-expiring link to a log. Off by default; opening a share link asks for confirmation before loading. See [Sharing logs](#sharing-logs-optional).
 
-The UI is a dark/light "instrument cluster" theme built with Tailwind CSS and shadcn/ui, with tabular-figure readouts that stay stable as values change.
+The UI is a dark/light "instrument cluster" theme built with Tailwind CSS and shadcn/ui, with tabular-figure readouts that stay stable as values change. It's keyboard-navigable with visible focus states, accessible names on icon-only controls, and respects `prefers-reduced-motion`.
 
 ## Supported input format
 
@@ -62,10 +70,17 @@ pnpm build && pnpm start
 
 ### Tests
 
-The pure logic (number parsing, acceleration-run detection, share helpers) has a [Vitest](https://vitest.dev) suite:
+The pure logic (number parsing, acceleration-run detection, session summary, data health, elapsed-time semantics, channel stats/categories, multi-file merge, share helpers) has a [Vitest](https://vitest.dev) suite:
 
 ```bash
 pnpm test
+```
+
+End-to-end tests for the primary workflow (import → summary → navigation → playback → channels → theme) run with [Playwright](https://playwright.dev) against a production build, on desktop and mobile viewports:
+
+```bash
+pnpm build      # e2e runs against the built app
+pnpm test:e2e
 ```
 
 ## Sharing logs (optional)
@@ -100,7 +115,7 @@ Choosing a real basemap fetches map tiles from a public, keyless provider, which
 | Street | [OpenStreetMap](https://www.openstreetmap.org/copyright) | © OpenStreetMap contributors |
 | Terrain | [OpenTopoMap](https://opentopomap.org/) | © OpenTopoMap (CC-BY-SA) |
 
-No API keys are required. These providers have fair-use tile policies suitable for personal / self-hosted use; for heavy or commercial use, point `MAP_TILE_SOURCES` in [`app/page.tsx`](app/page.tsx) at your own tile source.
+No API keys are required. These providers have fair-use tile policies suitable for personal / self-hosted use; for heavy or commercial use, point `MAP_TILE_SOURCES` in [`lib/mercator.ts`](lib/mercator.ts) at your own tile source.
 
 ## Tech stack
 
@@ -108,34 +123,49 @@ No API keys are required. These providers have fair-use tile policies suitable f
 - TypeScript (strict — the build fails on type errors)
 - [Recharts](https://recharts.org) for charts, HTML Canvas for the GPS map
 - A **Web Worker** for off-main-thread CSV parsing, plus a service worker + manifest for the installable, offline PWA
-- Tailwind CSS + [shadcn/ui](https://ui.shadcn.com) (Radix primitives)
-- [Vitest](https://vitest.dev) for the unit tests
+- Tailwind CSS + [shadcn/ui](https://ui.shadcn.com) (Radix primitives), themed entirely through semantic CSS-variable design tokens
+- [Vitest](https://vitest.dev) for unit tests and [Playwright](https://playwright.dev) for end-to-end tests
 - [Supabase](https://supabase.com) — *optional*, used only by the share feature
 
 ## Project layout
 
 ```
-app/page.tsx                       # main client component: state, tabs, playback, dashboard shell
+app/page.tsx                       # thin composition layer — renders <Dashboard/>
 app/layout.tsx                     # fonts, metadata, no-flash theme bootstrap, PWA registration
 app/manifest.ts                    # web app manifest (installable PWA)
-app/globals.css                    # design tokens / light + dark instrument-cluster theme
+app/globals.css                    # semantic design tokens / light + dark instrument-cluster theme
 app/changelogs/                    # changelog page
 app/api/share/                     # optional share feature: server route handlers (create + fetch)
-components/gps-track-map.tsx        # the GPS canvas map (pan / zoom / tiles / speed-colored track)
-components/performance-charts.tsx   # Performance-tab chart grid (memoized, lazy-loaded)
-components/engine-charts.tsx        # Engine-tab chart grid (memoized, lazy-loaded)
+hooks/use-obd-session.ts           # all session state, playback, imports & derived telemetry
+components/dashboard/              # feature components composed by <Dashboard/>
+  dashboard.tsx                      #   orchestration: shell + active section + dialogs
+  app-header.tsx side-nav.tsx bottom-nav.tsx   #   responsive shell + navigation
+  playback-bar.tsx                   #   sticky playback / time-range surface
+  session-summary.tsx data-health-panel.tsx    #   post-import comprehension step
+  overview-tab.tsx overview-chart.tsx channel-picker.tsx
+  channels-explorer.tsx gps-workspace.tsx
+  transmission-dialog.tsx missing-pids-dialog.tsx share-dialogs.tsx
+  upload-screen.tsx toast.tsx nav-config.ts
+components/telemetry/             # reusable primitives (section header, stat card, sparkline, empty state)
+components/gps-track-map.tsx        # the GPS canvas map (pan / zoom / tiles / speed-colored, theme-aware)
+components/performance-charts.tsx   # Performance chart grid (memoized, lazy-loaded)
+components/engine-charts.tsx        # Engine chart grid (memoized, lazy-loaded)
 components/pwa-register.tsx         # service-worker registration
 components/ui/                      # shadcn/ui primitives
 lib/parse-csv.ts                    # pure CSV parser (text → typed result)
 lib/parse-csv.worker.ts             # runs the parser in a Web Worker
-lib/parse-number.ts                # separator-aware number parsing            (+ .test.ts)
-lib/accel-runs.ts                  # acceleration-run detection                (+ .test.ts)
+lib/parse-worker.ts merge-csv.ts    # worker wrapper + multi-file merge          (merge + .test.ts)
+lib/session-summary.ts data-health.ts elapsed-time.ts   # post-import derivations (+ .test.ts each)
+lib/channel-stats.ts channel-categories.ts chart-theme.ts   # channel table + theming (+ .test.ts)
+lib/parse-number.ts accel-runs.ts   # separator-aware parsing / accel detection  (+ .test.ts)
 lib/gear.ts                        # gear estimation + shift logic
+lib/transmission.ts transmission-presets.ts  # config import/export + vehicle presets
 lib/mercator.ts                    # Web-Mercator projection + map tile sources
 lib/chart-export.ts                # chart → PNG export
 lib/csv.ts lib/format.ts lib/stats.ts lib/downsample.ts lib/tire.ts …  # focused helpers
 lib/share.ts                       # server-only share helpers (gzip, Supabase config)
 types/obd.ts                       # shared domain types
+e2e/                               # Playwright end-to-end tests + screenshot helper
 public/sw.js                       # service worker (offline caching)
 public/sample-data.csv             # demo telemetry log
 scripts/share-schema.sql           # Supabase table for the optional share feature
@@ -143,7 +173,7 @@ scripts/share-schema.sql           # Supabase table for the optional share featu
 docs/                              # README screenshots
 ```
 
-The pure logic — CSV parsing, gear math, map projection, acceleration detection, exports — lives in small, unit-tested `lib/` modules; the heavy chart tabs and the GPS map are their own components and are code-split so they load on demand.
+The pure logic — CSV parsing, gear math, map projection, acceleration detection, session summary, data health, exports — lives in small, unit-tested `lib/` modules. All session state and derived telemetry live in the `useObdSession` hook, and the UI is assembled from focused `components/dashboard/` feature components; `app/page.tsx` is just a composition layer. High-frequency playback state is kept isolated so the memoized chart subtrees don't re-render every frame. The heavy chart sections and the GPS map are code-split so they load on demand.
 
 ## License
 

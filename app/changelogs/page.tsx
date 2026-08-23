@@ -1,18 +1,38 @@
+"use client"
+
+import { useMemo, useState } from "react"
 import Link from "next/link"
-import { ChevronLeft } from "lucide-react"
+import { ChevronLeft, ChevronDown } from "lucide-react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
+
+type ChangeType = "feature" | "bugfix" | "improvement" | "breaking"
 
 interface ChangelogEntry {
   version: string
   date: string
   title: string
-  type: "feature" | "bugfix" | "improvement" | "breaking"
+  type: ChangeType
   description: string[]
 }
 
 const changelogs: ChangelogEntry[] = [
+  {
+    version: "3.0.0",
+    date: "2026-08-23",
+    title: "Workspace Redesign: Summary, Data Health & Responsive Shell",
+    type: "improvement",
+    description: [
+      "Redesigned the app into a responsive telemetry workspace — a left navigation rail on desktop and a compact bottom navigation on mobile, so the primary sections no longer wrap into multiple rows of tabs",
+      "New post-import Session Summary and Data Health panels: duration, distance, max/avg speed & RPM, boost peak, temperature ranges, sample count, effective sampling rate, GPS coverage and detected units — plus flagged issues (missing PIDs, unreliable/duplicate timestamps, recording gaps, empty/constant channels, outliers, GPS dropouts) with the feature each affects",
+      "Honest playback time: the playback bar now shows real elapsed time when the log has trustworthy timestamps, and explicitly labels the position as a sample index when it doesn't — a sample number is never called 'time'. Added 0.5×/1×/2×/4× playback speed",
+      "Overview chart gained channel presets, search-to-add and removable colour chips, replacing the permanently-tall PID checkbox panel",
+      "PID Analysis became a searchable, filterable Data Channels explorer with per-channel min/max/current, sparklines, a health status, pinning and a multi-select synced inspector",
+      "Completed the design system: light and dark themes are now built entirely on semantic tokens (status, chart grid/axis/tooltip, sidebar, telemetry series) with no hardcoded-theme failures — the transmission dialog, charts and the offline GPS backdrop all adapt",
+      "Made the transmission configuration responsive and usable on mobile, with predicted speed per gear at the shift RPM and a reset confirmation",
+      "Under the hood: the ~2,800-line main file was split into a useObdSession hook and focused feature components (app/page.tsx is now a thin shell), with new unit tests and a Playwright end-to-end suite covering the primary workflow on desktop and mobile",
+    ],
+  },
   {
     version: "2.2.0",
     date: "2026-07-13",
@@ -158,7 +178,7 @@ const changelogs: ChangelogEntry[] = [
       "Added automatic unit detection for km/h and mph",
       "Supported comma and period decimal formats",
       "Improved max speed calculation with smart fallbacks",
-      "Enhanced CSV parsing and data handling for edge cases"
+      "Enhanced CSV parsing and data handling for edge cases",
     ],
   },
   {
@@ -171,7 +191,7 @@ const changelogs: ChangelogEntry[] = [
       "Improved statistics by filtering invalid values",
       "Enhanced PID selection to enable valid metrics by default",
       "Added consistent decimal formatting with formatValue()",
-      "Refined session statistics for better accuracy"
+      "Refined session statistics for better accuracy",
     ],
   },
   {
@@ -217,7 +237,7 @@ const changelogs: ChangelogEntry[] = [
     title: "Initial Release",
     type: "feature",
     description: [
-      "First public release of the Automotive Data Analyzer",
+      "First public release of OBD Analyzer",
       "CSV data import and parsing",
       "Basic automotive metrics visualization",
       "GPS track visualization",
@@ -227,69 +247,137 @@ const changelogs: ChangelogEntry[] = [
   },
 ]
 
-const getBadgeColor = (type: string) => {
-  switch (type) {
-    case "feature":
-      return "bg-green-500 hover:bg-green-600"
-    case "bugfix":
-      return "bg-red-500 hover:bg-red-600"
-    case "improvement":
-      return "bg-blue-500 hover:bg-blue-600"
-    case "breaking":
-      return "bg-amber-500 hover:bg-amber-600"
-    default:
-      return "bg-gray-500 hover:bg-gray-600"
-  }
+const TYPE_META: Record<ChangeType, { label: string; badge: string }> = {
+  feature: { label: "Feature", badge: "bg-success/15 text-success border border-success/30" },
+  improvement: { label: "Improvement", badge: "bg-info/15 text-info border border-info/30" },
+  bugfix: { label: "Fix", badge: "bg-danger/15 text-danger border border-danger/30" },
+  breaking: { label: "Breaking", badge: "bg-warning/15 text-warning border border-warning/30" },
+}
+
+const FILTERS: ("all" | ChangeType)[] = ["all", "feature", "improvement", "bugfix", "breaking"]
+
+function humanDate(iso: string): string {
+  const d = new Date(iso + "T00:00:00Z")
+  if (isNaN(d.getTime())) return iso
+  return d.toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric", timeZone: "UTC" })
+}
+
+function Badge({ type }: { type: ChangeType }) {
+  const meta = TYPE_META[type]
+  return <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${meta.badge}`}>{meta.label}</span>
+}
+
+function Entry({ entry }: { entry: ChangelogEntry }) {
+  return (
+    <div>
+      <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-center">
+        <div className="flex items-center gap-2">
+          <h3 className="text-lg font-semibold">Version {entry.version}</h3>
+          <Badge type={entry.type} />
+        </div>
+        <time className="text-sm text-muted-foreground">{humanDate(entry.date)}</time>
+      </div>
+      <h4 className="mt-2 font-medium">{entry.title}</h4>
+      <ul className="mt-2 list-disc space-y-1 pl-5">
+        {entry.description.map((item, i) => (
+          <li key={i} className="text-sm text-muted-foreground">{item}</li>
+        ))}
+      </ul>
+    </div>
+  )
 }
 
 export default function ChangelogsPage() {
+  const [filter, setFilter] = useState<"all" | ChangeType>("all")
+  const [showOlder, setShowOlder] = useState(false)
+
+  const filtered = useMemo(
+    () => (filter === "all" ? changelogs : changelogs.filter((c) => c.type === filter)),
+    [filter],
+  )
+  const [latest, ...older] = filtered
+
   return (
-    <div className="container mx-auto py-6 px-4 md:px-6">
+    <div className="container mx-auto max-w-3xl px-4 py-6 md:px-6">
       <div className="flex flex-col gap-6">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Link
-              href="/"
-              className="inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-9 rounded-md px-3"
-            >
-              <ChevronLeft className="mr-1 h-4 w-4" />
-              Back to Dashboard
-            </Link>
-          </div>
+        <Link
+          href="/"
+          className="inline-flex h-9 w-fit items-center justify-center rounded-md border border-input bg-background px-3 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+        >
+          <ChevronLeft className="mr-1 h-4 w-4" />
+          Back to Dashboard
+        </Link>
+
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Changelog</h1>
+          <p className="mt-1 text-muted-foreground">A complete history of updates to OBD Analyzer.</p>
         </div>
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-2xl">Changelogs</CardTitle>
-            <CardDescription>A complete history of updates and changes to the Automotive Data Analyzer</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-8">
-              {changelogs.map((changelog, index) => (
-                <div key={changelog.version} className="space-y-4">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                    <div className="flex items-center gap-2">
-                      <h3 className="text-lg font-semibold">Version {changelog.version}</h3>
-                      <Badge className={getBadgeColor(changelog.type)}>
-                        {changelog.type.charAt(0).toUpperCase() + changelog.type.slice(1)}
-                      </Badge>
-                    </div>
-                    <time className="text-sm text-muted-foreground">{changelog.date}</time>
+        {/* Filters */}
+        <div className="flex flex-wrap gap-1.5">
+          {FILTERS.map((f) => (
+            <button
+              key={f}
+              type="button"
+              onClick={() => { setFilter(f); setShowOlder(false) }}
+              aria-pressed={filter === f}
+              className={`rounded-full border px-3 py-1 text-sm font-medium transition-colors ${
+                filter === f ? "border-primary/50 bg-primary/15 text-primary" : "border-border/70 text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              {f === "all" ? "All" : TYPE_META[f].label}
+            </button>
+          ))}
+        </div>
+
+        {filtered.length === 0 ? (
+          <p className="text-muted-foreground">No entries of this type.</p>
+        ) : (
+          <>
+            {/* Latest release, highlighted */}
+            {latest && (
+              <Card className="border-primary/30">
+                <CardHeader>
+                  <div className="flex items-center gap-2">
+                    <span className="rounded-full bg-primary/15 px-2 py-0.5 text-xs font-semibold uppercase tracking-wide text-primary">Latest</span>
                   </div>
-                  <h4 className="font-medium">{changelog.title}</h4>
-                  <ul className="list-disc pl-5 space-y-1">
-                    {changelog.description.map((item, i) => (
-                      <li key={i} className="text-muted-foreground">
-                        {item}
-                      </li>
-                    ))}
-                  </ul>
-                  {index < changelogs.length - 1 && <Separator className="mt-6" />}
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
+                  <CardTitle className="sr-only">Latest release</CardTitle>
+                  <CardDescription className="sr-only">The most recent release</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <Entry entry={latest} />
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Older releases, collapsible */}
+            {older.length > 0 && (
+              <div>
+                <button
+                  type="button"
+                  onClick={() => setShowOlder((s) => !s)}
+                  aria-expanded={showOlder}
+                  className="inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+                >
+                  <ChevronDown className={`h-4 w-4 transition-transform ${showOlder ? "" : "-rotate-90"}`} />
+                  {showOlder ? "Hide" : `Show ${older.length} earlier release${older.length > 1 ? "s" : ""}`}
+                </button>
+                {showOlder && (
+                  <Card className="mt-3">
+                    <CardContent className="space-y-8 pt-6">
+                      {older.map((entry, i) => (
+                        <div key={entry.version} className="space-y-0">
+                          <Entry entry={entry} />
+                          {i < older.length - 1 && <Separator className="mt-6" />}
+                        </div>
+                      ))}
+                    </CardContent>
+                  </Card>
+                )}
+              </div>
+            )}
+          </>
+        )}
       </div>
     </div>
   )
