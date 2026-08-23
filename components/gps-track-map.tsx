@@ -21,10 +21,13 @@ export function GPSTrackMap({
   data,
   currentTime,
   onNotify,
+  theme = "dark",
 }: {
   data: DataPoint[]
   currentTime: number
   onNotify?: (msg: string) => void
+  /** Tints the offline backdrop/grid so the map surface isn't dark-only on the light theme. */
+  theme?: "light" | "dark"
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   // Default to "offline" so the GPS map makes NO external requests unless the user opts in
@@ -238,11 +241,16 @@ export function GPSTrackMap({
     // ---- Offline style: no network at all, just a dark backdrop + grid under the track.
     if (mapStyle === "offline") {
       const g = ctx.createLinearGradient(0, 0, 0, height)
-      g.addColorStop(0, "#0f172a")
-      g.addColorStop(1, "#0b1222")
+      if (theme === "light") {
+        g.addColorStop(0, "#eef2f8")
+        g.addColorStop(1, "#e2e8f0")
+      } else {
+        g.addColorStop(0, "#0f172a")
+        g.addColorStop(1, "#0b1222")
+      }
       ctx.fillStyle = g
       ctx.fillRect(0, 0, width, height)
-      ctx.strokeStyle = "#1e293b"
+      ctx.strokeStyle = theme === "light" ? "#cbd5e1" : "#1e293b"
       ctx.lineWidth = 0.5
       ctx.setLineDash([2, 2])
       for (let i = 0; i <= 10; i++) {
@@ -277,7 +285,7 @@ export function GPSTrackMap({
     const y0 = Math.floor(originY / MAP_TILE_PX)
     const y1 = Math.floor((originY + height) / MAP_TILE_PX)
 
-    ctx.fillStyle = "#0b1222"
+    ctx.fillStyle = theme === "light" ? "#e2e8f0" : "#0b1222"
     ctx.fillRect(0, 0, width, height)
     for (let tx = x0; tx <= x1; tx++) {
       for (let ty = y0; ty <= y1; ty++) {
@@ -317,7 +325,7 @@ export function GPSTrackMap({
     // otherwise reuse it. A playback tick then only blits the cached scene and redraws the
     // marker, instead of re-compositing every tile and re-stroking the whole track each 100 ms
     // (#27). staticKey fingerprints every input that affects the static scene.
-    const staticKey = `${targetW}x${targetH}|${z}|${originX}|${originY}|${mapStyle}|${tileVersion}|${gpsData.length}|${minSpeed}|${maxSpeed}|${degenerate}`
+    const staticKey = `${targetW}x${targetH}|${z}|${originX}|${originY}|${mapStyle}|${tileVersion}|${gpsData.length}|${minSpeed}|${maxSpeed}|${degenerate}|${theme}`
     let off = offscreenRef.current
     if (!off) {
       off = document.createElement("canvas")
@@ -345,7 +353,7 @@ export function GPSTrackMap({
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
     }
     drawMarker()
-  }, [gpsData, currentTime, mapStyle, data, tileVersion, view])
+  }, [gpsData, currentTime, mapStyle, data, tileVersion, view, theme])
 
   // Mouse-wheel zoom toward the cursor. A native non-passive listener lets us
   // preventDefault so the page doesn't scroll while zooming the map.

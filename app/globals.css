@@ -9,6 +9,11 @@
    * `.light` swaps in a daylight palette (bright cluster glass) using the same accent.
    * The theme class is applied to <html> by an inline pre-hydration script (see layout.tsx)
    * so there is no flash, and toggled at runtime by the Sun/Moon control in the app bar.
+   *
+   * Every colour the UI paints must come from a token defined in BOTH blocks below so light
+   * and dark stay in lock-step. Status colours (success/warning/danger/info), chart surfaces
+   * (grid/axis/tooltip) and the named telemetry series live here too — components read them
+   * through Tailwind utilities or the getChartTheme()/telemetry helpers in lib/chart-theme.ts.
    */
   :root,
   .dark {
@@ -32,17 +37,45 @@
     --input: 225 15% 18%;
     --ring: 189 95% 55%;
     --radius: 0.75rem;
+
+    /* Status / semantic states. Each has a base (fill/icon) and a readable foreground. */
+    --success: 152 62% 45%;
+    --success-foreground: 150 40% 96%;
+    --warning: 38 92% 55%;
+    --warning-foreground: 40 40% 8%;
+    --danger: 0 72% 51%;
+    --danger-foreground: 0 40% 96%;
+    --info: 210 90% 60%;
+    --info-foreground: 210 40% 8%;
+
+    /* Chart surfaces — grid lines, axis text/lines, and the tooltip popover. */
+    --chart-grid: 226 22% 18%;
+    --chart-axis: 220 12% 60%;
+    --chart-tooltip: 228 27% 9%;
+    --chart-tooltip-border: 225 16% 22%;
+
+    /* Recharts 5-series accent ramp (kept from the original theme). */
     --chart-1: 189 95% 55%;
     --chart-2: 160 60% 45%;
     --chart-3: 30 80% 55%;
     --chart-4: 280 65% 60%;
     --chart-5: 340 75% 55%;
+
+    /* Navigation rail / sidebar (previously referenced by tailwind but never defined). */
+    --sidebar-background: 228 26% 5%;
+    --sidebar-foreground: 213 20% 80%;
+    --sidebar-primary: 189 95% 55%;
+    --sidebar-primary-foreground: 228 45% 6%;
+    --sidebar-accent: 226 19% 13%;
+    --sidebar-accent-foreground: 213 24% 95%;
+    --sidebar-border: 225 16% 14%;
+    --sidebar-ring: 189 95% 55%;
   }
 
   /*
    * Light "daylight cluster" palette. Cool off-white layered surfaces with a slightly
    * deepened cyan accent so it keeps AA contrast on white. Chart hues are darkened a
-   * touch versus the dark theme so the same 5-series lines stay legible on a light plot.
+   * touch versus the dark theme so the same series/grid/axis stay legible on a light plot.
    */
   .light {
     --background: 210 40% 98%;
@@ -64,11 +97,35 @@
     --border: 214 25% 84%;
     --input: 214 25% 82%;
     --ring: 191 91% 38%;
+
+    --success: 152 58% 34%;
+    --success-foreground: 0 0% 100%;
+    --warning: 32 85% 42%;
+    --warning-foreground: 0 0% 100%;
+    --danger: 0 72% 48%;
+    --danger-foreground: 0 0% 100%;
+    --info: 211 90% 42%;
+    --info-foreground: 0 0% 100%;
+
+    --chart-grid: 214 28% 88%;
+    --chart-axis: 220 14% 42%;
+    --chart-tooltip: 0 0% 100%;
+    --chart-tooltip-border: 214 25% 82%;
+
     --chart-1: 191 91% 38%;
     --chart-2: 160 70% 34%;
     --chart-3: 28 85% 45%;
     --chart-4: 272 60% 50%;
     --chart-5: 340 75% 48%;
+
+    --sidebar-background: 210 40% 96%;
+    --sidebar-foreground: 224 30% 25%;
+    --sidebar-primary: 191 91% 38%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 210 40% 90%;
+    --sidebar-accent-foreground: 224 40% 14%;
+    --sidebar-border: 214 25% 84%;
+    --sidebar-ring: 191 91% 38%;
   }
 }
 
@@ -84,8 +141,6 @@
   }
   body {
     @apply bg-background text-foreground antialiased;
-    /* Tabular numerals everywhere — readouts and stats stay aligned as values change. */
-    font-variant-numeric: tabular-nums;
     /* Subtle accent glow bleeding in from the top, like backlit cluster glass. */
     background-image: radial-gradient(
       1100px 480px at 50% -160px,
@@ -96,6 +151,12 @@
   }
   ::selection {
     background: hsl(var(--primary) / 0.28);
+  }
+  /* Telemetry readouts stay column-aligned as digits change. Scoped to the opt-in
+     `.tabular-nums` utility (Tailwind) and our readout components rather than forced
+     on every paragraph site-wide. */
+  .tabular-nums {
+    font-variant-numeric: tabular-nums;
   }
 }
 
@@ -112,36 +173,29 @@
   }
 }
 
-/* Disable tab content animations */
-[data-state="active"] {
-  animation: none !important;
-}
-
-[data-state="inactive"] {
-  animation: none !important;
-}
-
-/* Custom scrollbar for metrics panel */
-.overflow-y-auto::-webkit-scrollbar {
-  width: 6px;
-}
-
-.overflow-y-auto::-webkit-scrollbar-track {
-  background: hsl(var(--card));
-  border-radius: 3px;
-}
-
-.overflow-y-auto::-webkit-scrollbar-thumb {
-  background: hsl(var(--accent));
-  border-radius: 3px;
-}
-
-.overflow-y-auto::-webkit-scrollbar-thumb:hover {
-  background: hsl(var(--muted-foreground) / 0.45);
-}
-
-/* Firefox scrollbar */
-.overflow-y-auto {
-  scrollbar-width: thin;
-  scrollbar-color: hsl(var(--accent)) hsl(var(--card));
+@layer components {
+  /*
+   * Deliberate thin scrollbar. Opt-in via the `.custom-scrollbar` class instead of the
+   * old global `.overflow-y-auto` selector, which restyled every scroll container in the
+   * app (and broke silently when a class was renamed).
+   */
+  .custom-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--accent)) hsl(var(--card));
+  }
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  .custom-scrollbar::-webkit-scrollbar-track {
+    background: hsl(var(--card));
+    border-radius: 3px;
+  }
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    background: hsl(var(--accent));
+    border-radius: 3px;
+  }
+  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--muted-foreground) / 0.45);
+  }
 }
