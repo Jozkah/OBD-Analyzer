@@ -29,7 +29,21 @@ const DEFAULT_TRANSMISSION: TransmissionConfig = {
   numberOfGears: 6,
 }
 
-export const SHARING_ENABLED = process.env.NEXT_PUBLIC_SHARING_ENABLED === "true"
+// Client gate for the optional share UI. Enabled by the build-time env flag, or — on a build where
+// the flag is off — by a per-browser "preview" opt-in (localStorage "obd.sharingPreview" = "1").
+// The preview only reveals the UI; the server still governs real availability and returns 501 when
+// sharing isn't configured. The share button lives inside the client-rendered dashboard (shown only
+// after a log loads), so reading localStorage here causes no SSR hydration mismatch.
+function sharingPreviewOptIn(): boolean {
+  try {
+    return typeof window !== "undefined" && window.localStorage.getItem("obd.sharingPreview") === "1"
+  } catch {
+    return false
+  }
+}
+
+export const SHARING_ENABLED =
+  process.env.NEXT_PUBLIC_SHARING_ENABLED === "true" || sharingPreviewOptIn()
 
 export function useObdSession() {
   const [data, setData] = useState<DataPoint[]>([])
