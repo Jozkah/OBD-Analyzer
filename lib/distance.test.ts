@@ -148,6 +148,49 @@ describe("computeCumulativeDistanceKm — unusable trip counter must not overrid
   })
 })
 
+describe("computeCumulativeDistanceKm — stuck counter + movement but UNTRUSTED time is unavailable, not 0", () => {
+  const movingSpeeds = new Array(101).fill(36) // clearly moving
+  const idx = Array.from({ length: 101 }, (_, i) => i)
+
+  it("all-zero counter + positive speeds + untrusted time → unavailable (never authoritative 0)", () => {
+    const r = computeCumulativeDistanceKm({
+      speeds: movingSpeeds, speedUnit: "km/h", elapsed: idx, trustedTime: false,
+      tripDistance: new Array(101).fill(0), tripDistanceUnit: "km",
+    })
+    expect(r.available).toBe(false)
+    expect(r.source).toBe("none")
+  })
+
+  it("constant NON-zero counter + positive speeds + untrusted time → unavailable", () => {
+    const r = computeCumulativeDistanceKm({
+      speeds: movingSpeeds, speedUnit: "km/h", elapsed: idx, trustedTime: false,
+      tripDistance: new Array(101).fill(42), tripDistanceUnit: "km",
+    })
+    expect(r.available).toBe(false)
+    expect(r.source).toBe("none")
+  })
+
+  it("all-zero counter + stationary speeds + untrusted time → available zero (genuinely parked)", () => {
+    const r = computeCumulativeDistanceKm({
+      speeds: new Array(101).fill(0), speedUnit: "km/h", elapsed: idx, trustedTime: false,
+      tripDistance: new Array(101).fill(0), tripDistanceUnit: "km",
+    })
+    expect(r.available).toBe(true)
+    expect(r.source).toBe("trip")
+    expect(r.dist[100]).toBe(0)
+  })
+
+  it("does not treat sub-threshold speed noise as movement (stays an available zero)", () => {
+    const noise = new Array(101).fill(0.4) // below MOVEMENT_SPEED_EPS
+    const r = computeCumulativeDistanceKm({
+      speeds: noise, speedUnit: "km/h", elapsed: idx, trustedTime: false,
+      tripDistance: new Array(101).fill(0), tripDistanceUnit: "km",
+    })
+    expect(r.available).toBe(true)
+    expect(r.source).toBe("trip")
+  })
+})
+
 describe("classifyTripDistance", () => {
   it("flags a moving-distance counter as usable", () => {
     expect(classifyTripDistance(1.5, 1)).toBe("usable")

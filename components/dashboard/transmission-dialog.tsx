@@ -104,7 +104,6 @@ export function TransmissionDialog(props: TransmissionDialogProps) {
   // Focus trap + Escape + restore focus.
   useEffect(() => {
     if (!open) return
-    prevFocusRef.current = document.activeElement as HTMLElement | null
     const container = dialogRef.current
     const focusable = () =>
       container
@@ -114,6 +113,25 @@ export function TransmissionDialog(props: TransmissionDialogProps) {
             ),
           ).filter((el) => el.offsetParent !== null)
         : []
+    // Capture the opener (to restore focus to on close), THEN move focus into the dialog. When the
+    // dialog is opened from a menu (e.g. the "More actions" dropdown), the focused element is a menu
+    // ITEM that unmounts the moment the menu closes — restoring focus to it later would be a no-op
+    // and drop focus to <body>. Radix links the menu to its stable TRIGGER via aria-labelledby (or an
+    // aria-controls back-reference), so resolve and capture that instead.
+    const resolveOpener = (): HTMLElement | null => {
+      const active = document.activeElement as HTMLElement | null
+      const menu = active?.closest?.('[role="menu"]') as HTMLElement | null
+      if (!menu) return active
+      const labelledby = menu.getAttribute("aria-labelledby")
+      const byLabel = labelledby ? document.getElementById(labelledby) : null
+      if (byLabel) return byLabel
+      if (menu.id) {
+        const byControls = document.querySelector<HTMLElement>(`[aria-controls="${menu.id}"]`)
+        if (byControls) return byControls
+      }
+      return active
+    }
+    prevFocusRef.current = resolveOpener()
     focusable()[0]?.focus()
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
@@ -137,7 +155,9 @@ export function TransmissionDialog(props: TransmissionDialogProps) {
     document.addEventListener("keydown", onKey)
     return () => {
       document.removeEventListener("keydown", onKey)
-      prevFocusRef.current?.focus?.()
+      // Restore focus to the opener when it's still in the document.
+      const opener = prevFocusRef.current
+      if (opener && opener.isConnected) opener.focus?.()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])

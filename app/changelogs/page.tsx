@@ -18,6 +18,18 @@ interface ChangelogEntry {
 
 const changelogs: ChangelogEntry[] = [
   {
+    version: "3.0.4",
+    date: "2026-08-24",
+    title: "Correctness Pass 4: Trip-Counter Baselines, Stuck-Counter Safety & Real Hover Sync",
+    type: "bugfix",
+    description: [
+      "Fixed the synchronized channel-inspector hover, which was silently broken under Recharts 3: the library now reports the active point as a string index with no payload, so the old numeric-only mapping never fired. A hover now correctly resolves a downsampled/sliced chart point back to its original log row across both synced charts",
+      "Trip Fuel and Trip Duration totals now exclude the initial baseline: a log captured mid-trip (e.g. cumulative fuel 5.0→5.2 L) reports the 0.2 L actually recorded in the window, not 5.2 L — which also corrects the derived L/100km",
+      "A stuck Trip Distance counter (all-zero or constant) while the speed trace clearly shows movement but timestamps are untrusted now reports distance as unavailable rather than an authoritative 0 km; a genuinely stationary log still reports an available zero",
+      "The sharing-enabled end-to-end tests now run against a real production build (with the flag baked in at build time, in an isolated output directory), not a dev server — proving the build-time gate, with the API still mocked so CI needs no live backend",
+    ],
+  },
+  {
     version: "3.0.3",
     date: "2026-08-24",
     title: "Final Corrections: Summary Units, Trip-Counter Safety & Rendered Coverage",

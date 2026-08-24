@@ -18,6 +18,7 @@ import { buildChartXAxis } from "@/lib/chart-x"
 import { computeIdleZones } from "@/lib/idle-zones"
 import { computeCumulativeDistanceKm } from "@/lib/distance"
 import { fuelToLitres, computeFuelEconomyL100km } from "@/lib/fuel"
+import { cumulativeForwardTotal } from "@/lib/cumulative"
 import { analyzeDataHealth } from "@/lib/data-health"
 import { TRANSMISSION_PRESETS } from "@/lib/transmission-presets"
 import { normalizeTransmissionConfig } from "@/lib/transmission"
@@ -736,27 +737,16 @@ export function useObdSession() {
   }, [data, ignoreIdle])
 
   const tripTotals = useMemo(() => {
-    const sumWithResets = (key: keyof DataPoint): number | null => {
-      let total = 0
-      let prev = 0
-      let seen = false
-      for (const point of data) {
-        const v = point[key] as number | undefined
-        if (typeof v !== "number" || isNaN(v)) continue
-        seen = true
-        if (v >= prev) total += v - prev
-        prev = v
-      }
-      return seen ? total : null
-    }
     // Distance comes from the physically-correct full-session helper (km, unit-normalised), NOT the
     // raw Trip Distance column — which may be miles and was previously mislabelled as km.
     const distanceKm = summaryDistanceResult.available
       ? summaryDistanceResult.dist[summaryDistanceResult.dist.length - 1] ?? null
       : null
-    const rawFuel = sumWithResets("tripFuel")
+    // Cumulative counters: exclude the initial baseline (a log may start mid-trip) and treat drops
+    // as re-baselines. See lib/cumulative.ts.
+    const rawFuel = cumulativeForwardTotal(data.map((p) => p.tripFuel))
     const fuel = rawFuel // kept in the log's own unit for the "Fuel" readout
-    const rawDuration = sumWithResets("tripDuration")
+    const rawDuration = cumulativeForwardTotal(data.map((p) => p.tripDuration))
     const durationUnit = tripDurationUnit.toLowerCase()
     const durationMinutes =
       rawDuration == null

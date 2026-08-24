@@ -58,6 +58,20 @@ describe("resolveHoverIndex", () => {
     expect(idx).toBe(downsampled[i].originalIndex)
   })
 
+  it("accepts a recharts@3 STRING activeTooltipIndex (no activePayload)", () => {
+    // recharts@3 fires onMouseMove with { activeTooltipIndex: "7" } and no activePayload. The old
+    // numeric-only guard rejected this, silently breaking the synced-inspector hover.
+    const { downsampled } = pipeline(600, 100, 599, 400)
+    const idx = resolveHoverIndex(undefined, "7", downsampled)
+    expect(idx).toBe(downsampled[7].originalIndex)
+  })
+
+  it("ignores an empty-string / non-numeric activeTooltipIndex", () => {
+    const { downsampled } = pipeline(600, 100, 599, 400)
+    expect(resolveHoverIndex(undefined, "", downsampled)).toBeNull()
+    expect(resolveHoverIndex(undefined, "abc", downsampled)).toBeNull()
+  })
+
   it("falls back to `time` when originalIndex is absent", () => {
     const idx = resolveHoverIndex([{ payload: { time: 321 } }], undefined, [])
     expect(idx).toBe(321)

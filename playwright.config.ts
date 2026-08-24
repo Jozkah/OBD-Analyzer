@@ -52,10 +52,13 @@ export default defineConfig({
       timeout: 120_000,
     },
     {
-      command: "NEXT_PUBLIC_SHARING_ENABLED=true NEXT_DIST_DIR=.next-share pnpm exec next dev -p 3211",
+      // A REAL production build with sharing enabled, in an isolated output dir. Cross-platform Node
+      // launcher (no shell env syntax) — see scripts/share-e2e-server.mjs. The build step means this
+      // needs a longer readiness window than the pre-built disabled server above.
+      command: "node scripts/share-e2e-server.mjs",
       url: "http://localhost:3211",
       reuseExistingServer: !isCI,
-      timeout: 120_000,
+      timeout: 240_000,
     },
   ],
 })

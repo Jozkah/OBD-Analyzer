@@ -23,6 +23,8 @@ export const DISTANCE_GAP_SECONDS = 5
 export const MIN_TRIP_COVERAGE = 0.5
 /** Cumulative distance at/below this (km) counts as "no meaningful travel". */
 export const MOVEMENT_EPSILON_KM = 0.05
+/** A speed sample above this (in the log's own unit) counts as the vehicle actually moving. */
+export const MOVEMENT_SPEED_EPS = 1
 
 export type DistanceSource = "trip" | "integrated" | "none"
 
@@ -116,11 +118,16 @@ export function computeCumulativeDistanceKm(input: DistanceInput): DistanceResul
   const n = speeds.length
   const zero = () => new Array<number>(n).fill(0)
 
-  // Speed/time integration candidate (when we have a trustworthy clock aligned to the samples).
+  // Two independent facts about the log:
+  //  • distance INTEGRABLE — a trustworthy clock aligned to the samples lets us compute an exact
+  //    trapezoidal fallback distance;
+  //  • movement OBSERVED — the speed trace itself contains meaningful positive samples, which proves
+  //    the vehicle was not stationary even when we can't quantify how far it went.
   const canIntegrate = trustedTime && elapsed.length === n && n > 0
   const integrated = canIntegrate ? integrate(speeds, speedUnit === "mph" ? MPH_TO_KMH : 1, elapsed, n) : null
   const integratedKm = integrated ? integrated[integrated.length - 1] : 0
   const integrationMoved = integrated != null && integratedKm > MOVEMENT_EPSILON_KM
+  const movementObserved = speeds.some((s) => Number.isFinite(s) && s > MOVEMENT_SPEED_EPS)
 
   // --- Trip Distance channel (authoritative only when usable) --------------
   const hasTrip = Array.isArray(tripDistance) && tripDistance.some((v) => typeof v === "number" && !isNaN(v))
@@ -136,10 +143,15 @@ export function computeCumulativeDistanceKm(input: DistanceInput): DistanceResul
     if (integrationMoved) {
       return { dist: integrated!, available: true, approximate: true, source: "integrated" }
     }
-    // No usable integration to fall back to.
+    // The counter can't be trusted and there is no integrable fallback. If the speed trace shows the
+    // vehicle actually moved, a stuck/constant counter must NOT be reported as an authoritative 0 km —
+    // we simply can't quantify the distance, so it is unavailable.
+    if (movementObserved) {
+      return { dist: zero(), available: false, approximate: false, source: "none" }
+    }
     if (usability === "no-travel") {
-      // Both the counter and (any) integration agree there was no meaningful travel → trust the
-      // counter's zero (a genuinely stationary vehicle with a constant/zero trip counter).
+      // Counter shows no travel AND the speed trace shows no movement → a genuinely stationary
+      // vehicle with a constant/zero trip counter. A zero-distance trip is correct and available.
       return { dist: trip.dist, available: true, approximate: false, source: "trip" }
     }
     // Too sparse and nothing better available → refuse to invent a false total.
