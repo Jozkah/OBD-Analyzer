@@ -53,7 +53,7 @@ export function ChannelPicker({ metrics, enabledMetrics, isEmptyPID, setMetricEn
     <div className="flex flex-col gap-3">
       {/* Presets */}
       <div className="flex flex-wrap items-center gap-1.5">
-        <span className="mr-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Presets</span>
+        <span className="eyebrow mr-1">Presets</span>
         {availablePresets.map((c) => (
           <Button key={c.id} variant="outline" size="sm" className="h-7 px-2.5 text-xs" onClick={() => applyPreset(c.id)}>
             {c.label}
@@ -72,10 +72,11 @@ export function ChannelPicker({ metrics, enabledMetrics, isEmptyPID, setMetricEn
           enabledMetrics.map((m) => (
             <span
               key={m.key as string}
-              className="inline-flex items-center gap-1.5 rounded-full border border-border/70 bg-secondary/60 py-0.5 pl-2 pr-1 text-xs"
+              className="inline-flex items-center gap-1.5 rounded-md border border-border bg-secondary/60 py-0.5 pl-2 pr-1 text-xs"
             >
               <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: m.color }} aria-hidden="true" />
-              <span className="max-w-[130px] truncate font-medium">{m.label}</span>
+              <span className="max-w-[150px] truncate font-medium">{m.label}</span>
+              {m.unit && <span className="shrink-0 text-muted-foreground">{m.unit}</span>}
               <button
                 type="button"
                 onClick={() => setMetricEnabled(m.key as string, false)}

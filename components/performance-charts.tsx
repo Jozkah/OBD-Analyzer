@@ -76,7 +76,7 @@ export const PerformanceCharts = React.memo(function PerformanceCharts({
 
   return (
     <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-      <Card className="flex min-h-[360px] flex-col p-5">
+      <Card className="flex min-h-[360px] flex-col p-5 shadow-sm">
         <SectionHeader
           title="RPM vs Speed"
           hint="Engine speed against road speed over the session — the shape of each pull and shift."
@@ -87,8 +87,8 @@ export const PerformanceCharts = React.memo(function PerformanceCharts({
               <ComposedChart data={finalChartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke={grid} />
                 <XAxis {...xProps} />
-                <YAxis yAxisId="rpm" stroke={TELEMETRY.rpm} fontSize={12} orientation="left" label={{ value: "RPM", angle: -90, position: "insideLeft", fill: TELEMETRY.rpm, fontSize: 11 }} />
-                <YAxis yAxisId="speed" stroke={TELEMETRY.speed} fontSize={12} orientation="right" label={{ value: "Speed", angle: 90, position: "insideRight", fill: TELEMETRY.speed, fontSize: 11 }} />
+                <YAxis yAxisId="rpm" stroke={axis} fontSize={12} orientation="left" label={{ value: "RPM", angle: -90, position: "insideLeft", fill: TELEMETRY.rpm, fontSize: 11 }} />
+                <YAxis yAxisId="speed" stroke={axis} fontSize={12} orientation="right" label={{ value: "Speed", angle: 90, position: "insideRight", fill: TELEMETRY.speed, fontSize: 11 }} />
                 <Tooltip contentStyle={tooltipContentStyle} formatter={tooltipFormatter} labelFormatter={xTooltipLabel} />
                 <Line yAxisId="rpm" dataKey="rpm" stroke={TELEMETRY.rpm} strokeWidth={2} dot={false} name="RPM" />
                 <Line yAxisId="speed" dataKey="speed" stroke={TELEMETRY.speed} strokeWidth={2} dot={false} name={`Speed (${speedUnit})`} />
@@ -103,7 +103,7 @@ export const PerformanceCharts = React.memo(function PerformanceCharts({
         </div>
       </Card>
 
-      <Card className="flex min-h-[360px] flex-col p-5">
+      <Card className="flex min-h-[360px] flex-col p-5 shadow-sm">
         <SectionHeader
           title="Throttle vs Speed"
           hint="Driver throttle input against the speed it produced."
@@ -114,8 +114,8 @@ export const PerformanceCharts = React.memo(function PerformanceCharts({
               <ComposedChart data={finalChartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke={grid} />
                 <XAxis {...xProps} />
-                <YAxis yAxisId="throttle" stroke={TELEMETRY.throttle} fontSize={12} orientation="left" label={{ value: "Throttle %", angle: -90, position: "insideLeft", fill: TELEMETRY.throttle, fontSize: 11 }} />
-                <YAxis yAxisId="speed" stroke={TELEMETRY.speed} fontSize={12} orientation="right" label={{ value: "Speed", angle: 90, position: "insideRight", fill: TELEMETRY.speed, fontSize: 11 }} />
+                <YAxis yAxisId="throttle" stroke={axis} fontSize={12} orientation="left" label={{ value: "Throttle %", angle: -90, position: "insideLeft", fill: TELEMETRY.throttle, fontSize: 11 }} />
+                <YAxis yAxisId="speed" stroke={axis} fontSize={12} orientation="right" label={{ value: "Speed", angle: 90, position: "insideRight", fill: TELEMETRY.speed, fontSize: 11 }} />
                 <Tooltip contentStyle={tooltipContentStyle} formatter={tooltipFormatter} labelFormatter={xTooltipLabel} />
                 <Line yAxisId="throttle" dataKey="throttle" stroke={TELEMETRY.throttle} strokeWidth={2} dot={false} name="Throttle" />
                 <Line yAxisId="speed" dataKey="speed" stroke={TELEMETRY.speed} strokeWidth={2} dot={false} name={`Speed (${speedUnit})`} />
@@ -130,7 +130,7 @@ export const PerformanceCharts = React.memo(function PerformanceCharts({
         </div>
       </Card>
 
-      <Card className="flex min-h-[360px] flex-col p-5">
+      <Card className="flex min-h-[360px] flex-col p-5 shadow-sm">
         <SectionHeader
           title="Power & Torque"
           hint="Calculated engine output. Requires power/torque PIDs (or values derived from them)."
@@ -141,8 +141,8 @@ export const PerformanceCharts = React.memo(function PerformanceCharts({
               <ComposedChart data={finalChartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke={grid} />
                 <XAxis {...xProps} />
-                <YAxis yAxisId="left" stroke={TELEMETRY.power} orientation="left" label={{ value: "Power (hp)", angle: -90, position: "insideLeft", fill: TELEMETRY.power, fontSize: 11 }} />
-                <YAxis yAxisId="right" stroke={TELEMETRY.torque} orientation="right" label={{ value: "Torque (N·m)", angle: 90, position: "insideRight", fill: TELEMETRY.torque, fontSize: 11 }} />
+                <YAxis yAxisId="left" stroke={axis} fontSize={12} orientation="left" label={{ value: "Power (hp)", angle: -90, position: "insideLeft", fill: TELEMETRY.power, fontSize: 11 }} />
+                <YAxis yAxisId="right" stroke={axis} fontSize={12} orientation="right" label={{ value: "Torque (N·m)", angle: 90, position: "insideRight", fill: TELEMETRY.torque, fontSize: 11 }} />
                 <Tooltip contentStyle={tooltipContentStyle} formatter={tooltipFormatter} labelFormatter={xTooltipLabel} />
                 <Area yAxisId="left" dataKey="enginePower" fill={TELEMETRY.power} fillOpacity={0.3} stroke={TELEMETRY.power} name="Power (hp)" />
                 <Line yAxisId="right" dataKey="engineTorque" stroke={TELEMETRY.torque} strokeWidth={2} dot={false} name="Torque (N•m)" />
@@ -157,7 +157,7 @@ export const PerformanceCharts = React.memo(function PerformanceCharts({
         </div>
       </Card>
 
-      <Card className="flex min-h-[360px] flex-col p-5">
+      <Card className="flex min-h-[360px] flex-col p-5 shadow-sm">
         <SectionHeader
           title="Gearbox Usage"
           hint="Estimated gear against speed. Gear is derived from the transmission configuration."
@@ -169,7 +169,7 @@ export const PerformanceCharts = React.memo(function PerformanceCharts({
               <XAxis {...xProps} />
               <YAxis
                 yAxisId="gear"
-                stroke={TELEMETRY.gear}
+                stroke={axis}
                 fontSize={12}
                 domain={[0.5, transmissionConfig.numberOfGears + 0.5]}
                 ticks={Array.from({ length: transmissionConfig.numberOfGears }, (_, i) => i + 1)}
@@ -177,7 +177,7 @@ export const PerformanceCharts = React.memo(function PerformanceCharts({
                 orientation="right"
                 label={{ value: "Gear", angle: 90, position: "insideRight", fill: TELEMETRY.gear, fontSize: 11 }}
               />
-              <YAxis yAxisId="speed" stroke={TELEMETRY.speed} fontSize={12} orientation="left" label={{ value: "Speed", angle: -90, position: "insideLeft", fill: TELEMETRY.speed, fontSize: 11 }} />
+              <YAxis yAxisId="speed" stroke={axis} fontSize={12} orientation="left" label={{ value: "Speed", angle: -90, position: "insideLeft", fill: TELEMETRY.speed, fontSize: 11 }} />
               <Tooltip
                 contentStyle={tooltipContentStyle}
                 labelFormatter={xTooltipLabel}
@@ -207,7 +207,7 @@ export const PerformanceCharts = React.memo(function PerformanceCharts({
         </div>
       </Card>
 
-      <Card className="flex min-h-[360px] flex-col p-5 xl:col-span-2">
+      <Card className="flex min-h-[360px] flex-col p-5 shadow-sm xl:col-span-2">
         <SectionHeader title="Gear Distribution" hint="How many samples were spent in each gear." />
         <div className="min-h-[280px] flex-grow">
           <ResponsiveContainer width="100%" height="100%">

@@ -66,7 +66,7 @@ export const OverviewTab = React.memo(function OverviewTab(props: OverviewTabPro
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <div className="lg:col-span-2">
-          <Card className="flex h-full min-h-[420px] flex-col p-5">
+          <Card className="flex h-full min-h-[420px] flex-col p-5 shadow-sm">
             <SectionHeader
               title="Telemetry Overview"
               hint="Plot any combination of channels. Use presets or add channels individually."
@@ -135,7 +135,7 @@ export const OverviewTab = React.memo(function OverviewTab(props: OverviewTabPro
       {/* Detected events + route preview */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         {accelRuns.length > 0 && (
-          <Card className="p-5 lg:col-span-2">
+          <Card className="p-5 shadow-sm lg:col-span-2">
             <SectionHeader title="Detected Acceleration Runs" icon={<Gauge className="h-4 w-4 text-muted-foreground" />} hint="Best runs timed from the log's per-sample timestamps." />
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
               {accelRuns.map((run) => (
@@ -148,7 +148,7 @@ export const OverviewTab = React.memo(function OverviewTab(props: OverviewTabPro
             </div>
           </Card>
         )}
-        <Card className={`p-5 ${accelRuns.length > 0 ? "" : "lg:col-span-3"}`}>
+        <Card className={`p-5 shadow-sm ${accelRuns.length > 0 ? "" : "lg:col-span-3"}`}>
           <SectionHeader title="Route" icon={<MapPin className="h-4 w-4 text-muted-foreground" />} />
           {gpsPointCount > 0 ? (
             <div className="flex flex-col gap-3">

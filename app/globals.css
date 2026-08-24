@@ -36,7 +36,13 @@
     --border: 225 16% 15%;
     --input: 225 15% 18%;
     --ring: 189 95% 55%;
-    --radius: 0.75rem;
+    /* Deliberate small radius scale (10 / 8 / 6 px) — see tailwind borderRadius. */
+    --radius: 0.625rem;
+
+    /* Centralised elevation scale. Nested surfaces stay flat; only the workspace panel gets
+       --shadow-sm and overlays/dialogs get --shadow-overlay. */
+    --shadow-sm: 0 1px 2px 0 hsl(228 30% 2% / 0.4);
+    --shadow-overlay: 0 16px 40px -12px hsl(228 40% 2% / 0.65);
 
     /* Status / semantic states. Each has a base (fill/icon) and a readable foreground. */
     --success: 152 62% 45%;
@@ -89,7 +95,7 @@
     --secondary: 214 32% 93%;
     --secondary-foreground: 224 40% 14%;
     --muted: 214 30% 94%;
-    --muted-foreground: 220 12% 40%;
+    --muted-foreground: 220 14% 34%;
     --accent: 210 40% 90%;
     --accent-foreground: 224 40% 14%;
     --destructive: 0 72% 48%;
@@ -97,6 +103,9 @@
     --border: 214 25% 84%;
     --input: 214 25% 82%;
     --ring: 191 91% 38%;
+
+    --shadow-sm: 0 1px 2px 0 hsl(215 30% 40% / 0.08);
+    --shadow-overlay: 0 16px 40px -12px hsl(215 35% 25% / 0.22);
 
     --success: 152 58% 34%;
     --success-foreground: 0 0% 100%;
@@ -141,22 +150,25 @@
   }
   body {
     @apply bg-background text-foreground antialiased;
-    /* Subtle accent glow bleeding in from the top, like backlit cluster glass. */
-    background-image: radial-gradient(
-      1100px 480px at 50% -160px,
-      hsl(var(--primary) / 0.07),
-      transparent 70%
-    );
-    background-attachment: fixed;
   }
   ::selection {
-    background: hsl(var(--primary) / 0.28);
+    background: hsl(var(--primary) / 0.24);
   }
   /* Telemetry readouts stay column-aligned as digits change. Scoped to the opt-in
      `.tabular-nums` utility (Tailwind) and our readout components rather than forced
      on every paragraph site-wide. */
   .tabular-nums {
     font-variant-numeric: tabular-nums;
+  }
+  /* The single approved uppercase eyebrow treatment — reserved for a small number of true
+     section eyebrows. Ordinary section titles use normal title case instead. */
+  .eyebrow {
+    font-size: 0.6875rem; /* 11px */
+    line-height: 1rem;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: hsl(var(--muted-foreground));
   }
 }
 

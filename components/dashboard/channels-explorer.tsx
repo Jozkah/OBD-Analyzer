@@ -92,9 +92,9 @@ export const ChannelsExplorer = React.memo(function ChannelsExplorer(props: Chan
   )
 
   return (
-    <div className="grid grid-cols-1 gap-4 xl:grid-cols-12">
+    <div className="grid grid-cols-1 gap-4 xl:grid-cols-12 xl:items-start">
       {/* Explorer table */}
-      <Card className="flex flex-col p-4 xl:col-span-5">
+      <Card className="flex flex-col p-4 shadow-sm xl:col-span-5">
         <SectionHeader title="Data Channels" hint="Every detected PID with its range, live value and health status." />
         <div className="mb-3 space-y-2">
           <div className="relative">
@@ -118,15 +118,15 @@ export const ChannelsExplorer = React.memo(function ChannelsExplorer(props: Chan
 
         <div className="custom-scrollbar -mx-1 max-h-[560px] overflow-auto px-1">
           <table className="w-full border-collapse text-sm">
-            <thead className="sticky top-0 z-10 bg-card">
-              <tr className="border-b border-border/70 text-left text-[11px] uppercase tracking-wide text-muted-foreground">
-                <th className="py-2 pr-2 font-medium">Channel</th>
-                <th className="px-2 py-2 text-right font-medium">Current</th>
-                <th className="hidden px-2 py-2 text-right font-medium sm:table-cell">Min</th>
-                <th className="hidden px-2 py-2 text-right font-medium sm:table-cell">Max</th>
-                <th className="hidden px-2 py-2 font-medium md:table-cell">Trend</th>
-                <th className="px-2 py-2 font-medium">Status</th>
-                <th className="py-2 pl-2 font-medium sr-only">Actions</th>
+            <thead className="sticky top-0 z-10 bg-card shadow-[0_1px_0_0_hsl(var(--border))]">
+              <tr className="text-left text-[11px] font-medium text-muted-foreground">
+                <th className="py-2.5 pr-2 font-medium">Channel</th>
+                <th className="px-2 py-2.5 text-right font-medium">Current</th>
+                <th className="hidden px-2 py-2.5 text-right font-medium sm:table-cell">Min</th>
+                <th className="hidden px-2 py-2.5 text-right font-medium sm:table-cell">Max</th>
+                <th className="hidden px-2 py-2.5 font-medium md:table-cell">Trend</th>
+                <th className="px-2 py-2.5 font-medium">Status</th>
+                <th className="py-2.5 pl-2 font-medium sr-only">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -159,7 +159,7 @@ export const ChannelsExplorer = React.memo(function ChannelsExplorer(props: Chan
                     <td className="hidden px-2 py-1.5 text-right font-mono tabular-nums text-muted-foreground sm:table-cell">{st?.max != null ? formatValue(st.max, m.unit) : "—"}</td>
                     <td className="hidden px-2 py-1.5 md:table-cell"><Sparkline values={st?.spark ?? []} color={m.color} /></td>
                     <td className="px-2 py-1.5">
-                      <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${STATUS_STYLE[st?.status ?? "empty"]}`}>{st?.status ?? "empty"}</span>
+                      <span className={`inline-flex items-center rounded px-1.5 py-0.5 text-[11px] font-medium capitalize ${STATUS_STYLE[st?.status ?? "empty"]}`}>{st?.status ?? "empty"}</span>
                     </td>
                     <td className="py-1.5 pl-2">
                       <div className="flex items-center justify-end gap-0.5">
@@ -180,17 +180,19 @@ export const ChannelsExplorer = React.memo(function ChannelsExplorer(props: Chan
       </Card>
 
       {/* Detail charts */}
-      <Card className="flex flex-col p-4 xl:col-span-7">
+      <Card className="flex flex-col p-4 shadow-sm xl:col-span-7">
         <SectionHeader
           title={`Inspector${selectedPIDs.length ? ` · ${selectedPIDs.length}` : ""}`}
           hint="Selected channels plotted with synchronised hover. Add channels from the table."
           actions={selectedPIDs.length > 0 ? <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setSelectedPIDs([])}>Clear</Button> : undefined}
         />
         {selectedPIDs.length === 0 ? (
-          <div className="flex flex-1 flex-col items-center justify-center gap-2 py-16 text-center text-muted-foreground">
-            <BarChart3 className="h-10 w-10 opacity-40" aria-hidden="true" />
-            <p className="text-sm font-medium text-foreground/80">Select channels to inspect</p>
-            <p className="max-w-xs text-xs">Click a row or its + button to plot a channel here. Add several to compare with a synced cursor.</p>
+          <div className="mt-2 flex items-start gap-3 rounded-md border border-dashed border-border bg-muted/30 p-4 text-left text-muted-foreground">
+            <BarChart3 className="mt-0.5 h-5 w-5 shrink-0 opacity-50" aria-hidden="true" />
+            <div>
+              <p className="text-sm font-medium text-foreground/80">No channels selected</p>
+              <p className="mt-0.5 text-xs">Click a row or its <span className="font-medium text-foreground/70">+</span> button to plot a channel here. Add several to compare them with a synced cursor.</p>
+            </div>
           </div>
         ) : (
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">

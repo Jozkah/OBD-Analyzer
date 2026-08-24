@@ -273,7 +273,7 @@ export function TransmissionDialog(props: TransmissionDialogProps) {
       }}
       className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-0 backdrop-blur-sm sm:items-center sm:p-4"
     >
-      <Card className="flex max-h-[92vh] w-full max-w-4xl flex-col overflow-hidden rounded-b-none sm:rounded-xl">
+      <Card className="flex max-h-[92vh] w-full max-w-4xl flex-col overflow-hidden rounded-b-none shadow-overlay sm:rounded-lg">
         <div className="flex items-center justify-between border-b border-border/70 p-4 sm:p-5">
           <div>
             <h2 id="transmission-dialog-title" className="text-base font-semibold tracking-tight">Transmission Configuration</h2>
@@ -306,20 +306,26 @@ export function TransmissionDialog(props: TransmissionDialogProps) {
             </TabsList>
 
             {/* Manual */}
-            <TabsContent value="manual" className="space-y-5">
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <NumberField id="tx-final-drive" label="Final Drive Ratio" error={errorFor("finalDrive")}
-                  inputMode="decimal" value={raw.finalDrive ?? ""} onChange={(v) => setField("finalDrive", v)} />
-                <NumberField id="tx-tyre" label="Tyre Diameter (mm)" error={errorFor("tyreDiameterMm")}
-                  inputMode="numeric" value={raw.tyreDiameterMm ?? ""} onChange={(v) => setField("tyreDiameterMm", v)} />
-                <NumberField id="tx-shift-rpm" label="Shift RPM" error={errorFor("shiftRpm")}
-                  inputMode="numeric" value={raw.shiftRpm ?? ""} onChange={(v) => setField("shiftRpm", v)} />
-                <NumberField id="tx-gears" label="Number of Gears" error={errorFor("numberOfGears")}
-                  inputMode="numeric" value={raw.numberOfGears ?? ""} onChange={(v) => setField("numberOfGears", v)} />
-              </div>
+            <TabsContent value="manual" className="space-y-6">
+              <section>
+                <h3 className="eyebrow mb-3">Drivetrain</h3>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <NumberField id="tx-final-drive" label="Final Drive Ratio" error={errorFor("finalDrive")}
+                    inputMode="decimal" value={raw.finalDrive ?? ""} onChange={(v) => setField("finalDrive", v)} />
+                  <NumberField id="tx-gears" label="Number of Gears" error={errorFor("numberOfGears")}
+                    inputMode="numeric" value={raw.numberOfGears ?? ""} onChange={(v) => setField("numberOfGears", v)} />
+                  <NumberField id="tx-shift-rpm" label="Shift RPM" error={errorFor("shiftRpm")}
+                    inputMode="numeric" value={raw.shiftRpm ?? ""} onChange={(v) => setField("shiftRpm", v)} />
+                  <NumberField id="tx-tyre" label="Tyre Diameter (mm)" error={errorFor("tyreDiameterMm")}
+                    inputMode="numeric" value={raw.tyreDiameterMm ?? ""} onChange={(v) => setField("tyreDiameterMm", v)} />
+                </div>
+              </section>
 
-              <div>
-                <label className="mb-2 block text-sm font-medium text-foreground">Gear Ratios &amp; predicted speed at {Math.round(previewShift)} RPM</label>
+              <section className="border-t border-border pt-5">
+                <div className="mb-3 flex items-baseline justify-between gap-3">
+                  <h3 className="eyebrow">Gear Ratios</h3>
+                  <span className="text-xs text-muted-foreground">predicted speed at {Math.round(previewShift)} RPM</span>
+                </div>
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
                   {gearRows.map((gear) => {
                     const ratio = numOr(`gear-${gear}`, 1.0)
@@ -328,22 +334,25 @@ export function TransmissionDialog(props: TransmissionDialogProps) {
                     const gerr = errorFor(`gear-${gear}`)
                     const gid = `tx-gear-${gear}`
                     return (
-                      <div key={gear} className="rounded-lg border border-border/60 bg-secondary/30 p-2">
-                        <label htmlFor={gid} className="mb-1 block text-xs text-muted-foreground">Gear {gear}</label>
+                      <div key={gear} className="rounded-md border border-border bg-secondary/30 p-2.5">
+                        <label htmlFor={gid} className="mb-1 block text-xs font-medium text-muted-foreground">Gear {gear}</label>
                         <Input id={gid} type="text" inputMode="decimal" aria-label={`Gear ${gear} ratio`}
                           aria-invalid={gerr ? true : undefined} aria-describedby={gerr ? `${gid}-error` : undefined}
-                          className="h-8 text-sm" value={raw[`gear-${gear}`] ?? ""}
+                          className="h-8 text-sm tabular-nums" value={raw[`gear-${gear}`] ?? ""}
                           onChange={(e) => setField(`gear-${gear}`, e.target.value)} />
                         {gerr && <p id={`${gid}-error`} className="mt-1 text-[11px] text-danger">{gerr}</p>}
-                        <div className="mt-1 font-mono text-[11px] tabular-nums text-muted-foreground">≈ {Math.round(shown)} {speedUnit}</div>
+                        <div className="mt-1.5 flex items-baseline justify-between text-xs text-muted-foreground">
+                          <span>≈</span>
+                          <span className="tabular-nums text-foreground/70">{Math.round(shown)} {speedUnit}</span>
+                        </div>
                       </div>
                     )
                   })}
                 </div>
-              </div>
+              </section>
 
-              <div>
-                <label className="mb-2 block text-sm font-medium text-foreground">Tyre Size Calculator</label>
+              <section className="border-t border-border pt-5">
+                <h3 className="eyebrow mb-3">Tyre Size Calculator</h3>
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <Field label="Tyre size (e.g. 235/35R19)">
                     <Input type="text" aria-label="Tyre size" value={tireSizeInput} placeholder="235/35R19"
@@ -354,10 +363,10 @@ export function TransmissionDialog(props: TransmissionDialogProps) {
                       }} />
                   </Field>
                   <Field label="Calculated diameter">
-                    <div className="rounded-md border border-input bg-secondary/50 px-3 py-2 font-mono text-sm tabular-nums">{Math.round(previewTyre)} mm</div>
+                    <div className="rounded-md border border-input bg-secondary/50 px-3 py-2 text-sm tabular-nums">{Math.round(previewTyre)} mm</div>
                   </Field>
                 </div>
-              </div>
+              </section>
             </TabsContent>
 
             {/* Presets */}
@@ -456,10 +465,10 @@ export function TransmissionDialog(props: TransmissionDialogProps) {
           </Tabs>
         </div>
 
-        <div className="flex items-center justify-between gap-2 border-t border-border/70 p-4 sm:p-5">
-          <Button variant="outline" onClick={() => setConfirmReset(true)}><RotateCcw className="mr-2 h-4 w-4" />Reset</Button>
+        <div className="flex items-center justify-between gap-2 border-t border-border p-4 sm:p-5">
+          <Button variant="ghost" className="text-muted-foreground hover:text-foreground" onClick={() => setConfirmReset(true)}><RotateCcw className="mr-2 h-4 w-4" />Reset</Button>
           <div className="flex items-center gap-2">
-            <Button variant="ghost" onClick={onClose}>Cancel</Button>
+            <Button variant="outline" onClick={onClose}>Cancel</Button>
             <Button onClick={applyAndClose} disabled={!dirty}>Apply configuration</Button>
           </div>
         </div>

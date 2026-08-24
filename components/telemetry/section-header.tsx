@@ -22,7 +22,7 @@ export function SectionHeader({ title, hint, actions, icon, className }: Section
     <div className={`mb-4 flex flex-shrink-0 items-center justify-between gap-3 ${className ?? ""}`}>
       <div className="flex items-center gap-2 min-w-0">
         {icon}
-        <h2 className="truncate text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">{title}</h2>
+        <h2 className="truncate text-sm font-semibold tracking-tight text-foreground">{title}</h2>
         {hint && (
           <span
             className="inline-flex text-muted-foreground/70 transition-colors hover:text-foreground focus-visible:text-foreground"

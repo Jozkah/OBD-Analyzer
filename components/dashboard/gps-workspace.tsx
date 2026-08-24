@@ -34,7 +34,7 @@ export const GpsWorkspace = React.memo(function GpsWorkspace({
 
   if (gpsPointCount === 0) {
     return (
-      <Card className="p-5">
+      <Card className="p-5 shadow-sm">
         <SectionHeader title="Route" icon={<MapIcon className="h-4 w-4 text-muted-foreground" />} />
         <div className="flex flex-col items-center justify-center gap-2 py-16 text-center text-muted-foreground">
           <MapPinOff className="h-10 w-10 opacity-40" aria-hidden="true" />
@@ -47,7 +47,7 @@ export const GpsWorkspace = React.memo(function GpsWorkspace({
 
   return (
     <div className="space-y-4">
-      <Card className="flex flex-col p-4">
+      <Card className="flex flex-col p-4 shadow-sm">
         <SectionHeader
           title="Route Map"
           icon={<MapIcon className="h-4 w-4 text-muted-foreground" />}
@@ -61,7 +61,7 @@ export const GpsWorkspace = React.memo(function GpsWorkspace({
       </Card>
 
       {elevationData.length > 1 && (
-        <Card className="p-5">
+        <Card className="p-5 shadow-sm">
           <SectionHeader
             title="Elevation Profile"
             hint="Altitude against distance travelled."

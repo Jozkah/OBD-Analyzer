@@ -19,7 +19,7 @@ export function DataHealthPanel({ findings }: DataHealthPanelProps) {
   const counts = summarizeHealth(findings)
 
   return (
-    <Card className="flex h-full flex-col p-5">
+    <Card className="flex h-full flex-col p-5 shadow-sm">
       <SectionHeader
         title="Data Health"
         hint="What the imported data can and can't support. Not a diagnosis of the vehicle."

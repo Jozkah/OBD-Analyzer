@@ -9,7 +9,6 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { formatDuration, type TimeAxis } from "@/lib/elapsed-time"
 import { formatValue } from "@/lib/format"
-import { TELEMETRY } from "@/lib/chart-theme"
 import { shiftIndicatorView, type ShiftState } from "@/lib/gear"
 import type { DataPoint } from "@/types/obd"
 
@@ -50,6 +49,16 @@ function label(axis: TimeAxis, index: number): string {
   return `#${index}`
 }
 
+/** A single live telemetry readout: quiet sentence-case label, neutral tabular value. */
+function Readout({ label, value }: { label: string; value: string }) {
+  return (
+    <span className="inline-flex shrink-0 items-baseline gap-1.5">
+      <span className="text-muted-foreground">{label}</span>
+      <span className="font-mono tabular-nums text-foreground">{value}</span>
+    </span>
+  )
+}
+
 export function PlaybackBar({
   currentTime, setCurrentTime, timeRange, setTimeRange, lastIndex, timeAxis,
   isPlaying, setIsPlaying, playbackRate, setPlaybackRate, ignoreIdle, setIgnoreIdle,
@@ -66,16 +75,17 @@ export function PlaybackBar({
       className="sticky top-[57px] z-30 border-b border-border/70 bg-background/85 px-4 py-2.5 backdrop-blur-xl lg:px-6"
     >
       <div className="flex flex-col gap-2.5">
-        {/* Transport + live readouts */}
+        {/* Row 1 — transport, position, speed, live readouts */}
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+          {/* Compact transport cluster: play/pause primary, the rest secondary. */}
           <div className="flex items-center gap-1">
-            <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => setCurrentTime(lo)} aria-label="Jump to start" title="Jump to start (Home)">
+            <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground" onClick={() => setCurrentTime(lo)} aria-label="Jump to start" title="Jump to start (Home)">
               <SkipBack className="h-4 w-4" />
             </Button>
             <Button
-              variant="outline" size="icon"
-              className="h-8 w-8 data-[playing=true]:border-primary/60 data-[playing=true]:text-primary"
-              data-playing={isPlaying}
+              variant={isPlaying ? "outline" : "default"}
+              size="icon"
+              className="h-9 w-9"
               onClick={() => setIsPlaying(!isPlaying)}
               aria-label={isPlaying ? "Pause playback" : "Play playback"}
               aria-pressed={isPlaying}
@@ -83,10 +93,10 @@ export function PlaybackBar({
             >
               {isPlaying ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
             </Button>
-            <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => setCurrentTime(hi)} aria-label="Jump to end" title="Jump to end (End)">
+            <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground" onClick={() => setCurrentTime(hi)} aria-label="Jump to end" title="Jump to end (End)">
               <SkipForward className="h-4 w-4" />
             </Button>
-            <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => setCurrentTime(lo)} aria-label="Restart" title="Restart">
+            <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground" onClick={() => setCurrentTime(lo)} aria-label="Restart" title="Restart">
               <RotateCcw className="h-4 w-4" />
             </Button>
           </div>
@@ -102,7 +112,7 @@ export function PlaybackBar({
               {label(timeAxis, currentTime)} <span className="text-muted-foreground">/ {total}</span>
             </span>
             {!timeAxis.trustworthy && (
-              <span className="rounded bg-secondary px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground" title="This log has no reliable timestamps, so position is shown as a sample index.">
+              <span className="rounded bg-secondary px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground" title="This log has no reliable timestamps, so position is shown as a sample index.">
                 sample
               </span>
             )}
@@ -124,13 +134,14 @@ export function PlaybackBar({
             </DropdownMenuContent>
           </DropdownMenu>
 
-          {/* Live values + shift recommendation */}
+          {/* Live values + shift recommendation. Neutral numbers; only the shift badge carries a
+              semantic colour. On narrow layouts this becomes a horizontally scrollable strip. */}
           {currentDataPoint && (
-            <div className="ml-auto flex flex-wrap items-center gap-x-4 gap-y-1 font-mono text-xs tabular-nums">
-              <span><span className="text-muted-foreground">SPD </span><span style={{ color: TELEMETRY.speed }}>{formatValue(currentDataPoint.speed, speedUnit)} {speedUnit}</span></span>
-              <span><span className="text-muted-foreground">RPM </span><span style={{ color: TELEMETRY.rpm }}>{formatValue(currentDataPoint.rpm, "RPM")}</span></span>
-              <span><span className="text-muted-foreground">THR </span><span style={{ color: TELEMETRY.throttle }}>{formatValue(currentDataPoint.throttle, "%")}%</span></span>
-              <span><span className="text-muted-foreground">GEAR </span><span style={{ color: TELEMETRY.gear }}>{gear}</span></span>
+            <div className="custom-scrollbar ml-auto flex max-w-full items-center gap-x-4 overflow-x-auto whitespace-nowrap text-xs">
+              <Readout label="Speed" value={`${formatValue(currentDataPoint.speed, speedUnit)} ${speedUnit}`} />
+              <Readout label="RPM" value={formatValue(currentDataPoint.rpm, "RPM")} />
+              <Readout label="Throttle" value={`${formatValue(currentDataPoint.throttle, "%")}%`} />
+              <Readout label="Gear" value={String(gear)} />
               {(() => {
                 const view = shiftIndicatorView(shift)
                 if (!view) return null
@@ -142,7 +153,7 @@ export function PlaybackBar({
                 return (
                   <span
                     role="img"
-                    className={`inline-flex items-center gap-1 rounded border border-current px-1.5 py-0.5 font-sans text-[11px] font-medium ${cls}`}
+                    className={`inline-flex shrink-0 items-center gap-1 rounded border border-current px-1.5 py-0.5 text-[11px] font-medium ${cls}`}
                     aria-label={view.accessibleName}
                     title={view.accessibleName}
                   >
@@ -155,40 +166,47 @@ export function PlaybackBar({
           )}
         </div>
 
-        {/* Playhead */}
-        <Slider
-          value={[currentTime]}
-          onValueChange={([v]: number[]) => setCurrentTime(v)}
-          max={lastIndex}
-          step={1}
-          aria-label="Playback position"
-          className="w-full"
-        />
+        {/* Row 2 — timeline. The accent-filled playhead and the quieter neutral analysis window
+            read as two distinct controls. */}
+        <div className="flex flex-col gap-2">
+          <div className="flex items-center gap-3">
+            <span className="w-24 shrink-0 text-[11px] font-medium text-muted-foreground">Playhead</span>
+            <Slider
+              value={[currentTime]}
+              onValueChange={([v]: number[]) => setCurrentTime(v)}
+              max={lastIndex}
+              step={1}
+              aria-label="Playback position"
+              className="w-full"
+            />
+          </div>
 
-        {/* Time range selection */}
-        <div className="flex flex-col gap-1">
-          <div className="flex items-center justify-between text-[11px] text-muted-foreground">
-            <span className="font-medium uppercase tracking-[0.14em]">Analysis window</span>
-            <span className="font-mono tabular-nums">
+          <div className="flex items-center gap-3">
+            <span className="w-24 shrink-0 text-[11px] font-medium text-muted-foreground">Analysis window</span>
+            <Slider
+              value={timeRange}
+              onValueChange={setTimeRange}
+              max={lastIndex}
+              step={1}
+              tone="range"
+              aria-label="Analysis window start and end"
+              className="w-full"
+            />
+          </div>
+
+          <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 pl-0 sm:pl-[108px]">
+            <label className="flex items-center gap-2 text-xs text-muted-foreground">
+              <Checkbox
+                checked={ignoreIdle}
+                onCheckedChange={(c: boolean) => setIgnoreIdle(c === true)}
+                aria-label="Ignore idle — exclude stationary (speed = 0) samples from statistics"
+              />
+              Ignore idle in statistics (excludes speed = 0)
+            </label>
+            <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
               {label(timeAxis, lo)} – {label(timeAxis, hi)} · {rangeLen} samples ({rangePct}%)
             </span>
           </div>
-          <Slider
-            value={timeRange}
-            onValueChange={setTimeRange}
-            max={lastIndex}
-            step={1}
-            aria-label="Analysis window start and end"
-            className="w-full"
-          />
-          <label className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
-            <Checkbox
-              checked={ignoreIdle}
-              onCheckedChange={(c: boolean) => setIgnoreIdle(c === true)}
-              aria-label="Ignore idle — exclude stationary (speed = 0) samples from statistics"
-            />
-            Ignore idle in statistics (excludes speed = 0)
-          </label>
         </div>
       </div>
     </section>
