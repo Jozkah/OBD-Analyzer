@@ -5,6 +5,7 @@ import {
   ComposedChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceArea,
 } from "recharts"
 import { tooltipFormatter } from "@/lib/format"
+import { ChartTooltip } from "@/components/ui/chart-tooltip"
 import { TELEMETRY, type ChartTheme } from "@/lib/chart-theme"
 import type { ChartXAxis } from "@/lib/chart-x"
 import type { DataPoint, MetricConfig } from "@/types/obd"
@@ -26,8 +27,8 @@ interface OverviewChartProps {
 export const OverviewChart = React.memo(function OverviewChart({
   finalChartData, enabledMetrics, idleZones, effectiveXMode, chartTheme, xAxis,
 }: OverviewChartProps) {
-  const { grid, axis, tooltipContentStyle } = chartTheme
-  const timeLabelFormatter = (v: unknown) => (effectiveXMode === "distance" ? `${Number(v).toFixed(2)} km` : xAxis.format(Number(v)))
+  const { grid, axis } = chartTheme
+  const timeLabelFormatter = (v: string | number) => (effectiveXMode === "distance" ? `${Number(v).toFixed(2)} km` : xAxis.format(Number(v)))
   return (
     <ResponsiveContainer width="100%" height="100%">
       <ComposedChart data={finalChartData} margin={{ top: 5, right: 30, left: 20, bottom: 20 }}>
@@ -54,7 +55,7 @@ export const OverviewChart = React.memo(function OverviewChart({
           />
         )}
         <YAxis stroke={axis} fontSize={12} />
-        <Tooltip contentStyle={tooltipContentStyle} formatter={tooltipFormatter} labelFormatter={timeLabelFormatter} />
+        <Tooltip content={<ChartTooltip labelFormatter={timeLabelFormatter} valueFormatter={(v) => tooltipFormatter(v as number)} />} />
         {enabledMetrics.map((metric) => (
           <Line
             key={metric.key as string}

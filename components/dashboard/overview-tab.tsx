@@ -24,6 +24,8 @@ interface OverviewTabProps {
   importedFileNames: string[]
   transmissionConfig: TransmissionConfig
   healthFindings: HealthFinding[]
+  /** Full per-sample rows — passed to the command channel finder for per-channel health status. */
+  data: DataPoint[]
   /** Overview-specific dataset: downsampled against the active x-domain (distance in distance mode). */
   overviewChartData: DataPoint[]
   enabledMetrics: MetricConfig[]
@@ -48,7 +50,7 @@ interface OverviewTabProps {
 export const OverviewTab = React.memo(function OverviewTab(props: OverviewTabProps) {
   const {
     meta, stats, tripTotals, speedUnit, importedFileNames, transmissionConfig, healthFindings,
-    overviewChartData, enabledMetrics, metrics, idleZones, effectiveXMode, hasDistance, overviewXMode,
+    data, overviewChartData, enabledMetrics, metrics, idleZones, effectiveXMode, hasDistance, overviewXMode,
     setOverviewXMode, chartTheme, xAxis, isEmptyPID, setMetricEnabled, setEnabledMetricKeys, overviewChartRef,
     onExportChart, accelRuns, gpsPointCount, onGoToRoute,
   } = props
@@ -109,6 +111,7 @@ export const OverviewTab = React.memo(function OverviewTab(props: OverviewTabPro
               <ChannelPicker
                 metrics={metrics}
                 enabledMetrics={enabledMetrics}
+                data={data}
                 isEmptyPID={isEmptyPID}
                 setMetricEnabled={setMetricEnabled}
                 setEnabledMetricKeys={setEnabledMetricKeys}

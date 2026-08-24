@@ -4,10 +4,12 @@ import React, { useMemo, useState } from "react"
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceArea,
 } from "recharts"
-import { Search, Star, Plus, X, BarChart3 } from "lucide-react"
+import { Search, Star, Plus, X, BarChart3, Command } from "lucide-react"
 import { Card } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
+import { ChannelFinder } from "./channel-finder"
+import { ChartTooltip } from "@/components/ui/chart-tooltip"
 import { SectionHeader } from "@/components/telemetry/section-header"
 import { Sparkline } from "@/components/telemetry/sparkline"
 import { tooltipFormatter, formatValue } from "@/lib/format"
@@ -50,12 +52,16 @@ export const ChannelsExplorer = React.memo(function ChannelsExplorer(props: Chan
   const [category, setCategory] = useState<string>("all")
   const [statusFilter, setStatusFilter] = useState<"all" | ChannelStatus>("all")
   const [pinned, setPinned] = useState<Set<string>>(new Set())
+  const [finderOpen, setFinderOpen] = useState(false)
 
   const stats = useMemo(() => {
     const map = new Map<string, ReturnType<typeof computeChannelStat>>()
     for (const m of metrics) map.set(m.key as string, computeChannelStat(data, m.key as string))
     return map
   }, [data, metrics])
+
+  // The finder hides all-empty channels by default; reuse the computed per-channel status.
+  const isEmptyPID = (m: MetricConfig) => stats.get(m.key as string)?.status === "empty"
 
   const rows = useMemo(() => {
     const q = query.toLowerCase()
@@ -85,7 +91,7 @@ export const ChannelsExplorer = React.memo(function ChannelsExplorer(props: Chan
       return next
     })
 
-  const { grid, axis, tooltipContentStyle } = chartTheme
+  const { grid, axis } = chartTheme
   const availableCategories = useMemo(
     () => CHANNEL_CATEGORIES.filter((c) => metrics.some((m) => categoryOf(m) === c.id)),
     [metrics],
@@ -95,7 +101,15 @@ export const ChannelsExplorer = React.memo(function ChannelsExplorer(props: Chan
     <div className="grid grid-cols-1 gap-4 xl:grid-cols-12">
       {/* Explorer table */}
       <Card className="flex flex-col p-4 xl:col-span-5">
-        <SectionHeader title="Data Channels" hint="Every detected PID with its range, live value and health status." />
+        <SectionHeader
+          title="Data Channels"
+          hint="Every detected PID with its range, live value and health status."
+          actions={
+            <Button variant="outline" size="sm" className="h-7 px-2.5 text-xs" onClick={() => setFinderOpen(true)}>
+              <Command className="mr-1.5 h-3.5 w-3.5" /> Find
+            </Button>
+          }
+        />
         <div className="mb-3 space-y-2">
           <div className="relative">
             <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
@@ -231,7 +245,7 @@ export const ChannelsExplorer = React.memo(function ChannelsExplorer(props: Chan
                         <CartesianGrid strokeDasharray="3 3" stroke={grid} />
                         <XAxis dataKey={xAxis.key} type="number" domain={["dataMin", "dataMax"]} stroke={axis} fontSize={10} tickFormatter={(v) => xAxis.format(Number(v))} />
                         <YAxis stroke={axis} fontSize={10} domain={["auto", "auto"]} />
-                        <Tooltip contentStyle={tooltipContentStyle} formatter={tooltipFormatter} labelFormatter={(v: unknown) => `${xAxis.label}: ${xAxis.format(Number(v))}`} />
+                        <Tooltip content={<ChartTooltip labelFormatter={(v) => `${xAxis.label}: ${xAxis.format(Number(v))}`} valueFormatter={(val) => tooltipFormatter(val as number)} />} />
                         <Line dataKey={key} stroke={m.color} strokeWidth={2} dot={false} name={`${m.label} (${m.unit})`} />
                         {idleZones.map((zone, i) => (
                           <ReferenceArea key={`idle-${i}`} x1={zone.x1} x2={zone.x2} fill={TELEMETRY.idle} fillOpacity={0.08} stroke={TELEMETRY.idle} strokeOpacity={0.2} strokeDasharray="4 4" />
@@ -251,6 +265,18 @@ export const ChannelsExplorer = React.memo(function ChannelsExplorer(props: Chan
           </div>
         )}
       </Card>
+
+      <ChannelFinder
+        open={finderOpen}
+        onClose={() => setFinderOpen(false)}
+        metrics={metrics}
+        data={data}
+        isSelected={(key) => selectedPIDs.includes(key)}
+        onToggle={(key, next) => (next ? addPID(key) : removePID(key))}
+        isEmptyPID={isEmptyPID}
+        onClear={selectedPIDs.length > 0 ? () => setSelectedPIDs([]) : undefined}
+        title="Find channels to inspect"
+      />
     </div>
   )
 })

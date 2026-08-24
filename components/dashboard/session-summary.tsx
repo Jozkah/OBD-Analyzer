@@ -3,6 +3,7 @@
 import { Card } from "@/components/ui/card"
 import { StatCard, StatRow } from "@/components/telemetry/stat"
 import { SectionHeader } from "@/components/telemetry/section-header"
+import { AnimatedNumber } from "@/components/motion/animated-number"
 import { formatDuration } from "@/lib/elapsed-time"
 import { formatValue } from "@/lib/format"
 import type { SessionMeta } from "@/lib/session-summary"
@@ -32,7 +33,7 @@ interface SessionSummaryProps {
 
 export function SessionSummary({ meta, stats, tripTotals, speedUnit, importedFileNames, transmissionConfig }: SessionSummaryProps) {
   const duration = meta.durationSeconds != null ? formatDuration(meta.durationSeconds) : null
-  const distance = tripTotals.distance != null ? `${formatValue(tripTotals.distance)}` : null
+  const hasDistance = tripTotals.distance != null
   const distanceHint =
     tripTotals.distance == null
       ? "No trip-distance channel and no reliable timestamps to derive it"
@@ -47,11 +48,16 @@ export function SessionSummary({ meta, stats, tripTotals, speedUnit, importedFil
       <SectionHeader title="Session Summary" hint="A quick read on this drive before you dig into the charts." />
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
         <StatCard label="Duration" value={duration ?? "—"} accentClassName="text-primary" hint={duration ? undefined : "No reliable timestamps in this log"} />
-        <StatCard label="Distance" value={distance ?? "—"} unit={distance ? "km" : undefined} hint={distanceHint} />
-        <StatCard label="Max Speed" value={formatValue(stats.maxSpeed, speedUnit)} unit={speedUnit} accentClassName="text-success" />
-        <StatCard label="Max RPM" value={formatValue(stats.maxRPM, "RPM")} accentClassName="text-danger" />
-        <StatCard label="Avg Speed" value={formatValue(stats.avgSpeed, speedUnit)} unit={speedUnit} />
-        <StatCard label="Avg RPM" value={formatValue(stats.avgRPM, "RPM")} />
+        <StatCard
+          label="Distance"
+          value={hasDistance ? <AnimatedNumber value={tripTotals.distance} format={(n) => formatValue(n)} /> : "—"}
+          unit={hasDistance ? "km" : undefined}
+          hint={distanceHint}
+        />
+        <StatCard label="Max Speed" value={<AnimatedNumber value={stats.maxSpeed} format={(n) => formatValue(n, speedUnit)} />} unit={speedUnit} accentClassName="text-success" />
+        <StatCard label="Max RPM" value={<AnimatedNumber value={stats.maxRPM} format={(n) => formatValue(n, "RPM")} />} accentClassName="text-danger" />
+        <StatCard label="Avg Speed" value={<AnimatedNumber value={stats.avgSpeed} format={(n) => formatValue(n, speedUnit)} />} unit={speedUnit} />
+        <StatCard label="Avg RPM" value={<AnimatedNumber value={stats.avgRPM} format={(n) => formatValue(n, "RPM")} />} />
       </div>
 
       <div className="mt-4 grid grid-cols-1 gap-x-8 gap-y-1.5 text-sm md:grid-cols-2 lg:grid-cols-3">

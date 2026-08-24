@@ -1,6 +1,8 @@
 "use client"
 
+import { motion } from "motion/react"
 import { NAV_SECTIONS } from "./nav-config"
+import { SPRING } from "@/lib/motion"
 import { cn } from "@/lib/utils"
 
 interface BottomNavProps {
@@ -11,19 +13,30 @@ interface BottomNavProps {
 /**
  * Mobile bottom navigation. One tappable destination per primary section (no wrapped multi-row
  * tabs). Fixed to the bottom with a safe-area inset; large hit targets (min-h-14).
+ *
+ * A shared underline (layoutId) springs between the active destinations. Reduced motion drops the
+ * slide and the underline just moves to the active tab.
  */
 export function BottomNav({ activeTab, onSelect }: BottomNavProps) {
   return (
     <nav
       aria-label="Primary"
-      className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-lg md:hidden"
+      className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-background/90 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl md:hidden"
     >
       <ul className="mx-auto grid max-w-lg grid-cols-5">
         {NAV_SECTIONS.map((section) => {
           const Icon = section.icon
           const active = activeTab === section.id
           return (
-            <li key={section.id}>
+            <li key={section.id} className="relative">
+              {active && (
+                <motion.span
+                  layoutId="bottomNavActive"
+                  transition={SPRING.layout}
+                  className="absolute inset-x-3 top-0 h-0.5 rounded-full bg-primary"
+                  aria-hidden="true"
+                />
+              )}
               <button
                 type="button"
                 onClick={() => onSelect(section.id)}

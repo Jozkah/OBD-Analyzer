@@ -1,15 +1,18 @@
 "use client"
 
 import { useMemo, useState } from "react"
-import { Plus, X, Search } from "lucide-react"
+import { Plus, X, Search, Command } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { ChannelFinder } from "./channel-finder"
 import { CHANNEL_CATEGORIES, categoryOf } from "@/lib/channel-categories"
-import type { MetricConfig } from "@/types/obd"
+import type { DataPoint, MetricConfig } from "@/types/obd"
 
 interface ChannelPickerProps {
   metrics: MetricConfig[]
   enabledMetrics: MetricConfig[]
+  /** Full rows — used by the command finder to show each channel's health status. */
+  data: DataPoint[]
   isEmptyPID: (m: MetricConfig) => boolean
   setMetricEnabled: (key: string, enabled: boolean) => void
   setEnabledMetricKeys: (keys: string[]) => void
@@ -20,9 +23,10 @@ interface ChannelPickerProps {
  * panel with: preset groups, a searchable "add channel" control, and removable colour chips for
  * the current selection.
  */
-export function ChannelPicker({ metrics, enabledMetrics, isEmptyPID, setMetricEnabled, setEnabledMetricKeys }: ChannelPickerProps) {
+export function ChannelPicker({ metrics, enabledMetrics, data, isEmptyPID, setMetricEnabled, setEnabledMetricKeys }: ChannelPickerProps) {
   const [query, setQuery] = useState("")
   const [adding, setAdding] = useState(false)
+  const [finderOpen, setFinderOpen] = useState(false)
 
   const enabledKeys = useMemo(() => new Set(enabledMetrics.map((m) => m.key as string)), [enabledMetrics])
 
@@ -61,6 +65,9 @@ export function ChannelPicker({ metrics, enabledMetrics, isEmptyPID, setMetricEn
         ))}
         <Button variant="ghost" size="sm" className="h-7 px-2.5 text-xs text-muted-foreground" onClick={() => setEnabledMetricKeys([])}>
           Clear
+        </Button>
+        <Button variant="outline" size="sm" className="ml-auto h-7 px-2.5 text-xs" onClick={() => setFinderOpen(true)}>
+          <Command className="mr-1.5 h-3.5 w-3.5" /> Find channels
         </Button>
       </div>
 
@@ -131,6 +138,19 @@ export function ChannelPicker({ metrics, enabledMetrics, isEmptyPID, setMetricEn
           </Button>
         )}
       </div>
+
+      <ChannelFinder
+        open={finderOpen}
+        onClose={() => setFinderOpen(false)}
+        metrics={metrics}
+        data={data}
+        isSelected={(key) => enabledKeys.has(key)}
+        onToggle={(key, next) => setMetricEnabled(key, next)}
+        isEmptyPID={isEmptyPID}
+        onApplyPreset={applyPreset}
+        onClear={() => setEnabledMetricKeys([])}
+        title="Find channels to plot"
+      />
     </div>
   )
 }

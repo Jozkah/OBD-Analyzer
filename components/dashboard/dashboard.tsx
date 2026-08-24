@@ -2,6 +2,8 @@
 
 import dynamic from "next/dynamic"
 import { Share2 } from "lucide-react"
+import { AnimatePresence, motion } from "motion/react"
+import { section } from "@/lib/motion"
 import { ErrorBoundary } from "@/components/error-boundary"
 import { useObdSession, SHARING_ENABLED } from "@/hooks/use-obd-session"
 import { calculateGear, getShiftIndicator } from "@/lib/gear"
@@ -125,7 +127,8 @@ export function Dashboard() {
             )}
 
             {hasData && (
-              <>
+              <AnimatePresence mode="wait" initial={false}>
+                <motion.div key={s.activeTab} variants={section} initial="hidden" animate="visible" exit="exit">
                 {s.activeTab === "overview" && (
                   <OverviewTab
                     meta={s.sessionMeta}
@@ -135,6 +138,7 @@ export function Dashboard() {
                     importedFileNames={s.importedFileNames}
                     transmissionConfig={s.transmissionConfig}
                     healthFindings={s.healthFindings}
+                    data={s.data}
                     overviewChartData={s.overviewChartData}
                     enabledMetrics={s.enabledMetrics}
                     metrics={s.metrics}
@@ -218,7 +222,8 @@ export function Dashboard() {
                     />
                   </ErrorBoundary>
                 )}
-              </>
+                </motion.div>
+              </AnimatePresence>
             )}
           </main>
         </div>
@@ -253,7 +258,7 @@ export function Dashboard() {
         />
       )}
       <SharePromptDialog shareId={s.pendingShareId} onLoad={s.loadSharedLog} onDismiss={s.dismissSharedPrompt} />
-      <Toast message={s.toastMessage} />
+      <Toast toast={s.toast} onDismiss={s.dismissToast} />
     </div>
   )
 }
