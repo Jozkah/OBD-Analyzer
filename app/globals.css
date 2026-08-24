@@ -23,7 +23,7 @@
     --card-foreground: 213 24% 95%;
     --popover: 227 24% 8%;
     --popover-foreground: 213 24% 95%;
-    --primary: 189 95% 55%;
+    --primary: 190 82% 52%;
     --primary-foreground: 228 45% 6%;
     --secondary: 226 19% 12%;
     --secondary-foreground: 213 24% 95%;
@@ -33,10 +33,10 @@
     --accent-foreground: 213 24% 95%;
     --destructive: 0 72% 51%;
     --destructive-foreground: 213 24% 95%;
-    --border: 225 16% 15%;
+    --border: 224 15% 18%;
     --input: 225 15% 18%;
-    --ring: 189 95% 55%;
-    --radius: 0.75rem;
+    --ring: 190 82% 52%;
+    --radius: 0.625rem;
 
     /* Status / semantic states. Each has a base (fill/icon) and a readable foreground. */
     --success: 152 62% 45%;
@@ -64,7 +64,7 @@
     /* Navigation rail / sidebar (previously referenced by tailwind but never defined). */
     --sidebar-background: 228 26% 5%;
     --sidebar-foreground: 213 20% 80%;
-    --sidebar-primary: 189 95% 55%;
+    --sidebar-primary: 190 82% 52%;
     --sidebar-primary-foreground: 228 45% 6%;
     --sidebar-accent: 226 19% 13%;
     --sidebar-accent-foreground: 213 24% 95%;
@@ -78,7 +78,7 @@
    * touch versus the dark theme so the same series/grid/axis stay legible on a light plot.
    */
   .light {
-    --background: 210 40% 98%;
+    --background: 210 24% 97%;
     --foreground: 224 40% 12%;
     --card: 0 0% 100%;
     --card-foreground: 224 40% 12%;
@@ -86,15 +86,15 @@
     --popover-foreground: 224 40% 12%;
     --primary: 191 91% 38%;
     --primary-foreground: 0 0% 100%;
-    --secondary: 214 32% 93%;
+    --secondary: 214 24% 93%;
     --secondary-foreground: 224 40% 14%;
-    --muted: 214 30% 94%;
+    --muted: 214 22% 94%;
     --muted-foreground: 220 12% 40%;
     --accent: 210 40% 90%;
     --accent-foreground: 224 40% 14%;
     --destructive: 0 72% 48%;
     --destructive-foreground: 0 0% 100%;
-    --border: 214 25% 84%;
+    --border: 214 20% 86%;
     --input: 214 25% 82%;
     --ring: 191 91% 38%;
 
@@ -118,7 +118,7 @@
     --chart-4: 272 60% 50%;
     --chart-5: 340 75% 48%;
 
-    --sidebar-background: 210 40% 96%;
+    --sidebar-background: 210 24% 96%;
     --sidebar-foreground: 224 30% 25%;
     --sidebar-primary: 191 91% 38%;
     --sidebar-primary-foreground: 0 0% 100%;
@@ -141,10 +141,10 @@
   }
   body {
     @apply bg-background text-foreground antialiased;
-    /* Subtle accent glow bleeding in from the top, like backlit cluster glass. */
+    /* A quiet top glow keeps the instrument character without tinting every surface. */
     background-image: radial-gradient(
       1100px 480px at 50% -160px,
-      hsl(var(--primary) / 0.07),
+      hsl(var(--primary) / 0.035),
       transparent 70%
     );
     background-attachment: fixed;

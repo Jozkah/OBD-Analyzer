@@ -34,16 +34,15 @@ export function SideNav({ activeTab, onSelect, onOpenSettings, settingsDisabled 
                 aria-label={section.fullLabel}
                 title={section.fullLabel}
                 className={cn(
-                  "flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
+                  "flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium transition-colors",
                   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar",
                   active
-                    ? "bg-sidebar-accent text-sidebar-primary"
+                    ? "bg-sidebar-accent text-sidebar-accent-foreground shadow-[inset_2px_0_0_hsl(var(--sidebar-primary))]"
                     : "text-sidebar-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground",
                 )}
               >
                 <Icon className="h-5 w-5 shrink-0" aria-hidden="true" />
                 <span className="hidden xl:inline">{section.fullLabel}</span>
-                {active && <span className="ml-auto hidden h-1.5 w-1.5 rounded-full bg-sidebar-primary xl:block" />}
               </button>
             </li>
           )
@@ -56,7 +55,7 @@ export function SideNav({ activeTab, onSelect, onOpenSettings, settingsDisabled 
         aria-label="Settings — transmission configuration"
         title="Transmission configuration"
         className={cn(
-          "flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-sidebar-foreground transition-colors",
+          "flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium text-sidebar-foreground transition-colors",
           "hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground",
           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
           "disabled:cursor-not-allowed disabled:opacity-40",

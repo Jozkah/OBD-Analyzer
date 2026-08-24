@@ -12,9 +12,9 @@ interface StatCardProps {
 /** A single headline metric tile (label above, large tabular value below). */
 export function StatCard({ label, value, unit, accentClassName, hint }: StatCardProps) {
   return (
-    <div className="rounded-lg border border-border/70 bg-secondary/40 p-3" title={hint}>
-      <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{label}</div>
-      <div className={`mt-1 font-mono text-xl tabular-nums ${accentClassName ?? "text-foreground"}`}>
+    <div className="border-l-2 border-primary/35 bg-secondary/25 px-3 py-2.5" title={hint}>
+      <div className="text-xs font-medium text-muted-foreground">{label}</div>
+      <div className={`mt-1 text-xl font-semibold tracking-tight tabular-nums ${accentClassName ?? "text-foreground"}`}>
         {value}
         {unit && <span className="ml-1 text-sm font-normal text-muted-foreground">{unit}</span>}
       </div>

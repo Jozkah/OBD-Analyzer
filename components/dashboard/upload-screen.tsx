@@ -18,35 +18,36 @@ const SOURCES = ["Car Scanner", "Torque", "OBD Fusion", "OBDLink"]
 
 export function UploadScreen({ isDragOver, onDrop, onDragOver, onDragLeave, onChooseFiles, onLoadSample }: UploadScreenProps) {
   return (
-    <div className="relative mx-auto mt-6 w-full max-w-3xl md:mt-14">
-      <div aria-hidden className="pointer-events-none absolute -top-28 left-1/2 h-72 w-[34rem] max-w-full -translate-x-1/2 rounded-full bg-primary/10 blur-3xl" />
-      <div className="relative mb-8 text-center">
-        <span className="inline-flex items-center gap-2 rounded-full border border-primary/25 bg-primary/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-primary">
-          <ShieldCheck className="h-3.5 w-3.5" aria-hidden="true" />
-          100% client-side · nothing leaves your browser
+    <div className="mx-auto mt-8 w-full max-w-3xl md:mt-16">
+      <div className="mb-8 text-center">
+        <span className="inline-flex items-center gap-2 rounded-full border border-border bg-secondary/45 px-3 py-1.5 text-xs font-medium text-muted-foreground">
+          <ShieldCheck className="h-3.5 w-3.5 text-primary" aria-hidden="true" />
+          Private, client-side analysis
         </span>
-        <h2 className="mt-6 text-balance text-4xl font-bold tracking-tight md:text-5xl">
-          Decode your <span className="text-primary">drive</span>
+        <h2 className="mt-5 text-balance text-3xl font-semibold tracking-tight md:text-4xl">
+          Decode your drive
         </h2>
-        <p className="mx-auto mt-4 max-w-xl text-pretty text-base text-muted-foreground">
-          Drop an OBD-II CSV log to explore RPM, speed, boost, gearbox usage and the GPS track — charted instantly, right here on your machine.
+        <p className="mx-auto mt-3 max-w-xl text-pretty text-base leading-relaxed text-muted-foreground">
+          Drop an OBD-II CSV log to explore RPM, speed, boost, gearbox usage and the GPS track — charted instantly on your machine.
         </p>
       </div>
 
       <Card
-        className={`relative border-dashed p-8 text-center transition-all duration-200 sm:p-10 ${
-          isDragOver ? "border-primary/70 bg-primary/[0.06]" : "hover:border-primary/40"
+        className={`border-dashed p-7 text-center transition-colors duration-200 sm:p-10 ${
+          isDragOver ? "border-primary/65 bg-primary/[0.045]" : "hover:border-primary/35"
         }`}
         onDrop={onDrop}
         onDragOver={onDragOver}
         onDragLeave={onDragLeave}
       >
-        <div className={`mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-2xl border transition-colors ${isDragOver ? "border-primary/50 bg-primary/15 text-primary" : "border-border bg-secondary/60 text-muted-foreground"}`}>
-          <Upload className="h-7 w-7" aria-hidden="true" />
+        <div className={`mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-xl border transition-colors ${
+          isDragOver ? "border-primary/45 bg-primary/10 text-primary" : "border-border bg-secondary/45 text-muted-foreground"
+        }`}>
+          <Upload className="h-6 w-6" aria-hidden="true" />
         </div>
-        <h3 className="mb-2 text-lg font-semibold">{isDragOver ? "Drop CSV file(s) here" : "Drag and drop CSV file(s) here"}</h3>
-        <p className="mx-auto mb-6 max-w-md text-sm text-muted-foreground">
-          Select one or multiple CSV files. Multiple files are merged automatically, in order, into one continuous session.
+        <h3 className="mb-2 text-lg font-semibold">{isDragOver ? "Drop CSV file(s) here" : "Drag and drop CSV file(s)"}</h3>
+        <p className="mx-auto mb-6 max-w-md text-sm leading-relaxed text-muted-foreground">
+          Select one or multiple CSV files. Session parts with matching PIDs are merged automatically into one timeline.
         </p>
         <div className="flex flex-col justify-center gap-3 sm:flex-row">
           <Button onClick={onChooseFiles}><Upload className="mr-2 h-4 w-4" />Choose CSV file(s)</Button>
@@ -56,7 +57,7 @@ export function UploadScreen({ isDragOver, onDrop, onDragOver, onDragLeave, onCh
           Works with exports from{" "}
           {SOURCES.map((s, i) => (
             <span key={s}>
-              <span className="font-medium text-foreground/70">{s}</span>
+              <span className="font-medium text-foreground/75">{s}</span>
               {i < SOURCES.length - 1 ? ", " : ""}
             </span>
           ))}{" "}
@@ -64,29 +65,29 @@ export function UploadScreen({ isDragOver, onDrop, onDragOver, onDragLeave, onCh
         </p>
       </Card>
 
-      <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <InfoCard icon={<ShieldCheck className="h-4 w-4 text-success" />} title="Private by default">
-          Files are parsed in your browser. Nothing is uploaded unless you explicitly create a share link.
-        </InfoCard>
-        <InfoCard icon={<Layers className="h-4 w-4 text-info" />} title="Merge session parts">
-          Several CSVs of the <em>same</em> session (same PIDs) merge in order into one timeline.
-        </InfoCard>
-        <InfoCard icon={<GitCompare className="h-4 w-4 text-warning" />} title="Independent sessions">
-          Logs from different drives or devices aren&rsquo;t time-synchronised — load them one at a time.
-        </InfoCard>
+      <div className="mt-5 divide-y divide-border/70 rounded-lg border border-border/70 bg-card/45 sm:grid sm:grid-cols-3 sm:divide-x sm:divide-y-0">
+        <InfoItem icon={<ShieldCheck className="h-4 w-4" />} title="Private by default">
+          Files stay in your browser unless you create a share link.
+        </InfoItem>
+        <InfoItem icon={<Layers className="h-4 w-4" />} title="Merge session parts">
+          Matching session files become one continuous timeline.
+        </InfoItem>
+        <InfoItem icon={<GitCompare className="h-4 w-4" />} title="Separate drives">
+          Load unrelated drives or devices one at a time.
+        </InfoItem>
       </div>
     </div>
   )
 }
 
-function InfoCard({ icon, title, children }: { icon: React.ReactNode; title: string; children: React.ReactNode }) {
+function InfoItem({ icon, title, children }: { icon: React.ReactNode; title: string; children: React.ReactNode }) {
   return (
-    <Card className="p-4 text-left">
-      <div className="mb-1.5 flex items-center gap-2">
+    <div className="p-4 text-left">
+      <div className="mb-1.5 flex items-center gap-2 text-muted-foreground">
         {icon}
-        <h4 className="text-sm font-semibold">{title}</h4>
+        <h4 className="text-sm font-semibold text-foreground">{title}</h4>
       </div>
-      <p className="text-xs text-muted-foreground">{children}</p>
-    </Card>
+      <p className="text-xs leading-relaxed text-muted-foreground">{children}</p>
+    </div>
   )
 }
