@@ -196,6 +196,9 @@ export function useObdSession() {
       const target = e.target as HTMLElement | null
       const tag = target?.tagName
       if (tag === "INPUT" || tag === "TEXTAREA" || target?.isContentEditable) return
+      // A focused slider thumb handles its own arrow keys; without this the global handler would
+      // double-step it (thumb + window both moving the cursor).
+      if (target?.getAttribute?.("role") === "slider") return
       const [lo, hi] = timeRange
       const step = e.shiftKey ? 10 : 1
       switch (e.key) {
