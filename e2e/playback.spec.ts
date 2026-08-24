@@ -36,6 +36,18 @@ test("play/pause toggles and speed multiplier is selectable", async ({ page }) =
   await expect(region.getByRole("button", { name: /4× speed/i })).toBeVisible()
 })
 
+test("shift indicator is exposed as a semantic, named element", async ({ page }) => {
+  await loadTrusted(page, { rows: 40 })
+  const region = bar(page)
+  // Jump to a fast sample so a gear (and therefore a recommendation) is available.
+  await region.getByRole("button", { name: "Jump to end" }).click()
+  // Not a bare span/title: it's an image-role node with a descriptive accessible name, and it
+  // carries a visible text label (never colour/icon alone).
+  const badge = region.getByRole("img", { name: /Shift recommendation:/i })
+  await expect(badge).toBeVisible()
+  await expect(badge).toHaveText(/Upshift|Downshift|Optimal/)
+})
+
 test("keyboard shortcuts control playback", async ({ page }) => {
   await loadTrusted(page, { rows: 40 })
   const region = bar(page)

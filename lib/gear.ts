@@ -78,6 +78,43 @@ export function getShiftIndicator(
   return { shouldShift: "optimal", reason: "Optimal gear" }
 }
 
+export type ShiftState = "up" | "down" | "optimal"
+
+export interface ShiftIndicatorView {
+  state: ShiftState
+  /** Visible text label (WCAG 1.4.1 — never colour/icon alone). */
+  label: string
+  /** Full accessible name for the semantic element. */
+  accessibleName: string
+  /** Tone bucket for styling (optimal → "hold"). */
+  tone: "up" | "down" | "hold"
+}
+
+const SHIFT_LABELS: Record<ShiftState, { label: string; fallbackReason: string }> = {
+  up: { label: "Upshift", fallbackReason: "Shift up" },
+  down: { label: "Downshift", fallbackReason: "Shift down" },
+  optimal: { label: "Optimal", fallbackReason: "Optimal gear" },
+}
+
+/**
+ * Presentation view for the shift recommendation — pure, so the four states (up / down / hold /
+ * unavailable) can be unit-tested without a DOM. Returns null when there is nothing to show, so a
+ * caller renders no indicator rather than an empty/ambiguous one.
+ */
+export function shiftIndicatorView(
+  shift: { shouldShift: ShiftState | null; reason: string } | null | undefined,
+): ShiftIndicatorView | null {
+  if (!shift || !shift.shouldShift) return null
+  const meta = SHIFT_LABELS[shift.shouldShift]
+  const reason = shift.reason || meta.fallbackReason
+  return {
+    state: shift.shouldShift,
+    label: meta.label,
+    accessibleName: `Shift recommendation: ${meta.label}${reason ? ` — ${reason}` : ""}`,
+    tone: shift.shouldShift === "optimal" ? "hold" : shift.shouldShift,
+  }
+}
+
 export function detectGearRatios(data: DataPoint[], speedUnit: "km/h" | "mph" = "km/h"): any {
   if (data.length < 100) return null
 

@@ -10,6 +10,7 @@ import {
 import { formatDuration, type TimeAxis } from "@/lib/elapsed-time"
 import { formatValue } from "@/lib/format"
 import { TELEMETRY } from "@/lib/chart-theme"
+import { shiftIndicatorView, type ShiftState } from "@/lib/gear"
 import type { DataPoint } from "@/types/obd"
 
 const RATES = [0.5, 1, 2, 4]
@@ -38,11 +39,11 @@ interface PlaybackBarProps {
   speedUnit: string
 }
 
-const SHIFT_META = {
-  up: { Icon: ArrowUp, label: "Upshift", cls: "text-success", fallbackReason: "Shift up" },
-  down: { Icon: ArrowDown, label: "Downshift", cls: "text-warning", fallbackReason: "Shift down" },
-  optimal: { Icon: Minus, label: "Optimal", cls: "text-muted-foreground", fallbackReason: "Optimal gear" },
-} as const
+const SHIFT_STYLE: Record<ShiftState, { Icon: typeof ArrowUp; cls: string }> = {
+  up: { Icon: ArrowUp, cls: "text-success" },
+  down: { Icon: ArrowDown, cls: "text-warning" },
+  optimal: { Icon: Minus, cls: "text-muted-foreground" },
+}
 
 function label(axis: TimeAxis, index: number): string {
   if (axis.trustworthy) return formatDuration(axis.elapsed[index] ?? 0)
@@ -130,20 +131,23 @@ export function PlaybackBar({
               <span><span className="text-muted-foreground">RPM </span><span style={{ color: TELEMETRY.rpm }}>{formatValue(currentDataPoint.rpm, "RPM")}</span></span>
               <span><span className="text-muted-foreground">THR </span><span style={{ color: TELEMETRY.throttle }}>{formatValue(currentDataPoint.throttle, "%")}%</span></span>
               <span><span className="text-muted-foreground">GEAR </span><span style={{ color: TELEMETRY.gear }}>{gear}</span></span>
-              {shift?.shouldShift && (() => {
-                const meta = SHIFT_META[shift.shouldShift]
-                const reason = shift.reason || meta.fallbackReason
-                // Not a live region: this changes with the cursor, and aria-live would announce on
-                // every sample during playback. A stable accessible name lets a screen reader read
-                // the recommendation on demand without a stream of interruptions.
+              {(() => {
+                const view = shiftIndicatorView(shift)
+                if (!view) return null
+                const { Icon, cls } = SHIFT_STYLE[view.state]
+                // role="img" gives the badge a discrete, named node a screen reader can read on
+                // demand — not a bare span, and not conveyed by colour/icon/title alone. It is
+                // deliberately NOT a live region: the recommendation changes on every cursor sample
+                // during playback, and aria-live would announce a stream of interruptions.
                 return (
                   <span
-                    className={`inline-flex items-center gap-1 rounded border border-current px-1.5 py-0.5 font-sans text-[11px] font-medium ${meta.cls}`}
-                    aria-label={`Shift recommendation: ${meta.label}${reason ? ` — ${reason}` : ""}`}
-                    title={reason}
+                    role="img"
+                    className={`inline-flex items-center gap-1 rounded border border-current px-1.5 py-0.5 font-sans text-[11px] font-medium ${cls}`}
+                    aria-label={view.accessibleName}
+                    title={view.accessibleName}
                   >
-                    <meta.Icon className="h-3 w-3" aria-hidden="true" />
-                    {meta.label}
+                    <Icon className="h-3 w-3" aria-hidden="true" />
+                    {view.label}
                   </span>
                 )
               })()}

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { getShiftIndicator } from "./gear"
+import { getShiftIndicator, shiftIndicatorView } from "./gear"
 import type { TransmissionConfig } from "@/types/obd"
 
 const config: TransmissionConfig = {
@@ -40,5 +40,39 @@ describe("getShiftIndicator", () => {
   it("returns no recommendation when rpm or gear is unavailable", () => {
     expect(getShiftIndicator(0, 3, config).shouldShift).toBeNull()
     expect(getShiftIndicator(4000, 0, config).shouldShift).toBeNull()
+  })
+})
+
+describe("shiftIndicatorView", () => {
+  it("maps an upshift to a named, labelled view", () => {
+    const v = shiftIndicatorView({ shouldShift: "up", reason: "Shift up at 6500 RPM" })
+    expect(v).not.toBeNull()
+    expect(v!.state).toBe("up")
+    expect(v!.label).toBe("Upshift")
+    expect(v!.tone).toBe("up")
+    expect(v!.accessibleName).toBe("Shift recommendation: Upshift — Shift up at 6500 RPM")
+  })
+
+  it("maps a downshift", () => {
+    const v = shiftIndicatorView({ shouldShift: "down", reason: "Shift down at 1500 RPM" })
+    expect(v!.state).toBe("down")
+    expect(v!.label).toBe("Downshift")
+    expect(v!.tone).toBe("down")
+    expect(v!.accessibleName).toContain("Downshift")
+  })
+
+  it("maps 'optimal' to a hold tone with the Optimal label", () => {
+    const v = shiftIndicatorView({ shouldShift: "optimal", reason: "" })
+    expect(v!.state).toBe("optimal")
+    expect(v!.label).toBe("Optimal")
+    expect(v!.tone).toBe("hold")
+    // Falls back to a meaningful reason when none is supplied.
+    expect(v!.accessibleName).toBe("Shift recommendation: Optimal — Optimal gear")
+  })
+
+  it("returns null when unavailable (no recommendation)", () => {
+    expect(shiftIndicatorView({ shouldShift: null, reason: "" })).toBeNull()
+    expect(shiftIndicatorView(null)).toBeNull()
+    expect(shiftIndicatorView(undefined)).toBeNull()
   })
 })
