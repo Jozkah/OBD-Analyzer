@@ -68,20 +68,29 @@ Open <http://localhost:3210> and upload a CSV (or the bundled sample). *(The dev
 pnpm build && pnpm start
 ```
 
-### Tests
-
-The pure logic (number parsing, acceleration-run detection, session summary, data health, elapsed-time semantics, channel stats/categories, multi-file merge, share helpers) has a [Vitest](https://vitest.dev) suite:
+### Lint, type-check and tests
 
 ```bash
-pnpm test
+pnpm lint            # ESLint (next/core-web-vitals)
+pnpm exec tsc --noEmit
+pnpm test            # Vitest unit suite
+pnpm build
+pnpm test:e2e        # Playwright (runs against a production build)
 ```
 
-End-to-end tests for the primary workflow (import → summary → navigation → playback → channels → theme) run with [Playwright](https://playwright.dev) against a production build, on desktop and mobile viewports:
+The pure logic has a [Vitest](https://vitest.dev) suite (~96 tests) covering number/CSV
+parsing, acceleration-run detection, session summary, **sampling-rate math**, data health
+(including a large-log stack-safety regression), **elapsed-time & playback stepping**, chart
+x-axis selection, channel stats/categories, multi-file merge, **transmission validation**,
+**gear shift logic**, and the share helpers.
 
-```bash
-pnpm build      # e2e runs against the built app
-pnpm test:e2e
-```
+End-to-end tests use [Playwright](https://playwright.dev) across **desktop and mobile** viewports
+(~29 distinct scenarios): real file upload, malformed / header-only / partial logs, sequential
+multi-file merge and incompatible-file rejection, trusted vs. sample-index playback and speed
+multipliers, chart axis labels, transmission Apply/Cancel/dirty-close, CSV & PNG export, GPS in
+km/h and mph, keyboard shortcuts, collapsed-nav accessible names, and a large-dataset guard. CI
+(`.github/workflows/ci.yml`) runs lint, type-check, unit tests, the production build and the
+Playwright suite on every push and PR.
 
 ## Sharing logs (optional)
 

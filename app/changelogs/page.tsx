@@ -18,6 +18,20 @@ interface ChangelogEntry {
 
 const changelogs: ChangelogEntry[] = [
   {
+    version: "3.0.1",
+    date: "2026-08-24",
+    title: "Correctness & QA Hardening",
+    type: "bugfix",
+    description: [
+      "Playback now advances by real elapsed time: each step consumes the true gap between samples (scaled by the 0.5×–4× speed), instead of assuming a fixed 10 Hz cadence — with capped recording gaps and a clearly-labelled sample-based fallback when timestamps aren't trustworthy",
+      "Charts plot against elapsed seconds (labelled “Time”) when timestamps are reliable, or the sample index (labelled “Sample”) otherwise — never mislabelling a row number as time; hover still maps to the correct original sample after downsampling",
+      "Restored the shift recommendation (upshift / downshift / hold, with the reason) in the playback bar, shown with an icon and text rather than colour alone",
+      "Fixed the effective sampling-rate figure (N−1 intervals over the duration) and the GPS speed unit label so it matches the value (km/h or mph)",
+      "Made data-health analysis safe on very large logs (no call-stack overflow), and the transmission dialog transactional — edits stay in a draft until Apply, Cancel discards, and closing with unsaved changes asks first",
+      "Completed the semantic-colour pass (playback readouts, idle overlays), added accessible names to the collapsed navigation, and added an ESLint setup plus Playwright end-to-end tests to CI",
+    ],
+  },
+  {
     version: "3.0.0",
     date: "2026-08-23",
     title: "Workspace Redesign: Summary, Data Health & Responsive Shell",

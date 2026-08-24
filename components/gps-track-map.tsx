@@ -356,6 +356,10 @@ export function GPSTrackMap({
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
     }
     drawMarker()
+    // hasSpeedVariation/speedRange/trackDegenerate are SET inside this effect from the same
+    // inputs; listing them as deps would re-run it in a loop. The deps above fully capture the
+    // scene inputs.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gpsData, currentTime, mapStyle, data, tileVersion, view, theme])
 
   // Mouse-wheel zoom toward the cursor. A native non-passive listener lets us
