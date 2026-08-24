@@ -3,7 +3,17 @@
 // series, so short transient spikes (e.g. an RPM flare or boost blip) survive instead of
 // being silently dropped between kept samples. Keeps whole rows, always keeps the first
 // and last point, and returns the input unchanged when it's already at/under the budget.
-export function lttbDownsample<T>(points: T[], threshold: number, getY: (p: T) => number): T[] {
+//
+// `getX` supplies the x-coordinate used for the triangle-area calculation. Pass the SAME domain
+// the chart plots against (elapsed seconds for a time axis) so point selection matches the
+// rendered spacing on irregularly-sampled logs. Defaults to the array index for backwards
+// compatibility.
+export function lttbDownsample<T>(
+  points: T[],
+  threshold: number,
+  getY: (p: T) => number,
+  getX: (p: T, i: number) => number = (_p, i) => i,
+): T[] {
   const n = points.length
   if (threshold >= n || threshold < 3) return points
   const sampled: T[] = [points[0]]
@@ -17,7 +27,7 @@ export function lttbDownsample<T>(points: T[], threshold: number, getY: (p: T) =
     let avgY = 0
     const avgLen = avgEnd - avgStart || 1
     for (let j = avgStart; j < avgEnd; j++) {
-      avgX += j
+      avgX += getX(points[j], j)
       avgY += getY(points[j])
     }
     avgX /= avgLen
@@ -25,11 +35,13 @@ export function lttbDownsample<T>(points: T[], threshold: number, getY: (p: T) =
     // Pick the point in THIS bucket that forms the largest triangle with a and the next avg.
     const rangeStart = Math.floor(i * bucketSize) + 1
     const rangeEnd = Math.floor((i + 1) * bucketSize) + 1
+    const ax = getX(points[a], a)
     const ay = getY(points[a])
     let maxArea = -1
     let chosen = rangeStart
     for (let j = rangeStart; j < rangeEnd; j++) {
-      const area = Math.abs((a - avgX) * (getY(points[j]) - ay) - (a - j) * (avgY - ay))
+      const cx = getX(points[j], j)
+      const area = Math.abs((ax - avgX) * (getY(points[j]) - ay) - (ax - cx) * (avgY - ay))
       if (area > maxArea) {
         maxArea = area
         chosen = j

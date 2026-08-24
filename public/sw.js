@@ -6,7 +6,7 @@
 // precache list: everything same-origin that loads on the first online visit is stored and
 // reused when offline. Cross-origin requests (e.g. opt-in map tiles) are left untouched.
 
-const CACHE = "obd-analyzer-v1"
+const CACHE = "obd-analyzer-v2"
 
 self.addEventListener("install", () => {
   // Activate this worker as soon as it's installed, without waiting for old tabs to close.
@@ -36,6 +36,11 @@ self.addEventListener("fetch", (event) => {
   }
   // Only manage same-origin traffic; never intercept map tiles or other cross-origin fetches.
   if (url.origin !== self.location.origin) return
+
+  // Never touch dynamic API routes (e.g. /api/share). These must always hit the network fresh —
+  // caching a shared-log response could serve a stale or expired log, and intercepting them here
+  // also hides them from tools (and tests) that mock the network at the page level.
+  if (url.pathname.startsWith("/api/")) return
 
   // Navigations: network-first so an online user always gets the freshest app, falling back
   // to the cached page (or the app root) when offline.

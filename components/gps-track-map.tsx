@@ -7,6 +7,8 @@ import { Map, Plus, Minus, Maximize2, Download } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import type { DataPoint, MapStyle } from "@/types/obd"
 import { safeMax, safeMin } from "@/lib/stats"
+import { filterGpsFixes, gpsSpeedRange, activeGpsFixIndex } from "@/lib/gps"
+import { getMapTheme } from "@/lib/map-theme"
 import {
   MAP_TILE_PX,
   mercatorPx,
@@ -21,10 +23,16 @@ export function GPSTrackMap({
   data,
   currentTime,
   onNotify,
+  theme = "dark",
+  speedUnit = "km/h",
 }: {
   data: DataPoint[]
   currentTime: number
   onNotify?: (msg: string) => void
+  /** Tints the offline backdrop/grid so the map surface isn't dark-only on the light theme. */
+  theme?: "light" | "dark"
+  /** Unit the log's speed values are already in — used for legend/readout labels (no conversion). */
+  speedUnit?: "km/h" | "mph"
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   // Default to "offline" so the GPS map makes NO external requests unless the user opts in
@@ -70,12 +78,16 @@ export function GPSTrackMap({
     // Only discard the true "no fix" sentinel pair (0,0); a finite point that sits
     // exactly on the equator (lat 0) or prime meridian (lng 0) is a valid fix and
     // must stay on the track. Using Number.isFinite also rejects undefined/NaN.
-    () =>
-      data.filter(
-        (d) => Number.isFinite(d.latitude) && Number.isFinite(d.longitude) && !(d.latitude === 0 && d.longitude === 0),
-      ),
+    () => filterGpsFixes(data),
     [data],
   )
+
+  // The active GPS sample for the readout: the most recent valid fix at or before the current
+  // playback sample. Marker position AND the speed readout both derive from THIS sample, so they
+  // always describe the same moment (rather than a marker fix + a speed from a different row).
+  const activeFixIdx = useMemo(() => activeGpsFixIndex(gpsData, currentTime), [gpsData, currentTime])
+  const activeFix = activeFixIdx >= 0 ? gpsData[activeFixIdx] : null
+  const activeFixIsCurrent = activeFix != null && (activeFix.time ?? -1) === currentTime
 
   // Reset to the auto-fit view whenever a different log is loaded.
   useEffect(() => {
@@ -106,6 +118,7 @@ export function GPSTrackMap({
 
     const width = rect.width
     const height = rect.height
+    const mapTheme = getMapTheme(theme, mapStyle)
 
     const lats = gpsData.map((d) => d.latitude!)
     const lngs = gpsData.map((d) => d.longitude!)
@@ -149,11 +162,8 @@ export function GPSTrackMap({
 
     // Speed gradient setup. safeMin/safeMax avoid the Math.max(...spread) stack overflow
     // on very large logs.
-    const speeds = gpsData.map((d) => d.speed || 0)
-    const minSpeed = safeMin(speeds)
-    const maxSpeed = safeMax(speeds)
+    const { min: minSpeed, max: maxSpeed, varies: speedVaries } = gpsSpeedRange(gpsData)
     const speedSpan = maxSpeed - minSpeed
-    const speedVaries = speedSpan > 0.001
     if (speedVaries !== hasSpeedVariation) setHasSpeedVariation(speedVaries)
     if (minSpeed !== speedRange.min || maxSpeed !== speedRange.max)
       setSpeedRange({ min: minSpeed, max: maxSpeed })
@@ -164,11 +174,11 @@ export function GPSTrackMap({
       ctx.lineJoin = "round"
       ctx.lineCap = "round"
       const path = gpsData.map((d) => toCanvas(d.latitude!, d.longitude!))
-      const neutral = mapStyle === "street" ? "#1d4ed8" : "#67e8f9"
+      const neutral = mapTheme.neutralTrack
       if (!degenerate && path.length > 1) {
         // Dark casing keeps the bright track legible over satellite imagery.
         ctx.save()
-        ctx.strokeStyle = "rgba(0,0,0,0.45)"
+        ctx.strokeStyle = mapTheme.trackCasing
         ctx.lineWidth = 8
         ctx.beginPath()
         ctx.moveTo(path[0].x, path[0].y)
@@ -176,10 +186,12 @@ export function GPSTrackMap({
         ctx.stroke()
         ctx.restore()
 
-        // Per-segment hue by speed (blue = slow → red = fast).
+        // Per-segment hue by speed (blue = slow → red = fast). A segment whose speed is UNKNOWN
+        // (missing/non-finite) is drawn neutral rather than being treated as 0 (slow/blue).
         for (let i = 0; i < path.length - 1; i++) {
-          if (speedVaries) {
-            const r = ((gpsData[i].speed || 0) - minSpeed) / speedSpan
+          const segSpeed = gpsData[i].speed
+          if (speedVaries && Number.isFinite(segSpeed as number)) {
+            const r = ((segSpeed as number) - minSpeed) / speedSpan
             ctx.strokeStyle = `hsl(${(1 - r) * 240}, 90%, 58%)`
           } else {
             ctx.strokeStyle = neutral
@@ -199,33 +211,37 @@ export function GPSTrackMap({
       ctx.font = "bold 12px Arial"
       ctx.textAlign = "center"
       ctx.textBaseline = "middle"
-      ctx.fillStyle = "#22c55e"
+      ctx.fillStyle = mapTheme.startMarker
       ctx.beginPath()
       ctx.arc(s.x, s.y, 8, 0, 2 * Math.PI)
       ctx.fill()
-      ctx.fillStyle = "#ffffff"
+      ctx.fillStyle = mapTheme.markerText
       ctx.fillText(sameSpot ? "S/F" : "S", s.x, s.y)
       if (!sameSpot) {
-        ctx.fillStyle = "#1f2937"
+        ctx.fillStyle = mapTheme.finishMarker
         ctx.beginPath()
         ctx.arc(e.x, e.y, 8, 0, 2 * Math.PI)
         ctx.fill()
-        ctx.fillStyle = "#ffffff"
+        ctx.fillStyle = mapTheme.markerText
         ctx.fillText("F", e.x, e.y)
       }
     }
 
     // The live position marker — the ONLY element that changes on a 100 ms playback tick.
-    // Drawn on top of the (cached) static scene every frame.
+    // Drawn on top of the (cached) static scene every frame. Marker policy for sparse GPS: the most
+    // recent valid fix at or before the current sample (never a jump forward to a future fix). Before
+    // the first fix there is no marker.
     const drawMarker = () => {
-      const currentPoint = gpsData.find((p) => (p.time ?? 0) >= currentTime) ?? gpsData[gpsData.length - 1]
+      const idx = activeGpsFixIndex(gpsData, currentTime)
+      if (idx < 0) return
+      const currentPoint = gpsData[idx]
       if (Number.isFinite(currentPoint?.latitude) && Number.isFinite(currentPoint?.longitude)) {
         const c = toCanvas(currentPoint.latitude!, currentPoint.longitude!)
-        ctx.fillStyle = "#ef4444"
+        ctx.fillStyle = mapTheme.liveMarker
         ctx.beginPath()
         ctx.arc(c.x, c.y, 7, 0, 2 * Math.PI)
         ctx.fill()
-        ctx.strokeStyle = "#ffffff"
+        ctx.strokeStyle = mapTheme.liveMarkerRing
         ctx.lineWidth = 3
         ctx.beginPath()
         ctx.arc(c.x, c.y, 9, 0, 2 * Math.PI)
@@ -238,11 +254,11 @@ export function GPSTrackMap({
     // ---- Offline style: no network at all, just a dark backdrop + grid under the track.
     if (mapStyle === "offline") {
       const g = ctx.createLinearGradient(0, 0, 0, height)
-      g.addColorStop(0, "#0f172a")
-      g.addColorStop(1, "#0b1222")
+      g.addColorStop(0, mapTheme.offlineGradient[0])
+      g.addColorStop(1, mapTheme.offlineGradient[1])
       ctx.fillStyle = g
       ctx.fillRect(0, 0, width, height)
-      ctx.strokeStyle = "#1e293b"
+      ctx.strokeStyle = mapTheme.offlineGrid
       ctx.lineWidth = 0.5
       ctx.setLineDash([2, 2])
       for (let i = 0; i <= 10; i++) {
@@ -277,7 +293,7 @@ export function GPSTrackMap({
     const y0 = Math.floor(originY / MAP_TILE_PX)
     const y1 = Math.floor((originY + height) / MAP_TILE_PX)
 
-    ctx.fillStyle = "#0b1222"
+    ctx.fillStyle = mapTheme.tileBackdrop
     ctx.fillRect(0, 0, width, height)
     for (let tx = x0; tx <= x1; tx++) {
       for (let ty = y0; ty <= y1; ty++) {
@@ -317,7 +333,7 @@ export function GPSTrackMap({
     // otherwise reuse it. A playback tick then only blits the cached scene and redraws the
     // marker, instead of re-compositing every tile and re-stroking the whole track each 100 ms
     // (#27). staticKey fingerprints every input that affects the static scene.
-    const staticKey = `${targetW}x${targetH}|${z}|${originX}|${originY}|${mapStyle}|${tileVersion}|${gpsData.length}|${minSpeed}|${maxSpeed}|${degenerate}`
+    const staticKey = `${targetW}x${targetH}|${z}|${originX}|${originY}|${mapStyle}|${tileVersion}|${gpsData.length}|${minSpeed}|${maxSpeed}|${degenerate}|${theme}`
     let off = offscreenRef.current
     if (!off) {
       off = document.createElement("canvas")
@@ -345,7 +361,11 @@ export function GPSTrackMap({
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
     }
     drawMarker()
-  }, [gpsData, currentTime, mapStyle, data, tileVersion, view])
+    // hasSpeedVariation/speedRange/trackDegenerate are SET inside this effect from the same
+    // inputs; listing them as deps would re-run it in a loop. The deps above fully capture the
+    // scene inputs.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gpsData, currentTime, mapStyle, data, tileVersion, view, theme])
 
   // Mouse-wheel zoom toward the cursor. A native non-passive listener lets us
   // preventDefault so the page doesn't scroll while zooming the map.
@@ -548,17 +568,26 @@ export function GPSTrackMap({
               <span className="tabular-nums">{Math.round(speedRange.min)}</span>
               <div className="h-2 w-8 rounded bg-gradient-to-r from-blue-500 to-red-500"></div>
               <span className="tabular-nums">{Math.round(speedRange.max)}</span>
-              <span className="text-muted-foreground">km/h</span>
+              <span className="text-muted-foreground">{speedUnit}</span>
             </div>
           </>
         ) : (
           <div className="text-muted-foreground mt-2">GPS track</div>
         )}
       </div>
-      {data[currentTime] && (
+      {activeFix ? (
         <div className="absolute bottom-3 left-3 rounded-lg border border-border/70 bg-background/85 px-3 py-2 shadow-lg shadow-black/30 backdrop-blur">
-          <div className="font-mono text-base font-semibold tabular-nums text-primary">{data[currentTime].speed?.toFixed(1)} km/h</div>
-          <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Current Speed</div>
+          <div className="font-mono text-base font-semibold tabular-nums text-primary">
+            {Number.isFinite(activeFix.speed as number) ? `${(activeFix.speed as number).toFixed(1)} ${speedUnit}` : "Unknown"}
+          </div>
+          <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+            {activeFixIsCurrent ? "Current Speed" : "Speed at last fix"}
+          </div>
+        </div>
+      ) : (
+        <div className="absolute bottom-3 left-3 rounded-lg border border-border/70 bg-background/85 px-3 py-2 shadow-lg shadow-black/30 backdrop-blur">
+          <div className="font-mono text-base font-semibold tabular-nums text-muted-foreground">No fix yet</div>
+          <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Location</div>
         </div>
       )}
       {mapStyle !== "offline" && (

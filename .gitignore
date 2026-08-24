@@ -5,6 +5,7 @@
 
 # next.js
 /.next/
+/.next-share/
 /out/
 
 # production
@@ -27,3 +28,16 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# playwright
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+
+# pnpm writes this locally to persist build-script approvals; it is not a
+# workspace and must not be committed (pnpm 9 in CI reads it as an empty workspace).
+pnpm-workspace.yaml
+
+# local screenshot output (e2e/screenshots.mjs)
+/.screenshots/

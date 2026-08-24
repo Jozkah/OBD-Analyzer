@@ -29,6 +29,10 @@ const securityHeaders = [
 ]
 
 const nextConfig = {
+  // Allow a second, isolated build/dev output dir (used by the Playwright "share-enabled" project's
+  // dev server so it can run with NEXT_PUBLIC_SHARING_ENABLED=true without clobbering the production
+  // `.next` the main E2E server serves from). Defaults to `.next` for all normal builds.
+  distDir: process.env.NEXT_DIST_DIR || ".next",
   images: {
     unoptimized: true,
   },
