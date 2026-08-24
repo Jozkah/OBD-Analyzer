@@ -10,6 +10,7 @@ import type { CRUCIAL_PIDS } from "@/lib/constants"
 import { safeMax } from "@/lib/stats"
 import { analyzeTimestamps } from "@/lib/timestamps"
 import { MAX_GAP_SECONDS } from "@/lib/playback"
+import { filterGpsFixes, classifyGpsCoverage } from "@/lib/gps"
 
 export type HealthSeverity = "critical" | "warning" | "info"
 
@@ -174,10 +175,9 @@ export function analyzeDataHealth(
   }
 
   // --- GPS ------------------------------------------------------------------
-  const gpsFixes = data.filter(
-    (d) => Number.isFinite(d.latitude) && Number.isFinite(d.longitude) && !(d.latitude === 0 && d.longitude === 0),
-  ).length
-  if (gpsFixes === 0) {
+  const gpsFixes = filterGpsFixes(data).length
+  const coverage = classifyGpsCoverage(gpsFixes, data.length)
+  if (coverage === "none") {
     findings.push({
       id: "gps-absent",
       severity: "info",
@@ -185,7 +185,7 @@ export function analyzeDataHealth(
       detail: "This log has no location fixes, so the route map is unavailable.",
       affects: "Route map, elevation profile",
     })
-  } else if (gpsFixes < data.length * 0.5) {
+  } else if (coverage === "sparse") {
     findings.push({
       id: "gps-sparse",
       severity: "info",

@@ -7,6 +7,7 @@ import { Map, Plus, Minus, Maximize2, Download } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import type { DataPoint, MapStyle } from "@/types/obd"
 import { safeMax, safeMin } from "@/lib/stats"
+import { filterGpsFixes, gpsSpeedRange } from "@/lib/gps"
 import {
   MAP_TILE_PX,
   mercatorPx,
@@ -76,10 +77,7 @@ export function GPSTrackMap({
     // Only discard the true "no fix" sentinel pair (0,0); a finite point that sits
     // exactly on the equator (lat 0) or prime meridian (lng 0) is a valid fix and
     // must stay on the track. Using Number.isFinite also rejects undefined/NaN.
-    () =>
-      data.filter(
-        (d) => Number.isFinite(d.latitude) && Number.isFinite(d.longitude) && !(d.latitude === 0 && d.longitude === 0),
-      ),
+    () => filterGpsFixes(data),
     [data],
   )
 
@@ -155,11 +153,8 @@ export function GPSTrackMap({
 
     // Speed gradient setup. safeMin/safeMax avoid the Math.max(...spread) stack overflow
     // on very large logs.
-    const speeds = gpsData.map((d) => d.speed || 0)
-    const minSpeed = safeMin(speeds)
-    const maxSpeed = safeMax(speeds)
+    const { min: minSpeed, max: maxSpeed, varies: speedVaries } = gpsSpeedRange(gpsData)
     const speedSpan = maxSpeed - minSpeed
-    const speedVaries = speedSpan > 0.001
     if (speedVaries !== hasSpeedVariation) setHasSpeedVariation(speedVaries)
     if (minSpeed !== speedRange.min || maxSpeed !== speedRange.max)
       setSpeedRange({ min: minSpeed, max: maxSpeed })
