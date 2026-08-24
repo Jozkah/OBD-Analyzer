@@ -39,11 +39,27 @@ function predictedSpeed(rpm: number, ratio: number, finalDrive: number, tyreDiam
   return ((rpm / (ratio * finalDrive)) * circ * 60) / 1000
 }
 
+// The draft is held as RAW STRINGS so a temporarily blank/invalid field can be shown and validated
+// rather than silently coerced to a default. Keys: finalDrive, tyreDiameterMm, shiftRpm,
+// numberOfGears, and gear-1 … gear-N.
+type RawDraft = Record<string, string>
+
+function seedRaw(cfg: TransmissionConfig): RawDraft {
+  const r: RawDraft = {
+    finalDrive: String(cfg.finalDrive),
+    tyreDiameterMm: String(cfg.tyreDiameterMm),
+    shiftRpm: String(cfg.shiftRpm),
+    numberOfGears: String(cfg.numberOfGears),
+  }
+  for (let g = 1; g <= cfg.numberOfGears; g++) r[`gear-${g}`] = String(cfg.gearRatios[g] ?? 1.0)
+  return r
+}
+
 export function TransmissionDialog(props: TransmissionDialogProps) {
   const { open, onClose, config: committedConfig, data, speedUnit, onApply, showToast, defaultConfig } = props
-  // `config` is the LOCAL DRAFT — every edit below mutates it, and nothing reaches the app until
-  // Apply. All the reads in the JSX therefore reflect unsaved edits.
-  const [config, setDraft] = useState<TransmissionConfig>(committedConfig)
+  // Raw draft — every manual edit writes the exact keystroke here; nothing reaches the app until
+  // Apply parses + validates it.
+  const [raw, setRaw] = useState<RawDraft>(() => seedRaw(committedConfig))
   const dialogRef = useRef<HTMLDivElement>(null)
   const prevFocusRef = useRef<HTMLElement | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -55,6 +71,10 @@ export function TransmissionDialog(props: TransmissionDialogProps) {
   const [autoResult, setAutoResult] = useState<ReturnType<typeof detectGearRatios> | null>(null)
   const [confirmReset, setConfirmReset] = useState(false)
   const [confirmClose, setConfirmClose] = useState(false)
+  // Only treat a backdrop click as "close" when the press STARTED on the backdrop. Without this a
+  // click that begins on a control (e.g. a tab) but whose mouseup drifts onto the backdrop after a
+  // layout shift would spuriously close the dialog.
+  const backdropPressRef = useRef(false)
 
   // Discard the draft and close.
   const discardAndClose = () => {
@@ -74,7 +94,7 @@ export function TransmissionDialog(props: TransmissionDialogProps) {
   // Seed the draft from the committed config each time the dialog opens.
   useEffect(() => {
     if (!open) return
-    setDraft(committedConfig)
+    setRaw(seedRaw(committedConfig))
     setDirty(false)
     setErrors([])
     setConfirmClose(false)
@@ -122,12 +142,70 @@ export function TransmissionDialog(props: TransmissionDialogProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
 
-  const update = (patch: Partial<TransmissionConfig> | ((p: TransmissionConfig) => TransmissionConfig)) => {
+  // A single raw field edit.
+  const setField = (field: string, value: string) => {
     setDirty(true)
     setErrors([])
-    if (typeof patch === "function") setDraft(patch)
-    else setDraft((prev) => ({ ...prev, ...patch }))
+    setRaw((prev) => {
+      const next = { ...prev, [field]: value }
+      if (field === "numberOfGears") {
+        const n = Number(value)
+        // When the count is a valid integer, make sure a raw entry exists for each new gear row.
+        if (Number.isInteger(n) && n >= 3 && n <= 10) {
+          for (let g = 1; g <= n; g++) if (next[`gear-${g}`] === undefined) next[`gear-${g}`] = "1.0"
+        }
+      }
+      return next
+    })
   }
+
+  // Replace the WHOLE draft (preset / auto-detect / import / reset). Re-seeds every raw field.
+  const applyWholeConfig = (cfg: TransmissionConfig) => {
+    setDirty(true)
+    setErrors([])
+    setRaw(seedRaw(cfg))
+  }
+
+  // Parse a raw field to a number; NaN when blank or non-numeric so validation can flag it.
+  const num = (field: string): number => {
+    const s = raw[field]
+    if (s === undefined || s.trim() === "") return NaN
+    const n = Number(s)
+    return Number.isFinite(n) ? n : NaN
+  }
+  // Parsed value for display, falling back to the committed value while a field is mid-edit.
+  const numOr = (field: string, fallback: number): number => {
+    const n = num(field)
+    return Number.isFinite(n) ? n : fallback
+  }
+
+  // How many gear rows to render: the parsed count when valid, else the number of existing gear
+  // entries, else the committed count.
+  const gearCount = useMemo(() => {
+    const n = Number(raw.numberOfGears)
+    if (Number.isInteger(n) && n >= 3 && n <= 10) return n
+    const keys = Object.keys(raw).filter((k) => k.startsWith("gear-"))
+    return keys.length >= 3 ? keys.length : committedConfig.numberOfGears
+  }, [raw, committedConfig.numberOfGears])
+
+  const gearRows = useMemo(() => Array.from({ length: gearCount }, (_, i) => i + 1), [gearCount])
+
+  // Build a candidate config from the raw draft (numbers may be NaN → the validator rejects them).
+  const buildConfig = (): TransmissionConfig => {
+    const numberOfGears = num("numberOfGears")
+    const count = Number.isInteger(numberOfGears) && numberOfGears >= 3 && numberOfGears <= 10 ? numberOfGears : gearCount
+    const gearRatios: Record<number, number> = {}
+    for (let g = 1; g <= count; g++) gearRatios[g] = num(`gear-${g}`)
+    return {
+      finalDrive: num("finalDrive"),
+      tyreDiameterMm: num("tyreDiameterMm"),
+      shiftRpm: num("shiftRpm"),
+      numberOfGears,
+      gearRatios,
+    }
+  }
+
+  const errorFor = (field: string): string | undefined => errors.find((e) => e.field === field)?.message
 
   const filteredPresets = useMemo(() => {
     let result = TRANSMISSION_PRESETS
@@ -139,25 +217,26 @@ export function TransmissionDialog(props: TransmissionDialogProps) {
     return result
   }, [presetQuery, presetSort])
 
-  const gearRows = useMemo(
-    () => Array.from({ length: config.numberOfGears }, (_, i) => i + 1),
-    [config.numberOfGears],
-  )
-
   if (!open) return null
 
   const applyAndClose = () => {
-    const found = validateTransmissionConfig(config)
+    const candidate = buildConfig()
+    const found = validateTransmissionConfig(candidate)
     if (found.length > 0) {
       setErrors(found)
       showToast("Fix the highlighted values before applying.")
       return
     }
-    onApply(config) // commit the validated draft (persists + recomputes gears)
+    onApply(candidate) // commit the validated draft (persists + recomputes gears)
     setDirty(false)
     showToast("Transmission configuration applied")
     onClose()
   }
+
+  // Shift RPM / final drive / tyre used for the predicted-speed preview (display only).
+  const previewShift = numOr("shiftRpm", committedConfig.shiftRpm)
+  const previewFinalDrive = numOr("finalDrive", committedConfig.finalDrive)
+  const previewTyre = numOr("tyreDiameterMm", committedConfig.tyreDiameterMm)
 
   return (
     <div
@@ -165,8 +244,12 @@ export function TransmissionDialog(props: TransmissionDialogProps) {
       role="dialog"
       aria-modal="true"
       aria-labelledby="transmission-dialog-title"
+      onMouseDown={(e) => {
+        backdropPressRef.current = e.target === e.currentTarget
+      }}
       onClick={(e) => {
-        if (e.target === e.currentTarget) requestClose()
+        if (e.target === e.currentTarget && backdropPressRef.current) requestClose()
+        backdropPressRef.current = false
       }}
       className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-0 backdrop-blur-sm sm:items-center sm:p-4"
     >
@@ -205,44 +288,33 @@ export function TransmissionDialog(props: TransmissionDialogProps) {
             {/* Manual */}
             <TabsContent value="manual" className="space-y-5">
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <Field label="Final Drive Ratio">
-                  <Input type="number" step="0.01" aria-label="Final Drive Ratio" value={config.finalDrive}
-                    onChange={(e) => update({ finalDrive: Number.parseFloat(e.target.value) || defaultConfig.finalDrive })} />
-                </Field>
-                <Field label="Tyre Diameter (mm)">
-                  <Input type="number" aria-label="Tyre Diameter in millimetres" value={config.tyreDiameterMm}
-                    onChange={(e) => update({ tyreDiameterMm: Number.parseInt(e.target.value) || defaultConfig.tyreDiameterMm })} />
-                </Field>
-                <Field label="Shift RPM">
-                  <Input type="number" aria-label="Shift RPM" value={config.shiftRpm}
-                    onChange={(e) => update({ shiftRpm: Number.parseInt(e.target.value) || defaultConfig.shiftRpm })} />
-                </Field>
-                <Field label="Number of Gears">
-                  <Input type="number" min="3" max="10" aria-label="Number of Gears" value={config.numberOfGears}
-                    onChange={(e) => {
-                      const newGears = Math.min(10, Math.max(3, Number.parseInt(e.target.value) || 6))
-                      update((prev) => {
-                        const newRatios = { ...prev.gearRatios }
-                        for (let i = 1; i <= newGears; i++) if (!newRatios[i]) newRatios[i] = 1.0
-                        Object.keys(newRatios).forEach((g) => { if (Number.parseInt(g) > newGears) delete newRatios[Number.parseInt(g)] })
-                        return { ...prev, numberOfGears: newGears, gearRatios: newRatios }
-                      })
-                    }} />
-                </Field>
+                <NumberField id="tx-final-drive" label="Final Drive Ratio" error={errorFor("finalDrive")}
+                  inputMode="decimal" value={raw.finalDrive ?? ""} onChange={(v) => setField("finalDrive", v)} />
+                <NumberField id="tx-tyre" label="Tyre Diameter (mm)" error={errorFor("tyreDiameterMm")}
+                  inputMode="numeric" value={raw.tyreDiameterMm ?? ""} onChange={(v) => setField("tyreDiameterMm", v)} />
+                <NumberField id="tx-shift-rpm" label="Shift RPM" error={errorFor("shiftRpm")}
+                  inputMode="numeric" value={raw.shiftRpm ?? ""} onChange={(v) => setField("shiftRpm", v)} />
+                <NumberField id="tx-gears" label="Number of Gears" error={errorFor("numberOfGears")}
+                  inputMode="numeric" value={raw.numberOfGears ?? ""} onChange={(v) => setField("numberOfGears", v)} />
               </div>
 
               <div>
-                <label className="mb-2 block text-sm font-medium text-foreground">Gear Ratios &amp; predicted speed at {config.shiftRpm} RPM</label>
+                <label className="mb-2 block text-sm font-medium text-foreground">Gear Ratios &amp; predicted speed at {Math.round(previewShift)} RPM</label>
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
                   {gearRows.map((gear) => {
-                    const ratio = config.gearRatios[gear] || 1.0
-                    const kmh = predictedSpeed(config.shiftRpm, ratio, config.finalDrive, config.tyreDiameterMm)
+                    const ratio = numOr(`gear-${gear}`, 1.0)
+                    const kmh = predictedSpeed(previewShift, ratio, previewFinalDrive, previewTyre)
                     const shown = speedUnit === "mph" ? kmh / 1.609344 : kmh
+                    const gerr = errorFor(`gear-${gear}`)
+                    const gid = `tx-gear-${gear}`
                     return (
                       <div key={gear} className="rounded-lg border border-border/60 bg-secondary/30 p-2">
-                        <label className="mb-1 block text-xs text-muted-foreground">Gear {gear}</label>
-                        <Input type="number" step="0.001" aria-label={`Gear ${gear} ratio`} className="h-8 text-sm" value={ratio}
-                          onChange={(e) => update((prev) => ({ ...prev, gearRatios: { ...prev.gearRatios, [gear]: Number.parseFloat(e.target.value) || 1.0 } }))} />
+                        <label htmlFor={gid} className="mb-1 block text-xs text-muted-foreground">Gear {gear}</label>
+                        <Input id={gid} type="text" inputMode="decimal" aria-label={`Gear ${gear} ratio`}
+                          aria-invalid={gerr ? true : undefined} aria-describedby={gerr ? `${gid}-error` : undefined}
+                          className="h-8 text-sm" value={raw[`gear-${gear}`] ?? ""}
+                          onChange={(e) => setField(`gear-${gear}`, e.target.value)} />
+                        {gerr && <p id={`${gid}-error`} className="mt-1 text-[11px] text-danger">{gerr}</p>}
                         <div className="mt-1 font-mono text-[11px] tabular-nums text-muted-foreground">≈ {Math.round(shown)} {speedUnit}</div>
                       </div>
                     )
@@ -258,11 +330,11 @@ export function TransmissionDialog(props: TransmissionDialogProps) {
                       onChange={(e) => {
                         setTireSizeInput(e.target.value)
                         const parsed = parseTireSize(e.target.value)
-                        if (parsed) update({ tyreDiameterMm: calculateTireDiameter(parsed.width, parsed.aspectRatio, parsed.rimSize) })
+                        if (parsed) setField("tyreDiameterMm", String(calculateTireDiameter(parsed.width, parsed.aspectRatio, parsed.rimSize)))
                       }} />
                   </Field>
                   <Field label="Calculated diameter">
-                    <div className="rounded-md border border-input bg-secondary/50 px-3 py-2 font-mono text-sm tabular-nums">{config.tyreDiameterMm} mm</div>
+                    <div className="rounded-md border border-input bg-secondary/50 px-3 py-2 font-mono text-sm tabular-nums">{Math.round(previewTyre)} mm</div>
                   </Field>
                 </div>
               </div>
@@ -290,7 +362,8 @@ export function TransmissionDialog(props: TransmissionDialogProps) {
                   <Card key={preset.name} className="border-border/70 bg-secondary/30 p-4">
                     <div className="mb-2 flex items-center justify-between gap-2">
                       <h3 className="font-semibold text-foreground">{preset.name}</h3>
-                      <Button size="sm" onClick={() => { update(() => preset.config); showToast(`Applied "${preset.name}"`) }}>Apply</Button>
+                      <Button size="sm" aria-label={`Use preset ${preset.name}`}
+                        onClick={() => { applyWholeConfig(preset.config); showToast(`Loaded "${preset.name}" into the draft`) }}>Use preset</Button>
                     </div>
                     <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm text-muted-foreground sm:grid-cols-4">
                       <div>Gears: <span className="text-foreground">{preset.config.numberOfGears}</span></div>
@@ -331,9 +404,9 @@ export function TransmissionDialog(props: TransmissionDialogProps) {
                   <Button size="sm" className="mt-4" onClick={() => {
                     const gearKeys = Object.keys(autoResult.gearRatios).map(Number)
                     const maxGear = gearKeys.length > 0 ? Math.max(...gearKeys) : 6
-                    update(() => ({ gearRatios: autoResult.gearRatios, finalDrive: autoResult.estimatedFinalDrive, tyreDiameterMm: autoResult.estimatedTireDiameter, shiftRpm: 7000, numberOfGears: maxGear }))
-                    showToast("Applied auto-detected settings")
-                  }}>Apply detected settings</Button>
+                    applyWholeConfig({ gearRatios: autoResult.gearRatios, finalDrive: autoResult.estimatedFinalDrive, tyreDiameterMm: autoResult.estimatedTireDiameter, shiftRpm: 7000, numberOfGears: maxGear })
+                    showToast("Loaded detected settings into the draft")
+                  }}>Use detected settings</Button>
                 </Card>
               )}
             </TabsContent>
@@ -344,14 +417,17 @@ export function TransmissionDialog(props: TransmissionDialogProps) {
                 <Card className="border-border/70 bg-secondary/30 p-4">
                   <h3 className="mb-2 font-semibold text-foreground">Export</h3>
                   <p className="mb-4 text-sm text-muted-foreground">Save the current configuration to a JSON file.</p>
-                  <Button className="w-full" variant="outline" onClick={() => exportTransmissionConfig(config)}><Download className="mr-2 h-4 w-4" />Export settings</Button>
+                  <Button className="w-full" variant="outline" onClick={() => exportTransmissionConfig(committedConfig)}><Download className="mr-2 h-4 w-4" />Export settings</Button>
                 </Card>
                 <Card className="border-border/70 bg-secondary/30 p-4">
                   <h3 className="mb-2 font-semibold text-foreground">Import</h3>
                   <p className="mb-4 text-sm text-muted-foreground">Load a configuration from a JSON file.</p>
                   <input ref={fileInputRef} type="file" accept=".json" className="hidden" onChange={(e) => {
                     const file = e.target.files?.[0]
-                    if (file) importTransmissionConfig(file, (c) => { update(() => c); showToast("Configuration imported") }, showToast)
+                    // Full-schema validation lives in the importer; an invalid file calls the error
+                    // path only, so the current draft is left untouched.
+                    if (file) importTransmissionConfig(file, (c) => { applyWholeConfig(c); showToast("Configuration imported into the draft") }, showToast)
+                    e.target.value = "" // allow re-importing the same file
                   }} />
                   <Button className="w-full" onClick={() => fileInputRef.current?.click()}><Upload className="mr-2 h-4 w-4" />Import settings</Button>
                 </Card>
@@ -377,7 +453,7 @@ export function TransmissionDialog(props: TransmissionDialogProps) {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={() => { update(() => defaultConfig); showToast("Reset to default configuration") }}>Reset</AlertDialogAction>
+            <AlertDialogAction onClick={() => { applyWholeConfig(defaultConfig); showToast("Reset to default configuration") }}>Reset</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
@@ -394,6 +470,36 @@ export function TransmissionDialog(props: TransmissionDialogProps) {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+    </div>
+  )
+}
+
+// A text-backed numeric field: shows the raw keystrokes, surfaces a field-level accessible error,
+// and never coerces blank/invalid input to a default.
+function NumberField(props: {
+  id: string
+  label: string
+  value: string
+  onChange: (value: string) => void
+  error?: string
+  inputMode?: "decimal" | "numeric"
+}) {
+  const { id, label, value, onChange, error, inputMode } = props
+  const errId = `${id}-error`
+  return (
+    <div>
+      <label htmlFor={id} className="mb-1.5 block text-sm font-medium text-foreground">{label}</label>
+      <Input
+        id={id}
+        type="text"
+        inputMode={inputMode}
+        aria-label={label}
+        aria-invalid={error ? true : undefined}
+        aria-describedby={error ? errId : undefined}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      />
+      {error && <p id={errId} className="mt-1 text-xs text-danger">{error}</p>}
     </div>
   )
 }

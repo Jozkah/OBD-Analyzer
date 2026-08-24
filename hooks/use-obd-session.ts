@@ -18,6 +18,8 @@ import { buildChartXAxis } from "@/lib/chart-x"
 import { computeCumulativeDistanceKm } from "@/lib/distance"
 import { analyzeDataHealth } from "@/lib/data-health"
 import { TRANSMISSION_PRESETS } from "@/lib/transmission-presets"
+import { normalizeTransmissionConfig } from "@/lib/transmission"
+import { isTransmissionConfigValid } from "@/lib/transmission-validate"
 
 const DEFAULT_TRANSMISSION: TransmissionConfig = {
   gearRatios: { 1: 3.538, 2: 1.92, 3: 1.323, 4: 1.026, 5: 0.822, 6: 0.681 },
@@ -110,9 +112,11 @@ export function useObdSession() {
     try {
       const saved = localStorage.getItem("obd.transmissionConfig")
       if (saved) {
-        const parsed = JSON.parse(saved)
-        if (parsed && parsed.gearRatios && parsed.finalDrive && parsed.tyreDiameterMm && parsed.numberOfGears) {
-          setTransmissionConfig(parsed)
+        // Validate the complete schema before trusting persisted state — a partial or
+        // out-of-range object would corrupt gear estimation, so fall back to defaults instead.
+        const cfg = normalizeTransmissionConfig(JSON.parse(saved))
+        if (cfg && isTransmissionConfigValid(cfg)) {
+          setTransmissionConfig(cfg)
         }
       }
     } catch {
