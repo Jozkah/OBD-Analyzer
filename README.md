@@ -78,17 +78,24 @@ pnpm build
 pnpm test:e2e        # Playwright (runs against a production build)
 ```
 
-The pure logic has a [Vitest](https://vitest.dev) suite (~96 tests) covering number/CSV
+The pure logic has a [Vitest](https://vitest.dev) suite (~157 tests) covering number/CSV
 parsing, acceleration-run detection, session summary, **sampling-rate math**, data health
-(including a large-log stack-safety regression), **elapsed-time & playback stepping**, chart
-x-axis selection, channel stats/categories, multi-file merge, **transmission validation**,
-**gear shift logic**, and the share helpers.
+(including a 200k-row stack-safety regression), **timestamp trust/quality analysis**,
+**physically-correct distance integration**, **elapsed-time & playback stepping**, x-domain-aware
+LTTB downsampling, chart x-axis selection, channel stats/categories, multi-file merge (including
+quoted headers), **GPS numeric helpers** (km/h & mph, coverage, degenerate tracks),
+**transmission validation & import parsing**, and **gear shift logic + indicator view**.
 
 End-to-end tests use [Playwright](https://playwright.dev) across **desktop and mobile** viewports
-(~29 distinct scenarios): real file upload, malformed / header-only / partial logs, sequential
-multi-file merge and incompatible-file rejection, trusted vs. sample-index playback and speed
-multipliers, chart axis labels, transmission Apply/Cancel/dirty-close, CSV & PNG export, GPS in
-km/h and mph, keyboard shortcuts, collapsed-nav accessible names, and a large-dataset guard. CI
+(~56 distinct scenarios, 112 executions): real file upload, malformed / header-only / partial logs,
+sequential multi-file merge (continuous trusted timeline) and overlapping / incompatible-file
+handling, **behavioural playback driven by a fake clock** (rate scaling, irregular sampling,
+duplicate timestamps, capped gaps, untrusted-cadence fallback, pause/resume, seek, range-end
+rewind), chart axis labels, the transmission draft form (field-level validation, preset / import /
+auto-detect as draft-only), CSV & PNG export, the **mocked share flow** (payload, link, expiry,
+copy, failure) plus its disabled state, GPS numeric readouts in km/h and mph, keyboard shortcuts,
+the semantic shift indicator, collapsed-nav accessible names, a 20k-row render smoke test, and a
+**CI-enforced no-horizontal-overflow check** across 320–1440 px in both themes. CI
 (`.github/workflows/ci.yml`) runs lint, type-check, unit tests, the production build and the
 Playwright suite on every push and PR.
 

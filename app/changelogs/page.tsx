@@ -18,6 +18,20 @@ interface ChangelogEntry {
 
 const changelogs: ChangelogEntry[] = [
   {
+    version: "3.0.2",
+    date: "2026-08-24",
+    title: "Correctness Pass 2: Physical Accuracy & Behavioural Tests",
+    type: "bugfix",
+    description: [
+      "Distance is now physically correct: speed is integrated over the real per-sample time (trapezoidal), units are normalised (km/h or mph), and when there's no trustworthy clock or trip-distance channel the app reports distance as unavailable rather than guessing a cadence",
+      "Separated timestamp handling into distinct policies — axis trust (for the time axis), quality findings (duplicates, gaps), and playback gap-capping — so a log can be trustworthy for plotting while still surfacing its quality issues",
+      "Chart downsampling (LTTB) now selects points against the plotted x-domain (elapsed seconds), so irregularly-sampled logs keep the right shape; hover still maps back to the original sample",
+      "Transmission dialog uses proper draft form values: blank/invalid entries are shown and validated (with field-level, accessible errors) instead of being silently replaced by defaults; imported and saved configurations are validated against the full schema before use, and presets / imports / auto-detect only fill the draft until you Apply",
+      "Multi-file merge compares quoted headers correctly, and an incompatible batch no longer disturbs an already-loaded session",
+      "Playback behaviour is now covered by fake-clock tests (rate scaling, irregular sampling, duplicate timestamps, capped gaps, untrusted fallback, pause/resume, seek, range-end rewind); GPS numeric readouts, the semantic shift indicator, the share flow, and a CI-enforced no-horizontal-overflow check across widths and themes are all tested too",
+    ],
+  },
+  {
     version: "3.0.1",
     date: "2026-08-24",
     title: "Correctness & QA Hardening",
