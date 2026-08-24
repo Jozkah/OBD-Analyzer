@@ -1,8 +1,16 @@
+// One-off helper to regenerate the docs/marketing screenshots. Not part of the test run.
+//   pnpm build && pnpm start &   # serve on :3210
+//   node e2e/screenshots.mjs      # writes into ./.screenshots (override with SHOT_DIR)
 import { chromium } from "@playwright/test"
+import { existsSync, mkdirSync } from "node:fs"
 
-const OUT = process.env.SHOT_DIR || "/tmp/claude-0/-home-user-OBD-Analyzer/35dcac91-8296-5bc2-babe-2992899930df/scratchpad/shots"
-const EXE = "/opt/pw-browsers/chromium-1194/chrome-linux/chrome"
-const BASE = "http://localhost:3210"
+// Repo-relative by default; override with SHOT_DIR. No machine-specific paths.
+const OUT = process.env.SHOT_DIR || "./.screenshots"
+mkdirSync(OUT, { recursive: true })
+// Use the env-provided browser, else Playwright's bundled one (executablePath undefined).
+const EXE = process.env.PLAYWRIGHT_CHROMIUM_PATH
+const executablePath = EXE && existsSync(EXE) ? EXE : undefined
+const BASE = process.env.BASE_URL || "http://localhost:3210"
 
 const setTheme = async (page, theme) => {
   await page.evaluate((t) => {
@@ -20,7 +28,7 @@ const loadSample = async (page) => {
 }
 
 const run = async () => {
-  const browser = await chromium.launch({ executablePath: EXE })
+  const browser = await chromium.launch(executablePath ? { executablePath } : {})
 
   // Desktop dark
   const d = await browser.newContext({ viewport: { width: 1440, height: 900 } })
