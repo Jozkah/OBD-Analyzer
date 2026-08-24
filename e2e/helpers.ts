@@ -2,8 +2,8 @@ import { type Page, expect } from "@playwright/test"
 
 // ---- Synthetic CSV builders (uploaded as in-memory buffers, no fixture files needed) ----
 
-function iso(i: number, stepSec = 1): string {
-  return new Date(Date.UTC(2024, 0, 1, 0, 0, 0) + i * stepSec * 1000).toISOString()
+function iso(i: number, stepSec = 1, startSec = 0): string {
+  return new Date(Date.UTC(2024, 0, 1, 0, 0, 0) + (startSec + i * stepSec) * 1000).toISOString()
 }
 
 interface TrustedOpts {
@@ -11,11 +11,13 @@ interface TrustedOpts {
   speedUnit?: "km/h" | "mph"
   gps?: boolean
   stepSec?: number
+  /** Seconds offset for the first row's timestamp — lets a second file continue after the first. */
+  startSec?: number
 }
 
 /** A well-formed log with trustworthy ISO timestamps, RPM, speed, throttle (+optional GPS). */
 export function trustedCsv(opts: TrustedOpts = {}): string {
-  const { rows = 30, speedUnit = "km/h", gps = false, stepSec = 1 } = opts
+  const { rows = 30, speedUnit = "km/h", gps = false, stepSec = 1, startSec = 0 } = opts
   // Include all four crucial PIDs (RPM, speed, throttle, coolant) so a full log triggers no
   // missing-channel dialog.
   const headers = [
@@ -33,7 +35,7 @@ export function trustedCsv(opts: TrustedOpts = {}): string {
     const speed = i * (speedUnit === "mph" ? 2 : 3)
     const throttle = Math.min(100, i * 4)
     const coolant = 80 + Math.min(20, i)
-    const row = [iso(i, stepSec), rpm, speed, throttle, coolant]
+    const row = [iso(i, stepSec, startSec), rpm, speed, throttle, coolant]
     if (gps) row.push((51.5 + i * 0.0005).toFixed(5), (-0.1 - i * 0.0005).toFixed(5))
     lines.push(row.join(","))
   }

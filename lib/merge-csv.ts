@@ -1,5 +1,6 @@
 // Merge multiple CSV files into a single file, preserving the header from the first file.
 // Extracted verbatim from app/page.tsx so the import workflow can be tested and reused.
+import { parseCsvLine } from "@/lib/csv"
 
 // Two logs of the SAME channels in the SAME order can still carry cosmetically different header
 // labels — compare each column by its unit-stripped name so those merge cleanly, while refusing
@@ -29,8 +30,9 @@ export async function mergeCSVFiles(orderedFiles: File[]): Promise<File> {
   }
 
   const headersCompatible = (a: string, b: string): boolean => {
-    const ca = a.split(",")
-    const cb = b.split(",")
+    // Quote-aware split so a header like `"Speed, mph",rpm` compares as two columns, not three.
+    const ca = parseCsvLine(a)
+    const cb = parseCsvLine(b)
     if (ca.length !== cb.length) return false
     for (let k = 0; k < ca.length; k++) {
       if (cellName(ca[k]) !== cellName(cb[k])) return false

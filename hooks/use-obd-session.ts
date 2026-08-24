@@ -439,9 +439,11 @@ export function useObdSession() {
         parseCSV(csvFiles[0])
       } else {
         const ordered = determineFileOrder(csvFiles)
-        setImportedFileNames(ordered.map((f) => f.name))
         try {
+          // Merge FIRST — only mutate session state once it succeeds, so an incompatible batch
+          // leaves any currently-loaded log (and its file-name chips) untouched.
           const merged = await mergeCSVFiles(ordered)
+          setImportedFileNames(ordered.map((f) => f.name))
           setSelectedFile(merged)
           parseCSV(merged)
         } catch (error) {
