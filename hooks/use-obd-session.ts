@@ -23,6 +23,7 @@ import { analyzeDataHealth } from "@/lib/data-health"
 import { TRANSMISSION_PRESETS } from "@/lib/transmission-presets"
 import { normalizeTransmissionConfig } from "@/lib/transmission"
 import { isTransmissionConfigValid } from "@/lib/transmission-validate"
+import type { ToastData, ToastVariant } from "@/components/dashboard/toast"
 
 const DEFAULT_TRANSMISSION: TransmissionConfig = {
   gearRatios: { 1: 3.538, 2: 1.92, 3: 1.323, 4: 1.026, 5: 0.822, 6: 0.681 },
@@ -78,13 +79,16 @@ export function useObdSession() {
   const [showMissingPIDsDialog, setShowMissingPIDsDialog] = useState(false)
 
   // --- Toast ---
-  const [toastMessage, setToastMessage] = useState<string | null>(null)
-  const toastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const showToast = useCallback((msg: string) => {
-    setToastMessage(msg)
-    if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current)
-    toastTimeoutRef.current = setTimeout(() => setToastMessage(null), 3000)
+  // A single toast slot holding a monotonic id (so re-showing the same text re-triggers the
+  // entrance), the message and a severity variant. Auto-dismiss + pause-on-hover live in the Toast
+  // component; the hook only owns "what is currently shown". `showToast` keeps its original
+  // single-string signature (variant defaults to "info") so every existing call site is unaffected.
+  const [toast, setToast] = useState<ToastData | null>(null)
+  const toastIdRef = useRef(0)
+  const showToast = useCallback((message: string, variant: ToastVariant = "info") => {
+    setToast({ id: ++toastIdRef.current, message, variant })
   }, [])
+  const dismissToast = useCallback(() => setToast(null), [])
 
   // --- Theme ---
   const [theme, setTheme] = useState<"light" | "dark">("dark")
@@ -274,17 +278,17 @@ export function useObdSession() {
 
         if (result.status === "empty") {
           resetDataState()
-          showToast("The selected CSV file is empty or contains no data.")
+          showToast("The selected CSV file is empty or contains no data.", "warning")
           return
         }
         if (result.status === "headerOnly") {
           resetDataState()
-          showToast("The CSV file has a header row but no data rows.")
+          showToast("The CSV file has a header row but no data rows.", "warning")
           return
         }
         if (result.status === "error") {
           resetDataState()
-          showToast("Couldn't parse this CSV file. Check the format and try again.")
+          showToast("Couldn't parse this CSV file. Check the format and try again.", "error")
           return
         }
 
@@ -304,7 +308,7 @@ export function useObdSession() {
       } catch (error) {
         console.error("Error parsing CSV:", error)
         resetDataState()
-        showToast("Couldn't parse this CSV file. Check the format and try again.")
+        showToast("Couldn't parse this CSV file. Check the format and try again.", "error")
       } finally {
         setIsLoading(false)
       }
@@ -334,12 +338,12 @@ export function useObdSession() {
     const csv = buildWindowCsv(data, metrics, timeRange[0], timeRange[1])
     const base = (importedFileNames[0] || "obd-log").replace(/\.csv$/i, "")
     downloadCsv(csv, `${base}-export.csv`)
-    showToast("Exported the current window as CSV.")
+    showToast("Exported the current window as CSV.", "success")
   }, [data, metrics, timeRange, importedFileNames, showToast])
 
   const handleShare = useCallback(async () => {
     if (!rawCsv) {
-      showToast("Load a log before sharing.")
+      showToast("Load a log before sharing.", "warning")
       return
     }
     setShareCopied(false)
@@ -372,7 +376,7 @@ export function useObdSession() {
         /* clipboard unavailable (insecure context / denied) — manual copy still works */
       }
     } catch {
-      showToast("Couldn't create a share link. Please try again.")
+      showToast("Couldn't create a share link. Please try again.", "error")
     } finally {
       setIsSharing(false)
     }
@@ -385,7 +389,7 @@ export function useObdSession() {
       setShareCopied(true)
       window.setTimeout(() => setShareCopied(false), 2000)
     } catch {
-      showToast("Couldn't copy — select the link and copy it manually.")
+      showToast("Couldn't copy — select the link and copy it manually.", "error")
     }
   }, [shareUrl, showToast])
 
@@ -418,7 +422,7 @@ export function useObdSession() {
         await parseCSV(file)
         setSharedNotice({ expiresAt: json.expiresAt ?? null })
       } catch {
-        showToast("Couldn't load the shared log.")
+        showToast("Couldn't load the shared log.", "error")
       } finally {
         setIsLoading(false)
       }
@@ -455,7 +459,7 @@ export function useObdSession() {
           setSelectedFile(merged)
           parseCSV(merged)
         } catch (error) {
-          showToast(error instanceof Error ? error.message : "Failed to merge CSV files")
+          showToast(error instanceof Error ? error.message : "Failed to merge CSV files", "error")
         }
       }
     },
@@ -843,7 +847,7 @@ export function useObdSession() {
     sharedNotice, pendingShareId, showMissingPIDsDialog, setShowMissingPIDsDialog,
     handleShare, copyShareUrl, loadSharedLog, dismissSharedPrompt, handleExportCsv,
     // toast
-    toastMessage, showToast,
+    toast, showToast, dismissToast,
   }
 }
 

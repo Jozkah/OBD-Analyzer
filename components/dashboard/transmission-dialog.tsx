@@ -1,7 +1,9 @@
 "use client"
 
 import { useEffect, useMemo, useRef, useState } from "react"
+import { motion } from "motion/react"
 import { X, Search, ChevronDown, Wand2, Download, Upload, RotateCcw } from "lucide-react"
+import { modal, DURATION } from "@/lib/motion"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -273,7 +275,14 @@ export function TransmissionDialog(props: TransmissionDialogProps) {
       }}
       className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-0 backdrop-blur-sm sm:items-center sm:p-4"
     >
-      <Card className="flex max-h-[92vh] w-full max-w-4xl flex-col overflow-hidden rounded-b-none sm:rounded-xl">
+      <motion.div
+        variants={modal}
+        initial="hidden"
+        animate="visible"
+        transition={{ duration: DURATION.overlay, ease: [0.16, 1, 0.3, 1] }}
+        className="flex w-full max-w-4xl"
+      >
+      <Card className="flex max-h-[92vh] w-full flex-col overflow-hidden rounded-b-none sm:rounded-xl">
         <div className="flex items-center justify-between border-b border-border/70 p-4 sm:p-5">
           <div>
             <h2 id="transmission-dialog-title" className="text-base font-semibold tracking-tight">Transmission Configuration</h2>
@@ -464,6 +473,7 @@ export function TransmissionDialog(props: TransmissionDialogProps) {
           </div>
         </div>
       </Card>
+      </motion.div>
 
       <AlertDialog open={confirmReset} onOpenChange={setConfirmReset}>
         <AlertDialogContent>

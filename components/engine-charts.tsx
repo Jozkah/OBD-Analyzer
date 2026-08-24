@@ -21,6 +21,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuCheckboxItem, DropdownMe
 import { SectionHeader } from "@/components/telemetry/section-header"
 import { ChartEmptyState } from "@/components/telemetry/chart-empty-state"
 import { tooltipFormatter } from "@/lib/format"
+import { ChartTooltip } from "@/components/ui/chart-tooltip"
 import { TELEMETRY, type ChartTheme } from "@/lib/chart-theme"
 import type { ChartXAxis } from "@/lib/chart-x"
 import type { DataPoint } from "@/types/obd"
@@ -51,7 +52,7 @@ export const EngineCharts = React.memo(function EngineCharts({
   selectedTempSensors,
   setSelectedTempSensors,
 }: EngineChartsProps) {
-  const { grid, axis, tooltipContentStyle } = chartTheme
+  const { grid, axis } = chartTheme
   const xProps = {
     dataKey: xAxis.key,
     type: "number" as const,
@@ -116,7 +117,7 @@ export const EngineCharts = React.memo(function EngineCharts({
                 <CartesianGrid strokeDasharray="3 3" stroke={grid} />
                 <XAxis {...xProps} />
                 <YAxis stroke={axis} fontSize={12} />
-                <Tooltip contentStyle={tooltipContentStyle} formatter={tooltipFormatter} labelFormatter={xTooltipLabel} />
+                <Tooltip content={<ChartTooltip labelFormatter={xTooltipLabel} valueFormatter={(v) => tooltipFormatter(v as number)} />} />
                 {selectedTempSensors.map((sensorKey) => {
                   const sensor = tempSensors.find((s) => s.key === sensorKey)
                   if (!sensor) return null
@@ -142,7 +143,7 @@ export const EngineCharts = React.memo(function EngineCharts({
                 <CartesianGrid strokeDasharray="3 3" stroke={grid} />
                 <XAxis {...xProps} />
                 <YAxis stroke={axis} fontSize={12} domain={["dataMin - 5", "dataMax + 5"]} />
-                <Tooltip contentStyle={tooltipContentStyle} formatter={tooltipFormatter} labelFormatter={xTooltipLabel} />
+                <Tooltip content={<ChartTooltip labelFormatter={xTooltipLabel} valueFormatter={(v) => tooltipFormatter(v as number)} />} />
                 <Line dataKey="ignitionAdvance" stroke={TELEMETRY.ignition} strokeWidth={2} dot={false} name="Ignition Advance (°)" />
                 {idleBand()}
               </LineChart>
@@ -162,7 +163,7 @@ export const EngineCharts = React.memo(function EngineCharts({
                 <CartesianGrid strokeDasharray="3 3" stroke={grid} />
                 <XAxis {...xProps} />
                 <YAxis stroke={axis} fontSize={12} domain={[(dataMin: number) => Math.min(dataMin - 0.2, -0.5), (dataMax: number) => Math.max(dataMax + 0.2, 0.5)]} tickFormatter={(v: number) => Number(v).toFixed(2)} />
-                <Tooltip contentStyle={tooltipContentStyle} formatter={tooltipFormatter} labelFormatter={xTooltipLabel} />
+                <Tooltip content={<ChartTooltip labelFormatter={xTooltipLabel} valueFormatter={(v) => tooltipFormatter(v as number)} />} />
                 <Line dataKey="boost" stroke={TELEMETRY.boost} strokeWidth={3} dot={false} name="Boost (bar)" />
                 {idleBand()}
               </LineChart>
@@ -182,7 +183,7 @@ export const EngineCharts = React.memo(function EngineCharts({
                 <CartesianGrid strokeDasharray="3 3" stroke={grid} />
                 <XAxis {...xProps} />
                 <YAxis stroke={axis} fontSize={12} />
-                <Tooltip contentStyle={tooltipContentStyle} formatter={tooltipFormatter} labelFormatter={xTooltipLabel} />
+                <Tooltip content={<ChartTooltip labelFormatter={xTooltipLabel} valueFormatter={(v) => tooltipFormatter(v as number)} />} />
                 <Area dataKey="fuelRate" fill={TELEMETRY.fuel} fillOpacity={0.3} stroke={TELEMETRY.fuel} name="Fuel Rate (l/hr)" strokeWidth={2} />
                 {idleBand()}
               </AreaChart>
@@ -202,7 +203,7 @@ export const EngineCharts = React.memo(function EngineCharts({
                 <CartesianGrid strokeDasharray="3 3" stroke={grid} />
                 <XAxis {...xProps} />
                 <YAxis stroke={axis} fontSize={12} domain={[0, 100]} />
-                <Tooltip contentStyle={tooltipContentStyle} formatter={tooltipFormatter} labelFormatter={xTooltipLabel} />
+                <Tooltip content={<ChartTooltip labelFormatter={xTooltipLabel} valueFormatter={(v) => tooltipFormatter(v as number)} />} />
                 <Area dataKey="throttle" fill={TELEMETRY.speed} fillOpacity={0.3} stroke={TELEMETRY.speed} name="Throttle (%)" />
                 <Area dataKey="brake" fill={TELEMETRY.idle} fillOpacity={0.3} stroke={TELEMETRY.idle} name="Brake (%)" type="monotone" />
                 {idleBand()}

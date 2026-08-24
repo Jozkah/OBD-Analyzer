@@ -18,6 +18,7 @@ import { Card } from "@/components/ui/card"
 import { SectionHeader } from "@/components/telemetry/section-header"
 import { ChartEmptyState } from "@/components/telemetry/chart-empty-state"
 import { tooltipFormatter } from "@/lib/format"
+import { ChartTooltip } from "@/components/ui/chart-tooltip"
 import { TELEMETRY, type ChartTheme } from "@/lib/chart-theme"
 import type { ChartXAxis } from "@/lib/chart-x"
 import type { DataPoint, TransmissionConfig } from "@/types/obd"
@@ -89,7 +90,7 @@ export const PerformanceCharts = React.memo(function PerformanceCharts({
                 <XAxis {...xProps} />
                 <YAxis yAxisId="rpm" stroke={TELEMETRY.rpm} fontSize={12} orientation="left" label={{ value: "RPM", angle: -90, position: "insideLeft", fill: TELEMETRY.rpm, fontSize: 11 }} />
                 <YAxis yAxisId="speed" stroke={TELEMETRY.speed} fontSize={12} orientation="right" label={{ value: "Speed", angle: 90, position: "insideRight", fill: TELEMETRY.speed, fontSize: 11 }} />
-                <Tooltip contentStyle={tooltipContentStyle} formatter={tooltipFormatter} labelFormatter={xTooltipLabel} />
+                <Tooltip content={<ChartTooltip labelFormatter={xTooltipLabel} valueFormatter={(v) => tooltipFormatter(v as number)} />} />
                 <Line yAxisId="rpm" dataKey="rpm" stroke={TELEMETRY.rpm} strokeWidth={2} dot={false} name="RPM" />
                 <Line yAxisId="speed" dataKey="speed" stroke={TELEMETRY.speed} strokeWidth={2} dot={false} name={`Speed (${speedUnit})`} />
                 {idleZones.map((zone, i) => (
@@ -116,7 +117,7 @@ export const PerformanceCharts = React.memo(function PerformanceCharts({
                 <XAxis {...xProps} />
                 <YAxis yAxisId="throttle" stroke={TELEMETRY.throttle} fontSize={12} orientation="left" label={{ value: "Throttle %", angle: -90, position: "insideLeft", fill: TELEMETRY.throttle, fontSize: 11 }} />
                 <YAxis yAxisId="speed" stroke={TELEMETRY.speed} fontSize={12} orientation="right" label={{ value: "Speed", angle: 90, position: "insideRight", fill: TELEMETRY.speed, fontSize: 11 }} />
-                <Tooltip contentStyle={tooltipContentStyle} formatter={tooltipFormatter} labelFormatter={xTooltipLabel} />
+                <Tooltip content={<ChartTooltip labelFormatter={xTooltipLabel} valueFormatter={(v) => tooltipFormatter(v as number)} />} />
                 <Line yAxisId="throttle" dataKey="throttle" stroke={TELEMETRY.throttle} strokeWidth={2} dot={false} name="Throttle" />
                 <Line yAxisId="speed" dataKey="speed" stroke={TELEMETRY.speed} strokeWidth={2} dot={false} name={`Speed (${speedUnit})`} />
                 {idleZones.map((zone, i) => (
@@ -143,7 +144,7 @@ export const PerformanceCharts = React.memo(function PerformanceCharts({
                 <XAxis {...xProps} />
                 <YAxis yAxisId="left" stroke={TELEMETRY.power} orientation="left" label={{ value: "Power (hp)", angle: -90, position: "insideLeft", fill: TELEMETRY.power, fontSize: 11 }} />
                 <YAxis yAxisId="right" stroke={TELEMETRY.torque} orientation="right" label={{ value: "Torque (N·m)", angle: 90, position: "insideRight", fill: TELEMETRY.torque, fontSize: 11 }} />
-                <Tooltip contentStyle={tooltipContentStyle} formatter={tooltipFormatter} labelFormatter={xTooltipLabel} />
+                <Tooltip content={<ChartTooltip labelFormatter={xTooltipLabel} valueFormatter={(v) => tooltipFormatter(v as number)} />} />
                 <Area yAxisId="left" dataKey="enginePower" fill={TELEMETRY.power} fillOpacity={0.3} stroke={TELEMETRY.power} name="Power (hp)" />
                 <Line yAxisId="right" dataKey="engineTorque" stroke={TELEMETRY.torque} strokeWidth={2} dot={false} name="Torque (N•m)" />
                 {idleZones.map((zone, i) => (

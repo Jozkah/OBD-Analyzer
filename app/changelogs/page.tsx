@@ -18,6 +18,21 @@ interface ChangelogEntry {
 
 const changelogs: ChangelogEntry[] = [
   {
+    version: "3.1.0",
+    date: "2026-08-24",
+    title: "Motion, UI Rework & Visual Polish",
+    type: "improvement",
+    description: [
+      "Introduced a centralised motion system (Motion for React) with shared timing/easing tokens and reusable variants; the whole app runs under a MotionConfig that honours the OS “reduce motion” setting — reduced-motion users get immediate state changes and short opacity only, never large movement, and no content is ever hidden behind an animation",
+      "Reworked the visual language: layered dark surfaces (page → nav → panels → floating menus), multi-level text instead of pure white everywhere, harmonised status colours (no fluorescent tones), a subtly cool light theme, and a calmer backdrop glow — keeping the monospace-telemetry, cyan-accent identity",
+      "Active section indicators in the sidebar and mobile bottom-nav now spring between destinations with a shared element (layoutId); section switches use a short opacity/position transition rather than a hard swap",
+      "Added an animated count-up for the Session Summary values that respects exact formatting and units, never turns an unavailable value into a fake number, and hands assistive tech the final value rather than every frame",
+      "Added a command-style channel finder (Overview and Data Channels): search by name, PID or category, filter by category/health, toggle with pointer or keyboard (↑/↓ + Enter), Escape closes and restores focus — reusing the existing metric catalogue and selection state, with a mobile bottom-sheet presentation",
+      "Reworked toasts with success/info/warning/error variants, an accessible live region, auto-dismiss that pauses on hover/focus, and a manual dismiss button; charts gained a consistent shadcn-style tooltip while keeping Recharts and all hover/sync/downsampling/export behaviour unchanged",
+      "Landing/import reveal, button press feedback, and a polished transmission-dialog entrance — all transform/opacity only, all preserving the existing focus trapping, Escape handling, backdrop behaviour and unsaved-change protection",
+    ],
+  },
+  {
     version: "3.0.4",
     date: "2026-08-24",
     title: "Correctness Pass 4: Trip-Counter Baselines, Stuck-Counter Safety & Real Hover Sync",

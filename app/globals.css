@@ -17,59 +17,64 @@
    */
   :root,
   .dark {
-    --background: 228 26% 4%;
-    --foreground: 213 24% 95%;
-    --card: 227 22% 7%;
-    --card-foreground: 213 24% 95%;
-    --popover: 227 24% 8%;
-    --popover-foreground: 213 24% 95%;
-    --primary: 189 95% 55%;
-    --primary-foreground: 228 45% 6%;
-    --secondary: 226 19% 12%;
-    --secondary-foreground: 213 24% 95%;
-    --muted: 226 18% 11%;
-    --muted-foreground: 222 12% 64%;
-    --accent: 226 19% 15%;
-    --accent-foreground: 213 24% 95%;
-    --destructive: 0 72% 51%;
-    --destructive-foreground: 213 24% 95%;
-    --border: 225 16% 15%;
-    --input: 225 15% 18%;
-    --ring: 189 95% 55%;
-    --radius: 0.75rem;
+    /*
+     * Layered dark surfaces. Four deliberate elevations so the eye can read the structure:
+     *   background (page) < sidebar (nav rail) < card (panels) < popover (floating menus),
+     * with `secondary`/`muted` as insets WITHIN a card and `accent` as the hover/selected inset.
+     */
+    --background: 228 24% 5%;
+    --foreground: 210 22% 92%; /* primary text — soft white, never pure #fff */
+    --card: 226 20% 8%;
+    --card-foreground: 210 22% 92%;
+    --popover: 225 22% 11%;
+    --popover-foreground: 210 22% 94%;
+    --primary: 189 88% 54%; /* electric cyan identity, a touch less fluorescent */
+    --primary-foreground: 224 45% 6%;
+    --secondary: 225 16% 13%;
+    --secondary-foreground: 210 18% 90%;
+    --muted: 225 15% 12%;
+    --muted-foreground: 218 11% 61%; /* secondary/muted text level */
+    --accent: 224 16% 17%;
+    --accent-foreground: 210 22% 94%;
+    --destructive: 0 68% 52%;
+    --destructive-foreground: 210 22% 96%;
+    --border: 225 14% 16%;
+    --input: 224 14% 21%;
+    --ring: 189 88% 54%;
+    --radius: 0.7rem;
 
-    /* Status / semantic states. Each has a base (fill/icon) and a readable foreground. */
-    --success: 152 62% 45%;
+    /* Status / semantic states. Harmonised — saturated enough to read, not fluorescent. */
+    --success: 151 55% 47%;
     --success-foreground: 150 40% 96%;
-    --warning: 38 92% 55%;
-    --warning-foreground: 40 40% 8%;
-    --danger: 0 72% 51%;
+    --warning: 37 88% 56%;
+    --warning-foreground: 40 45% 8%;
+    --danger: 0 68% 52%;
     --danger-foreground: 0 40% 96%;
-    --info: 210 90% 60%;
+    --info: 208 82% 60%;
     --info-foreground: 210 40% 8%;
 
     /* Chart surfaces — grid lines, axis text/lines, and the tooltip popover. */
-    --chart-grid: 226 22% 18%;
-    --chart-axis: 220 12% 60%;
-    --chart-tooltip: 228 27% 9%;
-    --chart-tooltip-border: 225 16% 22%;
+    --chart-grid: 225 18% 17%;
+    --chart-axis: 219 11% 58%;
+    --chart-tooltip: 225 24% 10%;
+    --chart-tooltip-border: 225 15% 22%;
 
-    /* Recharts 5-series accent ramp (kept from the original theme). */
-    --chart-1: 189 95% 55%;
-    --chart-2: 160 60% 45%;
-    --chart-3: 30 80% 55%;
-    --chart-4: 280 65% 60%;
-    --chart-5: 340 75% 55%;
+    /* Recharts 5-series accent ramp — harmonised with the status hues. */
+    --chart-1: 189 88% 54%;
+    --chart-2: 158 58% 46%;
+    --chart-3: 32 82% 56%;
+    --chart-4: 268 62% 64%;
+    --chart-5: 340 72% 58%;
 
-    /* Navigation rail / sidebar (previously referenced by tailwind but never defined). */
-    --sidebar-background: 228 26% 5%;
-    --sidebar-foreground: 213 20% 80%;
-    --sidebar-primary: 189 95% 55%;
-    --sidebar-primary-foreground: 228 45% 6%;
-    --sidebar-accent: 226 19% 13%;
-    --sidebar-accent-foreground: 213 24% 95%;
-    --sidebar-border: 225 16% 14%;
-    --sidebar-ring: 189 95% 55%;
+    /* Navigation rail / sidebar — sits one elevation above the page. */
+    --sidebar-background: 227 21% 6.5%;
+    --sidebar-foreground: 212 16% 78%;
+    --sidebar-primary: 189 88% 54%;
+    --sidebar-primary-foreground: 224 45% 6%;
+    --sidebar-accent: 224 16% 15%;
+    --sidebar-accent-foreground: 210 22% 94%;
+    --sidebar-border: 225 14% 14%;
+    --sidebar-ring: 189 88% 54%;
   }
 
   /*
@@ -78,54 +83,56 @@
    * touch versus the dark theme so the same series/grid/axis stay legible on a light plot.
    */
   .light {
-    --background: 210 40% 98%;
-    --foreground: 224 40% 12%;
+    /* Cool off-white layered surfaces: the page is a faint blue-grey, panels lift to pure white,
+       so cards read as raised rather than everything being the same flat white. */
+    --background: 214 38% 97%;
+    --foreground: 222 42% 13%;
     --card: 0 0% 100%;
-    --card-foreground: 224 40% 12%;
+    --card-foreground: 222 42% 13%;
     --popover: 0 0% 100%;
-    --popover-foreground: 224 40% 12%;
-    --primary: 191 91% 38%;
+    --popover-foreground: 222 42% 13%;
+    --primary: 192 92% 36%;
     --primary-foreground: 0 0% 100%;
-    --secondary: 214 32% 93%;
-    --secondary-foreground: 224 40% 14%;
-    --muted: 214 30% 94%;
-    --muted-foreground: 220 12% 40%;
-    --accent: 210 40% 90%;
-    --accent-foreground: 224 40% 14%;
-    --destructive: 0 72% 48%;
+    --secondary: 214 30% 92%;
+    --secondary-foreground: 222 40% 16%;
+    --muted: 214 30% 93%;
+    --muted-foreground: 219 13% 40%;
+    --accent: 210 38% 88%;
+    --accent-foreground: 222 40% 16%;
+    --destructive: 0 70% 47%;
     --destructive-foreground: 0 0% 100%;
-    --border: 214 25% 84%;
-    --input: 214 25% 82%;
-    --ring: 191 91% 38%;
+    --border: 214 24% 85%;
+    --input: 214 24% 82%;
+    --ring: 192 92% 36%;
 
-    --success: 152 58% 34%;
+    --success: 151 56% 33%;
     --success-foreground: 0 0% 100%;
-    --warning: 32 85% 42%;
+    --warning: 32 82% 40%;
     --warning-foreground: 0 0% 100%;
-    --danger: 0 72% 48%;
+    --danger: 0 70% 47%;
     --danger-foreground: 0 0% 100%;
-    --info: 211 90% 42%;
+    --info: 210 86% 41%;
     --info-foreground: 0 0% 100%;
 
-    --chart-grid: 214 28% 88%;
-    --chart-axis: 220 14% 42%;
+    --chart-grid: 214 26% 88%;
+    --chart-axis: 219 14% 42%;
     --chart-tooltip: 0 0% 100%;
-    --chart-tooltip-border: 214 25% 82%;
+    --chart-tooltip-border: 214 24% 82%;
 
-    --chart-1: 191 91% 38%;
-    --chart-2: 160 70% 34%;
-    --chart-3: 28 85% 45%;
-    --chart-4: 272 60% 50%;
-    --chart-5: 340 75% 48%;
+    --chart-1: 192 92% 36%;
+    --chart-2: 158 66% 33%;
+    --chart-3: 30 82% 44%;
+    --chart-4: 268 56% 52%;
+    --chart-5: 340 72% 47%;
 
-    --sidebar-background: 210 40% 96%;
-    --sidebar-foreground: 224 30% 25%;
-    --sidebar-primary: 191 91% 38%;
+    --sidebar-background: 214 36% 95%;
+    --sidebar-foreground: 222 28% 26%;
+    --sidebar-primary: 192 92% 36%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 210 40% 90%;
-    --sidebar-accent-foreground: 224 40% 14%;
-    --sidebar-border: 214 25% 84%;
-    --sidebar-ring: 191 91% 38%;
+    --sidebar-accent: 210 38% 88%;
+    --sidebar-accent-foreground: 222 40% 16%;
+    --sidebar-border: 214 24% 85%;
+    --sidebar-ring: 192 92% 36%;
   }
 }
 
@@ -141,11 +148,12 @@
   }
   body {
     @apply bg-background text-foreground antialiased;
-    /* Subtle accent glow bleeding in from the top, like backlit cluster glass. */
+    /* Restrained accent glow bleeding in from the top, like backlit cluster glass. Kept faint so it
+       reads as ambient light, not a marketing gradient. */
     background-image: radial-gradient(
-      1100px 480px at 50% -160px,
-      hsl(var(--primary) / 0.07),
-      transparent 70%
+      1150px 460px at 50% -200px,
+      hsl(var(--primary) / 0.05),
+      transparent 68%
     );
     background-attachment: fixed;
   }
