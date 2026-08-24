@@ -5,6 +5,12 @@ function bar(page: import("@playwright/test").Page) {
   return page.getByRole("region", { name: /Playback and time range/i })
 }
 
+// The session-summary "Samples" row shows the record count at every width (the header's "N records"
+// is hidden below the sm breakpoint, so we assert this instead).
+function samplesRow(page: import("@playwright/test").Page) {
+  return page.getByText("Samples", { exact: true }).locator("..")
+}
+
 test("imports a CSV chosen through the file input", async ({ page }) => {
   await page.goto("/")
   await expect(page.getByRole("heading", { name: /Decode your/i })).toBeVisible()
@@ -46,7 +52,7 @@ test("merges compatible sequential files: rows appended, timeline continuous and
   ])
   await expect(page.getByRole("heading", { name: "Session Summary" })).toBeVisible()
   // Rows are appended: 40 total records.
-  await expect(page.getByText(/40\s*records/i)).toBeVisible()
+  await expect(samplesRow(page)).toContainText("40")
   await expect(page.getByText(/2 files merged/i)).toBeVisible()
   // Both source names are listed, in order.
   await expect(page.getByText("part-1.csv → part-2.csv")).toBeVisible()
@@ -65,7 +71,7 @@ test("overlapping timestamps merge in file order but are flagged non-monotonic (
   ])
   await expect(page.getByRole("heading", { name: "Session Summary" })).toBeVisible()
   // Rows are still all there (nothing dropped): 40 records.
-  await expect(page.getByText(/40\s*records/i)).toBeVisible()
+  await expect(samplesRow(page)).toContainText("40")
   // Position falls back to a sample index because the seam is not monotonic.
   await expect(bar(page).getByText("sample", { exact: true })).toBeVisible()
   // Data Health names the non-monotonic timestamps.
@@ -88,7 +94,7 @@ test("an incompatible batch does not destroy an already-loaded session", async (
   await page.goto("/")
   await uploadCsv(page, "good.csv", trustedCsv({ rows: 25 }))
   await expect(page.getByRole("heading", { name: "Session Summary" })).toBeVisible()
-  await expect(page.getByText(/25\s*records/i)).toBeVisible()
+  await expect(samplesRow(page)).toContainText("25")
   // Now try to import an incompatible pair.
   await uploadMany(page, [
     { name: "x.csv", content: "Time,Engine RPM (RPM),Vehicle speed (km/h)\n2024-01-01T00:00:00.000Z,1000,10\n" },
@@ -96,17 +102,17 @@ test("an incompatible batch does not destroy an already-loaded session", async (
   ])
   await expect(page.getByRole("status").filter({ hasText: /differ|cannot merge/i }).first()).toBeVisible()
   // The original session survives intact.
-  await expect(page.getByText(/25\s*records/i)).toBeVisible()
+  await expect(samplesRow(page)).toContainText("25")
   await expect(page.getByText(/good\.csv/).first()).toBeVisible()
 })
 
 test("a second separate upload replaces the session (documented: append is per multi-select import)", async ({ page }) => {
   await page.goto("/")
   await uploadCsv(page, "first.csv", trustedCsv({ rows: 25 }))
-  await expect(page.getByText(/25\s*records/i)).toBeVisible()
+  await expect(samplesRow(page)).toContainText("25")
   // A second, separate upload is a NEW import — it replaces rather than appends.
   await uploadCsv(page, "second.csv", trustedCsv({ rows: 12 }))
-  await expect(page.getByText(/12\s*records/i)).toBeVisible()
-  await expect(page.getByText(/25\s*records/i)).toHaveCount(0)
+  await expect(samplesRow(page)).toContainText("12")
+  await expect(samplesRow(page)).not.toContainText("25")
   await expect(page.getByText(/second\.csv/).first()).toBeVisible()
 })

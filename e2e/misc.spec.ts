@@ -13,9 +13,10 @@ test("collapsed desktop nav exposes accessible names", async ({ page, isMobile }
   await expect(nav.getByRole("button", { name: /Settings/i })).toBeVisible()
 })
 
-test("handles a large log without crashing (spread/stack-overflow guard)", async ({ page }) => {
+test("renders a 20k-row log end-to-end without crashing (render smoke test)", async ({ page }) => {
   await page.goto("/")
-  // Large enough to exercise the analytics paths on a real render.
+  // A 20k-row render smoke test: exercises parse → analytics → dashboard on a real browser render.
+  // The stack-safety limit itself is proven by the 200k-row unit test in lib/data-health.test.ts.
   await uploadCsv(page, "big.csv", trustedCsv({ rows: 20000 }))
   await expect(page.getByRole("heading", { name: "Session Summary" })).toBeVisible({ timeout: 30_000 })
   await expect(page.getByRole("heading", { name: "Data Health" })).toBeVisible()
