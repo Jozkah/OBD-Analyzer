@@ -22,11 +22,12 @@ interface GpsWorkspaceProps {
   elevationData: { dist: number; time: number; altitude: number }[]
   chartTheme: ChartTheme
   theme: "light" | "dark"
+  speedUnit: "km/h" | "mph"
   onNotify: (msg: string) => void
 }
 
 export const GpsWorkspace = React.memo(function GpsWorkspace({
-  data, currentTime, gpsPointCount, elevationData, chartTheme, theme, onNotify,
+  data, currentTime, gpsPointCount, elevationData, chartTheme, theme, speedUnit, onNotify,
 }: GpsWorkspaceProps) {
   const [showElevation, setShowElevation] = useState(true)
   const { grid, axis, tooltipContentStyle } = chartTheme
@@ -55,7 +56,7 @@ export const GpsWorkspace = React.memo(function GpsWorkspace({
         />
         {/* Responsive map surface — fills available viewport height instead of a fixed 1000px. */}
         <div className="h-[58vh] min-h-[420px] w-full">
-          <GPSTrackMap data={data} currentTime={currentTime} onNotify={onNotify} theme={theme} />
+          <GPSTrackMap data={data} currentTime={currentTime} onNotify={onNotify} theme={theme} speedUnit={speedUnit} />
         </div>
       </Card>
 

@@ -24,7 +24,7 @@ export function MissingPidsDialog({ open, onOpenChange, missing, hasCriticalMiss
             Some channels are missing
           </AlertDialogTitle>
           <AlertDialogDescription>
-            This log is missing PIDs that unlock the full analysis. You can still explore what's present.
+            This log is missing PIDs that unlock the full analysis. You can still explore what&rsquo;s present.
           </AlertDialogDescription>
         </AlertDialogHeader>
 

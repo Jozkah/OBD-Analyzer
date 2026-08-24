@@ -1,6 +1,6 @@
 "use client"
 
-import { Play, Pause, RotateCcw, SkipBack, SkipForward, Clock, Hash } from "lucide-react"
+import { Play, Pause, RotateCcw, SkipBack, SkipForward, Clock, Hash, ArrowUp, ArrowDown, Minus } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Slider } from "@/components/ui/slider"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -9,9 +9,15 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { formatDuration, type TimeAxis } from "@/lib/elapsed-time"
 import { formatValue } from "@/lib/format"
+import { TELEMETRY } from "@/lib/chart-theme"
 import type { DataPoint } from "@/types/obd"
 
 const RATES = [0.5, 1, 2, 4]
+
+export interface ShiftRecommendation {
+  shouldShift: "up" | "down" | "optimal" | null
+  reason: string
+}
 
 interface PlaybackBarProps {
   currentTime: number
@@ -28,8 +34,15 @@ interface PlaybackBarProps {
   setIgnoreIdle: (v: boolean) => void
   currentDataPoint: DataPoint | null
   gear: number | string
+  shift: ShiftRecommendation | null
   speedUnit: string
 }
+
+const SHIFT_META = {
+  up: { Icon: ArrowUp, label: "Upshift", cls: "text-success", fallbackReason: "Shift up" },
+  down: { Icon: ArrowDown, label: "Downshift", cls: "text-warning", fallbackReason: "Shift down" },
+  optimal: { Icon: Minus, label: "Optimal", cls: "text-muted-foreground", fallbackReason: "Optimal gear" },
+} as const
 
 function label(axis: TimeAxis, index: number): string {
   if (axis.trustworthy) return formatDuration(axis.elapsed[index] ?? 0)
@@ -39,7 +52,7 @@ function label(axis: TimeAxis, index: number): string {
 export function PlaybackBar({
   currentTime, setCurrentTime, timeRange, setTimeRange, lastIndex, timeAxis,
   isPlaying, setIsPlaying, playbackRate, setPlaybackRate, ignoreIdle, setIgnoreIdle,
-  currentDataPoint, gear, speedUnit,
+  currentDataPoint, gear, shift, speedUnit,
 }: PlaybackBarProps) {
   const [lo, hi] = timeRange
   const total = timeAxis.trustworthy && timeAxis.totalSeconds != null ? formatDuration(timeAxis.totalSeconds) : `${lastIndex}`
@@ -110,13 +123,30 @@ export function PlaybackBar({
             </DropdownMenuContent>
           </DropdownMenu>
 
-          {/* Live values */}
+          {/* Live values + shift recommendation */}
           {currentDataPoint && (
             <div className="ml-auto flex flex-wrap items-center gap-x-4 gap-y-1 font-mono text-xs tabular-nums">
-              <span><span className="text-muted-foreground">SPD </span><span style={{ color: "#22c55e" }}>{formatValue(currentDataPoint.speed, speedUnit)} {speedUnit}</span></span>
-              <span><span className="text-muted-foreground">RPM </span><span style={{ color: "#ef4444" }}>{formatValue(currentDataPoint.rpm, "RPM")}</span></span>
-              <span><span className="text-muted-foreground">THR </span><span style={{ color: "#eab308" }}>{formatValue(currentDataPoint.throttle, "%")}%</span></span>
-              <span><span className="text-muted-foreground">GEAR </span><span style={{ color: "#60a5fa" }}>{gear}</span></span>
+              <span><span className="text-muted-foreground">SPD </span><span style={{ color: TELEMETRY.speed }}>{formatValue(currentDataPoint.speed, speedUnit)} {speedUnit}</span></span>
+              <span><span className="text-muted-foreground">RPM </span><span style={{ color: TELEMETRY.rpm }}>{formatValue(currentDataPoint.rpm, "RPM")}</span></span>
+              <span><span className="text-muted-foreground">THR </span><span style={{ color: TELEMETRY.throttle }}>{formatValue(currentDataPoint.throttle, "%")}%</span></span>
+              <span><span className="text-muted-foreground">GEAR </span><span style={{ color: TELEMETRY.gear }}>{gear}</span></span>
+              {shift?.shouldShift && (() => {
+                const meta = SHIFT_META[shift.shouldShift]
+                const reason = shift.reason || meta.fallbackReason
+                // Not a live region: this changes with the cursor, and aria-live would announce on
+                // every sample during playback. A stable accessible name lets a screen reader read
+                // the recommendation on demand without a stream of interruptions.
+                return (
+                  <span
+                    className={`inline-flex items-center gap-1 rounded border border-current px-1.5 py-0.5 font-sans text-[11px] font-medium ${meta.cls}`}
+                    aria-label={`Shift recommendation: ${meta.label}${reason ? ` — ${reason}` : ""}`}
+                    title={reason}
+                  >
+                    <meta.Icon className="h-3 w-3" aria-hidden="true" />
+                    {meta.label}
+                  </span>
+                )
+              })()}
             </div>
           )}
         </div>

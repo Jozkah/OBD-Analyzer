@@ -4,7 +4,7 @@ import dynamic from "next/dynamic"
 import { Share2 } from "lucide-react"
 import { ErrorBoundary } from "@/components/error-boundary"
 import { useObdSession, SHARING_ENABLED } from "@/hooks/use-obd-session"
-import { calculateGear } from "@/lib/gear"
+import { calculateGear, getShiftIndicator } from "@/lib/gear"
 import { exportChartPng } from "@/lib/chart-export"
 import { AppHeader } from "./app-header"
 import { SideNav } from "./side-nav"
@@ -33,9 +33,15 @@ export function Dashboard() {
   const hasData = s.data.length > 0
   const lastIndex = Math.max(0, s.data.length - 1)
 
-  const currentGear = s.currentDataPoint
+  const currentGearNum = s.currentDataPoint
     ? calculateGear(s.currentDataPoint.speed, s.currentDataPoint.rpm, s.transmissionConfig, s.speedUnit)
-    : "N/A"
+    : null
+  const currentGear: number | string = currentGearNum ?? "N/A"
+  // Shift recommendation for the playback bar (only when a gear could be derived).
+  const shift =
+    s.currentDataPoint && currentGearNum != null
+      ? getShiftIndicator(s.currentDataPoint.rpm, currentGearNum, s.transmissionConfig)
+      : null
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -84,6 +90,7 @@ export function Dashboard() {
               setIgnoreIdle={s.setIgnoreIdle}
               currentDataPoint={s.currentDataPoint}
               gear={currentGear}
+              shift={shift}
               speedUnit={s.speedUnit}
             />
           )}
@@ -92,7 +99,7 @@ export function Dashboard() {
             {s.sharedNotice && (
               <div className="mb-4 flex flex-wrap items-center gap-2 rounded-lg border border-primary/25 bg-primary/[0.08] px-4 py-2.5 text-sm text-foreground/80">
                 <Share2 className="h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
-                <span className="font-medium text-foreground/90">You're viewing a shared log.</span>
+                <span className="font-medium text-foreground/90">You&rsquo;re viewing a shared log.</span>
                 {s.sharedNotice.expiresAt && (
                   <span className="text-muted-foreground">This link expires {new Date(s.sharedNotice.expiresAt).toLocaleString()}.</span>
                 )}
@@ -137,6 +144,7 @@ export function Dashboard() {
                     overviewXMode={s.overviewXMode}
                     setOverviewXMode={s.setOverviewXMode}
                     chartTheme={s.chartTheme}
+                    xAxis={s.chartXAxis}
                     isEmptyPID={s.isEmptyPID}
                     setMetricEnabled={s.setMetricEnabled}
                     setEnabledMetricKeys={s.setEnabledMetricKeys}
@@ -156,6 +164,7 @@ export function Dashboard() {
                       idleZones={s.idleZones}
                       speedUnit={s.speedUnit}
                       chartTheme={s.chartTheme}
+                      xAxis={s.chartXAxis}
                       transmissionConfig={s.transmissionConfig}
                     />
                   </ErrorBoundary>
@@ -168,6 +177,7 @@ export function Dashboard() {
                       idleZones={s.idleZones}
                       tempSensors={s.tempSensors}
                       chartTheme={s.chartTheme}
+                      xAxis={s.chartXAxis}
                       selectedTempSensors={s.selectedTempSensors}
                       setSelectedTempSensors={s.setSelectedTempSensors}
                     />
@@ -186,6 +196,7 @@ export function Dashboard() {
                       setSelectedPIDs={s.setSelectedPIDs}
                       idleZones={s.idleZones}
                       chartTheme={s.chartTheme}
+                      xAxis={s.chartXAxis}
                       currentTime={s.currentTime}
                       hoveredTimeKey={s.pidAnalysisHoveredTimeKey}
                       setHoveredTimeKey={s.setPidAnalysisHoveredTimeKey}
@@ -202,6 +213,7 @@ export function Dashboard() {
                       elevationData={s.elevationData}
                       chartTheme={s.chartTheme}
                       theme={s.theme}
+                      speedUnit={s.speedUnit}
                       onNotify={s.showToast}
                     />
                   </ErrorBoundary>
@@ -218,10 +230,9 @@ export function Dashboard() {
         open={transmissionOpen}
         onClose={() => setTransmissionOpen(false)}
         config={s.transmissionConfig}
-        setConfig={s.setTransmissionConfig}
         data={s.data}
         speedUnit={s.speedUnit}
-        onApply={s.applyTransmissionGears}
+        onApply={s.applyTransmission}
         showToast={s.showToast}
         defaultConfig={s.DEFAULT_TRANSMISSION}
       />

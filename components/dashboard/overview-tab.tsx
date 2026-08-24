@@ -10,6 +10,7 @@ import { DataHealthPanel } from "./data-health-panel"
 import { OverviewChart } from "./overview-chart"
 import { ChannelPicker } from "./channel-picker"
 import type { ChartTheme } from "@/lib/chart-theme"
+import type { ChartXAxis } from "@/lib/chart-x"
 import type { SessionMeta } from "@/lib/session-summary"
 import type { HealthFinding } from "@/lib/data-health"
 import type { AccelRun } from "@/lib/accel-runs"
@@ -32,6 +33,7 @@ interface OverviewTabProps {
   overviewXMode: "time" | "distance"
   setOverviewXMode: (m: "time" | "distance") => void
   chartTheme: ChartTheme
+  xAxis: ChartXAxis
   isEmptyPID: (m: MetricConfig) => boolean
   setMetricEnabled: (key: string, enabled: boolean) => void
   setEnabledMetricKeys: (keys: string[]) => void
@@ -46,7 +48,7 @@ export const OverviewTab = React.memo(function OverviewTab(props: OverviewTabPro
   const {
     meta, stats, tripTotals, speedUnit, importedFileNames, transmissionConfig, healthFindings,
     finalChartData, enabledMetrics, metrics, idleZones, effectiveXMode, hasDistance, overviewXMode,
-    setOverviewXMode, chartTheme, isEmptyPID, setMetricEnabled, setEnabledMetricKeys, overviewChartRef,
+    setOverviewXMode, chartTheme, xAxis, isEmptyPID, setMetricEnabled, setEnabledMetricKeys, overviewChartRef,
     onExportChart, accelRuns, gpsPointCount, onGoToRoute,
   } = props
 
@@ -118,6 +120,7 @@ export const OverviewTab = React.memo(function OverviewTab(props: OverviewTabPro
                 idleZones={idleZones}
                 effectiveXMode={effectiveXMode}
                 chartTheme={chartTheme}
+                xAxis={xAxis}
               />
             </div>
           </Card>

@@ -71,6 +71,32 @@ describe("analyzeDataHealth", () => {
     expect(findings.some((f) => f.id === "gps-absent")).toBe(true)
   })
 
+  it("handles a very large log without a stack overflow and reports the correct peak", () => {
+    // 200k rows would overflow Math.max(...array); the reduce-based safeMax must not.
+    const N = 200_000
+    const data: DataPoint[] = new Array(N)
+    for (let i = 0; i < N; i++) {
+      data[i] = {
+        time: i,
+        timestamp: new Date(Date.UTC(2024, 0, 1, 0, 0, 0) + i * 1000).toISOString(),
+        rpm: 2000,
+        speed: 60,
+        throttle: 20,
+        brake: 0,
+        boost: 0,
+        coolantTemp: 85,
+        intakeTemp: 20,
+        fuelRate: 1,
+      }
+    }
+    // Inject an implausible peak that the outlier check should surface.
+    data[123_456].rpm = 13500
+    const findings = analyzeDataHealth(data, metrics, noMissing)
+    const rpmOutlier = findings.find((f) => f.id === "outlier-rpm")
+    expect(rpmOutlier).toBeDefined()
+    expect(rpmOutlier!.detail).toContain("13500")
+  })
+
   it("summarizeHealth counts by severity", () => {
     const data = [row(0, { timestamp: "x" }), row(1, { timestamp: "y" }), row(2, { timestamp: "z" })]
     const s = summarizeHealth(analyzeDataHealth(data, metrics, noMissing))

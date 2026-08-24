@@ -47,8 +47,32 @@ describe("computeSessionMeta", () => {
     expect(meta.sampleCount).toBe(11)
     expect(meta.timeAxis.trustworthy).toBe(true)
     expect(meta.durationSeconds).toBe(10)
-    expect(meta.effectiveHz).toBeCloseTo(1.1, 5)
+    // 11 samples span 10 intervals over 10s → 1.0 Hz (N-1)/duration, not 11/10.
+    expect(meta.effectiveHz).toBeCloseTo(1.0, 5)
     expect(meta.coolantRange).toEqual({ min: 80, max: 90 })
+  })
+
+  it("computes effectiveHz as (N-1)/duration for a 2 Hz-style span", () => {
+    // 21 samples at 0.5s spacing span 10s → 20 intervals / 10s = 2.0 Hz.
+    const base = Date.UTC(2024, 0, 1, 0, 0, 0)
+    const data = Array.from({ length: 21 }, (_, i) =>
+      row(i, { timestamp: new Date(base + i * 500).toISOString() }),
+    )
+    const meta = computeSessionMeta(data)
+    expect(meta.durationSeconds).toBe(10)
+    expect(meta.effectiveHz).toBeCloseTo(2.0, 5)
+  })
+
+  it("reports no sampling rate for a single sample", () => {
+    const meta = computeSessionMeta([row(0)])
+    expect(meta.sampleCount).toBe(1)
+    expect(meta.effectiveHz).toBeNull()
+  })
+
+  it("reports no sampling rate for zero samples", () => {
+    const meta = computeSessionMeta([])
+    expect(meta.effectiveHz).toBeNull()
+    expect(meta.durationSeconds).toBeNull()
   })
 
   it("reports no duration when timestamps are unreliable", () => {

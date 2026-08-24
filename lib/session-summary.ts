@@ -52,8 +52,13 @@ export function computeSessionMeta(data: DataPoint[]): SessionMeta {
   const sampleCount = data.length
   const timeAxis = computeTimeAxis(data.map((d) => d.timestamp))
   const durationSeconds = timeAxis.totalSeconds
+  // N samples spanning `durationSeconds` contain N-1 intervals, so the effective sampling
+  // frequency is (N-1)/duration — not N/duration. Undefined without a valid duration and at
+  // least two samples.
   const effectiveHz =
-    durationSeconds != null && durationSeconds > 0 ? sampleCount / durationSeconds : null
+    durationSeconds != null && durationSeconds > 0 && sampleCount >= 2
+      ? (sampleCount - 1) / durationSeconds
+      : null
   const gpsPointCount = countGpsFixes(data)
 
   return {

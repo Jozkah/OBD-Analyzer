@@ -19,6 +19,7 @@ import { SectionHeader } from "@/components/telemetry/section-header"
 import { ChartEmptyState } from "@/components/telemetry/chart-empty-state"
 import { tooltipFormatter } from "@/lib/format"
 import { TELEMETRY, type ChartTheme } from "@/lib/chart-theme"
+import type { ChartXAxis } from "@/lib/chart-x"
 import type { DataPoint, TransmissionConfig } from "@/types/obd"
 
 interface PerformanceChartsProps {
@@ -27,6 +28,7 @@ interface PerformanceChartsProps {
   idleZones: { x1: number; x2: number }[]
   speedUnit: "km/h" | "mph"
   chartTheme: ChartTheme
+  xAxis: ChartXAxis
   transmissionConfig: TransmissionConfig
 }
 
@@ -45,9 +47,20 @@ export const PerformanceCharts = React.memo(function PerformanceCharts({
   idleZones,
   speedUnit,
   chartTheme,
+  xAxis,
   transmissionConfig,
 }: PerformanceChartsProps) {
   const { grid, axis, tooltipContentStyle } = chartTheme
+  // Shared time/sample x-axis (elapsed seconds when trustworthy, else sample index).
+  const xProps = {
+    dataKey: xAxis.key,
+    type: "number" as const,
+    domain: ["dataMin", "dataMax"] as [string, string],
+    stroke: axis,
+    fontSize: 12,
+    tickFormatter: (v: number) => xAxis.format(Number(v)),
+  }
+  const xTooltipLabel = (v: unknown) => `${xAxis.label}: ${xAxis.format(Number(v))}`
   const idleBands = idleZones.map((zone, i) => (
     <ReferenceArea
       key={`idle-${i}`}
@@ -73,10 +86,10 @@ export const PerformanceCharts = React.memo(function PerformanceCharts({
             <ResponsiveContainer width="100%" height="100%">
               <ComposedChart data={finalChartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke={grid} />
-                <XAxis dataKey="time" stroke={axis} fontSize={12} />
+                <XAxis {...xProps} />
                 <YAxis yAxisId="rpm" stroke={TELEMETRY.rpm} fontSize={12} orientation="left" label={{ value: "RPM", angle: -90, position: "insideLeft", fill: TELEMETRY.rpm, fontSize: 11 }} />
                 <YAxis yAxisId="speed" stroke={TELEMETRY.speed} fontSize={12} orientation="right" label={{ value: "Speed", angle: 90, position: "insideRight", fill: TELEMETRY.speed, fontSize: 11 }} />
-                <Tooltip contentStyle={tooltipContentStyle} formatter={tooltipFormatter} />
+                <Tooltip contentStyle={tooltipContentStyle} formatter={tooltipFormatter} labelFormatter={xTooltipLabel} />
                 <Line yAxisId="rpm" dataKey="rpm" stroke={TELEMETRY.rpm} strokeWidth={2} dot={false} name="RPM" />
                 <Line yAxisId="speed" dataKey="speed" stroke={TELEMETRY.speed} strokeWidth={2} dot={false} name={`Speed (${speedUnit})`} />
                 {idleZones.map((zone, i) => (
@@ -100,10 +113,10 @@ export const PerformanceCharts = React.memo(function PerformanceCharts({
             <ResponsiveContainer width="100%" height="100%">
               <ComposedChart data={finalChartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke={grid} />
-                <XAxis dataKey="time" stroke={axis} fontSize={12} />
+                <XAxis {...xProps} />
                 <YAxis yAxisId="throttle" stroke={TELEMETRY.throttle} fontSize={12} orientation="left" label={{ value: "Throttle %", angle: -90, position: "insideLeft", fill: TELEMETRY.throttle, fontSize: 11 }} />
                 <YAxis yAxisId="speed" stroke={TELEMETRY.speed} fontSize={12} orientation="right" label={{ value: "Speed", angle: 90, position: "insideRight", fill: TELEMETRY.speed, fontSize: 11 }} />
-                <Tooltip contentStyle={tooltipContentStyle} formatter={tooltipFormatter} />
+                <Tooltip contentStyle={tooltipContentStyle} formatter={tooltipFormatter} labelFormatter={xTooltipLabel} />
                 <Line yAxisId="throttle" dataKey="throttle" stroke={TELEMETRY.throttle} strokeWidth={2} dot={false} name="Throttle" />
                 <Line yAxisId="speed" dataKey="speed" stroke={TELEMETRY.speed} strokeWidth={2} dot={false} name={`Speed (${speedUnit})`} />
                 {idleZones.map((zone, i) => (
@@ -127,10 +140,10 @@ export const PerformanceCharts = React.memo(function PerformanceCharts({
             <ResponsiveContainer width="100%" height="100%">
               <ComposedChart data={finalChartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke={grid} />
-                <XAxis dataKey="time" stroke={axis} fontSize={12} />
+                <XAxis {...xProps} />
                 <YAxis yAxisId="left" stroke={TELEMETRY.power} orientation="left" label={{ value: "Power (hp)", angle: -90, position: "insideLeft", fill: TELEMETRY.power, fontSize: 11 }} />
                 <YAxis yAxisId="right" stroke={TELEMETRY.torque} orientation="right" label={{ value: "Torque (N·m)", angle: 90, position: "insideRight", fill: TELEMETRY.torque, fontSize: 11 }} />
-                <Tooltip contentStyle={tooltipContentStyle} formatter={tooltipFormatter} />
+                <Tooltip contentStyle={tooltipContentStyle} formatter={tooltipFormatter} labelFormatter={xTooltipLabel} />
                 <Area yAxisId="left" dataKey="enginePower" fill={TELEMETRY.power} fillOpacity={0.3} stroke={TELEMETRY.power} name="Power (hp)" />
                 <Line yAxisId="right" dataKey="engineTorque" stroke={TELEMETRY.torque} strokeWidth={2} dot={false} name="Torque (N•m)" />
                 {idleZones.map((zone, i) => (
@@ -153,7 +166,7 @@ export const PerformanceCharts = React.memo(function PerformanceCharts({
           <ResponsiveContainer width="100%" height="100%">
             <ComposedChart data={finalChartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
               <CartesianGrid strokeDasharray="3 3" stroke={grid} />
-              <XAxis dataKey="time" stroke={axis} fontSize={12} />
+              <XAxis {...xProps} />
               <YAxis
                 yAxisId="gear"
                 stroke={TELEMETRY.gear}
@@ -167,6 +180,7 @@ export const PerformanceCharts = React.memo(function PerformanceCharts({
               <YAxis yAxisId="speed" stroke={TELEMETRY.speed} fontSize={12} orientation="left" label={{ value: "Speed", angle: -90, position: "insideLeft", fill: TELEMETRY.speed, fontSize: 11 }} />
               <Tooltip
                 contentStyle={tooltipContentStyle}
+                labelFormatter={xTooltipLabel}
                 formatter={((value: number | string, name: string) => {
                   if (name === "gear") {
                     const gear = Math.min(transmissionConfig.numberOfGears, Math.max(1, Number(value)))

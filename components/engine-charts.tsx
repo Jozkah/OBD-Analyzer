@@ -22,6 +22,7 @@ import { SectionHeader } from "@/components/telemetry/section-header"
 import { ChartEmptyState } from "@/components/telemetry/chart-empty-state"
 import { tooltipFormatter } from "@/lib/format"
 import { TELEMETRY, type ChartTheme } from "@/lib/chart-theme"
+import type { ChartXAxis } from "@/lib/chart-x"
 import type { DataPoint } from "@/types/obd"
 
 interface EngineChartsProps {
@@ -29,6 +30,7 @@ interface EngineChartsProps {
   idleZones: { x1: number; x2: number }[]
   tempSensors: { key: string; label: string; color: string }[]
   chartTheme: ChartTheme
+  xAxis: ChartXAxis
   selectedTempSensors: string[]
   setSelectedTempSensors: React.Dispatch<React.SetStateAction<string[]>>
 }
@@ -45,10 +47,20 @@ export const EngineCharts = React.memo(function EngineCharts({
   idleZones,
   tempSensors,
   chartTheme,
+  xAxis,
   selectedTempSensors,
   setSelectedTempSensors,
 }: EngineChartsProps) {
   const { grid, axis, tooltipContentStyle } = chartTheme
+  const xProps = {
+    dataKey: xAxis.key,
+    type: "number" as const,
+    domain: ["dataMin", "dataMax"] as [string, string],
+    stroke: axis,
+    fontSize: 12,
+    tickFormatter: (v: number) => xAxis.format(Number(v)),
+  }
+  const xTooltipLabel = (v: unknown) => `${xAxis.label}: ${xAxis.format(Number(v))}`
   const idleBand = (yAxisId?: string) =>
     idleZones.map((zone, i) => (
       <ReferenceArea
@@ -102,9 +114,9 @@ export const EngineCharts = React.memo(function EngineCharts({
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={finalChartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke={grid} />
-                <XAxis dataKey="time" stroke={axis} fontSize={12} />
+                <XAxis {...xProps} />
                 <YAxis stroke={axis} fontSize={12} />
-                <Tooltip contentStyle={tooltipContentStyle} formatter={tooltipFormatter} />
+                <Tooltip contentStyle={tooltipContentStyle} formatter={tooltipFormatter} labelFormatter={xTooltipLabel} />
                 {selectedTempSensors.map((sensorKey) => {
                   const sensor = tempSensors.find((s) => s.key === sensorKey)
                   if (!sensor) return null
@@ -128,9 +140,9 @@ export const EngineCharts = React.memo(function EngineCharts({
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={finalChartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke={grid} />
-                <XAxis dataKey="time" stroke={axis} fontSize={12} />
+                <XAxis {...xProps} />
                 <YAxis stroke={axis} fontSize={12} domain={["dataMin - 5", "dataMax + 5"]} />
-                <Tooltip contentStyle={tooltipContentStyle} formatter={tooltipFormatter} />
+                <Tooltip contentStyle={tooltipContentStyle} formatter={tooltipFormatter} labelFormatter={xTooltipLabel} />
                 <Line dataKey="ignitionAdvance" stroke={TELEMETRY.ignition} strokeWidth={2} dot={false} name="Ignition Advance (°)" />
                 {idleBand()}
               </LineChart>
@@ -148,9 +160,9 @@ export const EngineCharts = React.memo(function EngineCharts({
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={finalChartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke={grid} />
-                <XAxis dataKey="time" stroke={axis} fontSize={12} />
+                <XAxis {...xProps} />
                 <YAxis stroke={axis} fontSize={12} domain={[(dataMin: number) => Math.min(dataMin - 0.2, -0.5), (dataMax: number) => Math.max(dataMax + 0.2, 0.5)]} tickFormatter={(v: number) => Number(v).toFixed(2)} />
-                <Tooltip contentStyle={tooltipContentStyle} formatter={tooltipFormatter} />
+                <Tooltip contentStyle={tooltipContentStyle} formatter={tooltipFormatter} labelFormatter={xTooltipLabel} />
                 <Line dataKey="boost" stroke={TELEMETRY.boost} strokeWidth={3} dot={false} name="Boost (bar)" />
                 {idleBand()}
               </LineChart>
@@ -168,9 +180,9 @@ export const EngineCharts = React.memo(function EngineCharts({
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={finalChartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke={grid} />
-                <XAxis dataKey="time" stroke={axis} fontSize={12} />
+                <XAxis {...xProps} />
                 <YAxis stroke={axis} fontSize={12} />
-                <Tooltip contentStyle={tooltipContentStyle} formatter={tooltipFormatter} />
+                <Tooltip contentStyle={tooltipContentStyle} formatter={tooltipFormatter} labelFormatter={xTooltipLabel} />
                 <Area dataKey="fuelRate" fill={TELEMETRY.fuel} fillOpacity={0.3} stroke={TELEMETRY.fuel} name="Fuel Rate (l/hr)" strokeWidth={2} />
                 {idleBand()}
               </AreaChart>
@@ -188,9 +200,9 @@ export const EngineCharts = React.memo(function EngineCharts({
             <ResponsiveContainer width="100%" height="100%">
               <ComposedChart data={finalChartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke={grid} />
-                <XAxis dataKey="time" stroke={axis} fontSize={12} />
+                <XAxis {...xProps} />
                 <YAxis stroke={axis} fontSize={12} domain={[0, 100]} />
-                <Tooltip contentStyle={tooltipContentStyle} formatter={tooltipFormatter} />
+                <Tooltip contentStyle={tooltipContentStyle} formatter={tooltipFormatter} labelFormatter={xTooltipLabel} />
                 <Area dataKey="throttle" fill={TELEMETRY.speed} fillOpacity={0.3} stroke={TELEMETRY.speed} name="Throttle (%)" />
                 <Area dataKey="brake" fill={TELEMETRY.idle} fillOpacity={0.3} stroke={TELEMETRY.idle} name="Brake (%)" type="monotone" />
                 {idleBand()}

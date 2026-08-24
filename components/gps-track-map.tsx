@@ -22,12 +22,15 @@ export function GPSTrackMap({
   currentTime,
   onNotify,
   theme = "dark",
+  speedUnit = "km/h",
 }: {
   data: DataPoint[]
   currentTime: number
   onNotify?: (msg: string) => void
   /** Tints the offline backdrop/grid so the map surface isn't dark-only on the light theme. */
   theme?: "light" | "dark"
+  /** Unit the log's speed values are already in — used for legend/readout labels (no conversion). */
+  speedUnit?: "km/h" | "mph"
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   // Default to "offline" so the GPS map makes NO external requests unless the user opts in
@@ -556,7 +559,7 @@ export function GPSTrackMap({
               <span className="tabular-nums">{Math.round(speedRange.min)}</span>
               <div className="h-2 w-8 rounded bg-gradient-to-r from-blue-500 to-red-500"></div>
               <span className="tabular-nums">{Math.round(speedRange.max)}</span>
-              <span className="text-muted-foreground">km/h</span>
+              <span className="text-muted-foreground">{speedUnit}</span>
             </div>
           </>
         ) : (
@@ -565,7 +568,7 @@ export function GPSTrackMap({
       </div>
       {data[currentTime] && (
         <div className="absolute bottom-3 left-3 rounded-lg border border-border/70 bg-background/85 px-3 py-2 shadow-lg shadow-black/30 backdrop-blur">
-          <div className="font-mono text-base font-semibold tabular-nums text-primary">{data[currentTime].speed?.toFixed(1)} km/h</div>
+          <div className="font-mono text-base font-semibold tabular-nums text-primary">{data[currentTime].speed?.toFixed(1)} {speedUnit}</div>
           <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Current Speed</div>
         </div>
       )}

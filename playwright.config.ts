@@ -1,8 +1,12 @@
 import { defineConfig, devices } from "@playwright/test"
+import { existsSync } from "fs"
 
-// Use the Chromium pre-installed in the environment (revision may differ from the pinned
-// @playwright/test version, so point directly at its binary).
-const CHROMIUM_PATH = process.env.PLAYWRIGHT_CHROMIUM_PATH || "/opt/pw-browsers/chromium-1194/chrome-linux/chrome"
+// In this dev environment a prebuilt Chromium lives under /opt/pw-browsers; point Playwright at it
+// when present. In CI (and anywhere it's absent) fall back to Playwright's own installed browser
+// (the workflow runs `playwright install --with-deps chromium`).
+const LOCAL_CHROMIUM = process.env.PLAYWRIGHT_CHROMIUM_PATH || "/opt/pw-browsers/chromium-1194/chrome-linux/chrome"
+const executablePath = existsSync(LOCAL_CHROMIUM) ? LOCAL_CHROMIUM : undefined
+const isCI = !!process.env.CI
 
 export default defineConfig({
   testDir: "./e2e",
@@ -10,11 +14,13 @@ export default defineConfig({
   expect: { timeout: 15_000 },
   fullyParallel: false,
   workers: 1,
-  reporter: [["list"]],
+  retries: isCI ? 1 : 0,
+  reporter: isCI ? [["list"], ["html", { open: "never" }]] : [["list"]],
   use: {
     baseURL: "http://localhost:3210",
-    trace: "off",
-    launchOptions: { executablePath: CHROMIUM_PATH },
+    trace: "on-first-retry",
+    screenshot: "only-on-failure",
+    launchOptions: executablePath ? { executablePath } : {},
   },
   projects: [
     { name: "desktop", use: { ...devices["Desktop Chrome"], viewport: { width: 1440, height: 900 } } },
@@ -23,7 +29,7 @@ export default defineConfig({
   webServer: {
     command: "pnpm start",
     url: "http://localhost:3210",
-    reuseExistingServer: true,
+    reuseExistingServer: !isCI,
     timeout: 120_000,
   },
 })

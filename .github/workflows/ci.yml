@@ -24,14 +24,38 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Lint
+        run: pnpm lint
+
       - name: Type check
         run: pnpm exec tsc --noEmit
 
       - name: Unit tests
         run: pnpm test
 
-      # `next build` also runs type checking and (if configured) ESLint. A standalone
-      # lint step is omitted because the repo has no ESLint config yet — adding one is a
-      # separate change.
       - name: Build
         run: pnpm build
+
+      # Cache the Playwright browser download between runs, keyed on the lockfile so it
+      # refreshes when @playwright/test changes.
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        id: playwright-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+
+      - name: Install Playwright browser
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: End-to-end tests
+        run: pnpm test:e2e
+
+      - name: Upload Playwright report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7
+          if-no-files-found: ignore

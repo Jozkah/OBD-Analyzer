@@ -30,7 +30,7 @@ export function ShareLinkDialog({ open, onOpenChange, shareUrl, shareExpiresAt, 
           <AlertDialogDescription>
             Anyone with this link can view this log
             {shareExpiresAt ? ` until ${new Date(shareExpiresAt).toLocaleString()}` : ""}. The log is stored on this
-            instance's backend (not embedded in the link); the link stops working when it expires.
+            instance&rsquo;s backend (not embedded in the link); the link stops working when it expires.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <div className="flex items-center gap-2">

@@ -17,16 +17,18 @@ import { detectGearRatios } from "@/lib/gear"
 import { exportTransmissionConfig, importTransmissionConfig } from "@/lib/transmission"
 import { calculateTireDiameter, parseTireSize } from "@/lib/tire"
 import { TRANSMISSION_PRESETS } from "@/lib/transmission-presets"
+import { validateTransmissionConfig, type ValidationError } from "@/lib/transmission-validate"
 import type { DataPoint, TransmissionConfig } from "@/types/obd"
 
 interface TransmissionDialogProps {
   open: boolean
   onClose: () => void
+  /** The committed configuration. The dialog edits a local DRAFT and only commits it on Apply. */
   config: TransmissionConfig
-  setConfig: (c: TransmissionConfig | ((prev: TransmissionConfig) => TransmissionConfig)) => void
   data: DataPoint[]
   speedUnit: "km/h" | "mph"
-  onApply: () => void
+  /** Commit the validated draft (persists + recomputes gears). */
+  onApply: (cfg: TransmissionConfig) => void
   showToast: (msg: string) => void
   defaultConfig: TransmissionConfig
 }
@@ -38,7 +40,10 @@ function predictedSpeed(rpm: number, ratio: number, finalDrive: number, tyreDiam
 }
 
 export function TransmissionDialog(props: TransmissionDialogProps) {
-  const { open, onClose, config, setConfig, data, speedUnit, onApply, showToast, defaultConfig } = props
+  const { open, onClose, config: committedConfig, data, speedUnit, onApply, showToast, defaultConfig } = props
+  // `config` is the LOCAL DRAFT — every edit below mutates it, and nothing reaches the app until
+  // Apply. All the reads in the JSX therefore reflect unsaved edits.
+  const [config, setDraft] = useState<TransmissionConfig>(committedConfig)
   const dialogRef = useRef<HTMLDivElement>(null)
   const prevFocusRef = useRef<HTMLElement | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -46,13 +51,39 @@ export function TransmissionDialog(props: TransmissionDialogProps) {
   const [presetSort, setPresetSort] = useState<"default" | "alphabetical">("default")
   const [tireSizeInput, setTireSizeInput] = useState("235/35R19")
   const [dirty, setDirty] = useState(false)
+  const [errors, setErrors] = useState<ValidationError[]>([])
   const [autoResult, setAutoResult] = useState<ReturnType<typeof detectGearRatios> | null>(null)
   const [confirmReset, setConfirmReset] = useState(false)
+  const [confirmClose, setConfirmClose] = useState(false)
+
+  // Discard the draft and close.
+  const discardAndClose = () => {
+    setConfirmClose(false)
+    onClose()
+  }
+  // Escape / overlay / close-button: confirm before discarding unsaved edits.
+  const requestClose = () => {
+    if (dirty) setConfirmClose(true)
+    else onClose()
+  }
+  // Ref so the focus-trap effect (which we don't want re-subscribing on every keystroke) always
+  // calls the latest requestClose with fresh `dirty`.
+  const requestCloseRef = useRef(requestClose)
+  requestCloseRef.current = requestClose
+
+  // Seed the draft from the committed config each time the dialog opens.
+  useEffect(() => {
+    if (!open) return
+    setDraft(committedConfig)
+    setDirty(false)
+    setErrors([])
+    setConfirmClose(false)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open])
 
   // Focus trap + Escape + restore focus.
   useEffect(() => {
     if (!open) return
-    setDirty(false)
     prevFocusRef.current = document.activeElement as HTMLElement | null
     const container = dialogRef.current
     const focusable = () =>
@@ -67,7 +98,7 @@ export function TransmissionDialog(props: TransmissionDialogProps) {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.preventDefault()
-        onClose()
+        requestCloseRef.current()
         return
       }
       if (e.key !== "Tab") return
@@ -88,12 +119,14 @@ export function TransmissionDialog(props: TransmissionDialogProps) {
       document.removeEventListener("keydown", onKey)
       prevFocusRef.current?.focus?.()
     }
-  }, [open, onClose])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open])
 
   const update = (patch: Partial<TransmissionConfig> | ((p: TransmissionConfig) => TransmissionConfig)) => {
     setDirty(true)
-    if (typeof patch === "function") setConfig(patch)
-    else setConfig((prev) => ({ ...prev, ...patch }))
+    setErrors([])
+    if (typeof patch === "function") setDraft(patch)
+    else setDraft((prev) => ({ ...prev, ...patch }))
   }
 
   const filteredPresets = useMemo(() => {
@@ -114,7 +147,13 @@ export function TransmissionDialog(props: TransmissionDialogProps) {
   if (!open) return null
 
   const applyAndClose = () => {
-    onApply()
+    const found = validateTransmissionConfig(config)
+    if (found.length > 0) {
+      setErrors(found)
+      showToast("Fix the highlighted values before applying.")
+      return
+    }
+    onApply(config) // commit the validated draft (persists + recomputes gears)
     setDirty(false)
     showToast("Transmission configuration applied")
     onClose()
@@ -127,7 +166,7 @@ export function TransmissionDialog(props: TransmissionDialogProps) {
       aria-modal="true"
       aria-labelledby="transmission-dialog-title"
       onClick={(e) => {
-        if (e.target === e.currentTarget) onClose()
+        if (e.target === e.currentTarget) requestClose()
       }}
       className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-0 backdrop-blur-sm sm:items-center sm:p-4"
     >
@@ -139,10 +178,20 @@ export function TransmissionDialog(props: TransmissionDialogProps) {
               {dirty ? <span className="text-warning">Unsaved changes</span> : "Used for gear estimation and shift indicators."}
             </p>
           </div>
-          <Button onClick={onClose} variant="ghost" size="icon" className="h-9 w-9" aria-label="Close transmission configuration">
+          <Button onClick={requestClose} variant="ghost" size="icon" className="h-9 w-9" aria-label="Close transmission configuration">
             <X className="h-4 w-4" />
           </Button>
         </div>
+        {errors.length > 0 && (
+          <div role="alert" className="border-b border-danger/40 bg-danger/10 px-4 py-2 text-sm text-danger sm:px-5">
+            <p className="font-medium">Please fix:</p>
+            <ul className="mt-0.5 list-disc pl-5">
+              {errors.map((e) => (
+                <li key={e.field}>{e.message}</li>
+              ))}
+            </ul>
+          </div>
+        )}
 
         <div className="custom-scrollbar flex-1 overflow-y-auto p-4 sm:p-5">
           <Tabs defaultValue="manual" className="space-y-4">
@@ -313,7 +362,10 @@ export function TransmissionDialog(props: TransmissionDialogProps) {
 
         <div className="flex items-center justify-between gap-2 border-t border-border/70 p-4 sm:p-5">
           <Button variant="outline" onClick={() => setConfirmReset(true)}><RotateCcw className="mr-2 h-4 w-4" />Reset</Button>
-          <Button onClick={applyAndClose}>Apply configuration</Button>
+          <div className="flex items-center gap-2">
+            <Button variant="ghost" onClick={onClose}>Cancel</Button>
+            <Button onClick={applyAndClose} disabled={!dirty}>Apply configuration</Button>
+          </div>
         </div>
       </Card>
 
@@ -326,6 +378,19 @@ export function TransmissionDialog(props: TransmissionDialogProps) {
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction onClick={() => { update(() => defaultConfig); showToast("Reset to default configuration") }}>Reset</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={confirmClose} onOpenChange={setConfirmClose}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Discard unsaved changes?</AlertDialogTitle>
+            <AlertDialogDescription>You have unapplied transmission edits. Closing now discards them.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Keep editing</AlertDialogCancel>
+            <AlertDialogAction onClick={discardAndClose}>Discard changes</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

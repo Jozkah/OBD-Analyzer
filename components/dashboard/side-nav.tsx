@@ -31,6 +31,7 @@ export function SideNav({ activeTab, onSelect, onOpenSettings, settingsDisabled 
                 type="button"
                 onClick={() => onSelect(section.id)}
                 aria-current={active ? "page" : undefined}
+                aria-label={section.fullLabel}
                 title={section.fullLabel}
                 className={cn(
                   "flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
@@ -52,6 +53,7 @@ export function SideNav({ activeTab, onSelect, onOpenSettings, settingsDisabled 
         type="button"
         onClick={onOpenSettings}
         disabled={settingsDisabled}
+        aria-label="Settings — transmission configuration"
         title="Transmission configuration"
         className={cn(
           "flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-sidebar-foreground transition-colors",

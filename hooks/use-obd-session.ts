@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import type { DataPoint, MetricConfig, TransmissionConfig } from "@/types/obd"
 import { parseLogTimeSeconds, detectAccelRuns } from "@/lib/accel-runs"
-import { safeMax } from "@/lib/stats"
+import { safeMax, safeMin } from "@/lib/stats"
 import { lttbDownsample } from "@/lib/downsample"
 import { buildWindowCsv, downloadCsv, determineFileOrder } from "@/lib/csv"
 import { calculateGear, detectGearRatios } from "@/lib/gear"
@@ -12,6 +12,9 @@ import { getChartTheme } from "@/lib/chart-theme"
 import { mergeCSVFiles } from "@/lib/merge-csv"
 import { parseInWorker } from "@/lib/parse-worker"
 import { computeSessionMeta } from "@/lib/session-summary"
+import { advancePlayback } from "@/lib/playback"
+import { computeTimeAxis } from "@/lib/elapsed-time"
+import { buildChartXAxis } from "@/lib/chart-x"
 import { analyzeDataHealth } from "@/lib/data-health"
 import { TRANSMISSION_PRESETS } from "@/lib/transmission-presets"
 
@@ -127,20 +130,54 @@ export function useObdSession() {
 
   const transmissionPresets = TRANSMISSION_PRESETS
 
-  // --- Playback interval ---
+  // Live refs so the playback loop reads current values without restarting every frame.
+  const timeRangeRef = useRef(timeRange)
+  const rateRef = useRef(playbackRate)
+  const currentTimeRef = useRef(currentTime)
+  const elapsedRef = useRef<number[]>([])
+  const trustedRef = useRef(false)
+  const playbackAccRef = useRef(0)
+
+  // --- Playback (drift-resistant, real-time when timestamps are trustworthy) ---
+  // A requestAnimationFrame loop maps real wall-clock time onto the log's timeline via
+  // advancePlayback(): trustworthy logs play at their true per-sample pace (irregular sampling
+  // and gaps included, gaps capped), untrustworthy logs fall back to a fixed sample cadence.
   useEffect(() => {
     if (!isPlaying || data.length === 0) return
-    const interval = setInterval(() => {
-      setCurrentTime((prev) => {
-        if (prev >= timeRange[1]) {
-          setIsPlaying(false)
-          return timeRange[0]
-        }
-        return prev < timeRange[0] ? timeRange[0] : prev + 1
+    playbackAccRef.current = 0
+    let last = performance.now()
+    let raf = 0
+    const tick = (now: number) => {
+      const dtMs = now - last
+      last = now
+      const [lo, hi] = timeRangeRef.current
+      const res = advancePlayback({
+        elapsed: elapsedRef.current,
+        trustworthy: trustedRef.current,
+        index: currentTimeRef.current,
+        lo,
+        hi,
+        rate: rateRef.current,
+        dtMs,
+        acc: playbackAccRef.current,
       })
-    }, 100 / playbackRate)
-    return () => clearInterval(interval)
-  }, [isPlaying, data.length, timeRange, playbackRate])
+      playbackAccRef.current = res.acc
+      if (res.index !== currentTimeRef.current) {
+        currentTimeRef.current = res.index
+        setCurrentTime(res.index)
+      }
+      if (res.atEnd) {
+        // Preserve prior behaviour: stop at the window end and rewind the cursor to its start.
+        setIsPlaying(false)
+        currentTimeRef.current = lo
+        setCurrentTime(lo)
+        return
+      }
+      raf = requestAnimationFrame(tick)
+    }
+    raf = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(raf)
+  }, [isPlaying, data.length])
 
   // Re-clamp currentTime into the active timeRange whenever the user narrows the window.
   useEffect(() => {
@@ -500,6 +537,11 @@ export function useObdSession() {
     return m ? (m.key as string) : null
   }, [metrics])
 
+  // Real elapsed-time axis (or index fallback). Computed once from the full log so chart points,
+  // playback and the session summary all share one definition of "time".
+  const timeAxis = useMemo(() => computeTimeAxis(data.map((d) => d.timestamp)), [data])
+  const chartXAxis = useMemo(() => buildChartXAxis(timeAxis), [timeAxis])
+
   const finalChartData = useMemo(() => {
     const hasTripDistance = filteredData.some(
       (p) => typeof p.tripDistance === "number" && !isNaN(p.tripDistance as number),
@@ -528,13 +570,17 @@ export function useObdSession() {
         cumDist += spd / 3600
       }
       chartPoint.dist = Math.round(cumDist * 1000) / 1000
+      // Real elapsed seconds for this sample (keyed by its ORIGINAL index in the full log, which
+      // `time` preserves through slicing and downsampling). Falls back to the index when the log
+      // has no trustworthy timestamps.
+      chartPoint.elapsed = timeAxis.trustworthy ? timeAxis.elapsed[point.time] ?? point.time : point.time
       return chartPoint
     })
     if (processed.length > 500) {
       return lttbDownsample(processed, 500, (p) => p.rpm || p.speed || 0)
     }
     return processed
-  }, [filteredData, metrics])
+  }, [filteredData, metrics, timeAxis])
 
   const hasDistance = useMemo(
     () => finalChartData.length > 1 && (finalChartData[finalChartData.length - 1].dist ?? 0) > 0.05,
@@ -548,8 +594,11 @@ export function useObdSession() {
       .map((p) => ({ dist: p.dist ?? 0, time: p.time, altitude: Number((p as Record<string, unknown>)[altitudeKey]) }))
       .filter((p) => Number.isFinite(p.altitude))
     if (pts.length < 2) return []
-    const min = Math.min(...pts.map((p) => p.altitude))
-    const max = Math.max(...pts.map((p) => p.altitude))
+    // pts derives from finalChartData (downsampled to ≤500), but use the bounded reducers
+    // for consistency and to stay safe if that cap ever changes.
+    const alts = pts.map((p) => p.altitude)
+    const min = safeMin(alts)
+    const max = safeMax(alts)
     return max - min < 1 ? [] : pts
   }, [finalChartData, altitudeKey])
 
@@ -564,22 +613,26 @@ export function useObdSession() {
 
   const idleZones = useMemo(() => {
     if (!ignoreIdle || finalChartData.length === 0) return []
+    // Zone bounds are expressed in the SAME x domain the charts plot (elapsed seconds when
+    // timestamps are trustworthy, else sample index), so ReferenceArea bands line up.
+    const xk = chartXAxis.key
+    const xOf = (p: DataPoint) => (p[xk] as number) ?? p.time
     const zones: { x1: number; x2: number }[] = []
     let zoneStart: number | null = null
     for (let i = 0; i < finalChartData.length; i++) {
       const isIdle = (finalChartData[i].speed || 0) === 0
       if (isIdle && zoneStart === null) {
-        zoneStart = finalChartData[i].time
+        zoneStart = xOf(finalChartData[i])
       } else if (!isIdle && zoneStart !== null) {
-        zones.push({ x1: zoneStart, x2: finalChartData[i].time })
+        zones.push({ x1: zoneStart, x2: xOf(finalChartData[i]) })
         zoneStart = null
       }
     }
     if (zoneStart !== null) {
-      zones.push({ x1: zoneStart, x2: finalChartData[finalChartData.length - 1].time })
+      zones.push({ x1: zoneStart, x2: xOf(finalChartData[finalChartData.length - 1]) })
     }
     return zones
-  }, [finalChartData, ignoreIdle])
+  }, [finalChartData, ignoreIdle, chartXAxis])
 
   const enabledMetrics = useMemo(() => metrics.filter((m) => m.enabled), [metrics])
   const currentDataPoint = data[currentTime] || null
@@ -669,25 +722,40 @@ export function useObdSession() {
 
   // --- New derived metadata: time axis, session summary, data health ---
   const sessionMeta = useMemo(() => computeSessionMeta(data), [data])
-  const timeAxis = sessionMeta.timeAxis
+  // (timeAxis is computed earlier, above finalChartData, and shared here.)
+
+  // Keep the playback loop's refs pointed at the latest values (no dependency array: runs after
+  // every render), so the rAF loop reads current range/rate/position/time-axis without restarting.
+  useEffect(() => {
+    timeRangeRef.current = timeRange
+    rateRef.current = playbackRate
+    currentTimeRef.current = currentTime
+    elapsedRef.current = timeAxis.elapsed
+    trustedRef.current = timeAxis.trustworthy
+  })
+
   const healthFindings = useMemo(
     () => analyzeDataHealth(data, metrics, missingPIDs, speedUnit),
     [data, metrics, missingPIDs, speedUnit],
   )
 
-  // Recompute per-row gear from a (possibly updated) transmission config.
-  const applyTransmissionGears = useCallback(() => {
-    if (data.length === 0) return
-    let changed = false
-    const updatedData = data.map((point) => {
-      const newGear =
-        point.speed && point.rpm ? calculateGear(point.speed, point.rpm, transmissionConfig, speedUnit) : point.gear
-      if (newGear === point.gear) return point
-      changed = true
-      return { ...point, gear: newGear }
-    })
-    if (changed) setData(updatedData)
-  }, [data, transmissionConfig, speedUnit])
+  // Commit a transmission config (from the dialog's validated draft): persist it and recompute
+  // per-row gear with the SAME config in one step, so recalculation never races the state update.
+  const applyTransmission = useCallback(
+    (cfg: TransmissionConfig) => {
+      setTransmissionConfig(cfg)
+      if (data.length === 0) return
+      let changed = false
+      const updatedData = data.map((point) => {
+        const newGear = point.speed && point.rpm ? calculateGear(point.speed, point.rpm, cfg, speedUnit) : point.gear
+        if (newGear === point.gear) return point
+        changed = true
+        return { ...point, gear: newGear }
+      })
+      if (changed) setData(updatedData)
+    },
+    [data, speedUnit],
+  )
 
   return {
     // data + import
@@ -699,7 +767,7 @@ export function useObdSession() {
     currentDataPoint,
     // ui
     activeTab, setActiveTab, ignoreIdle, setIgnoreIdle, theme, toggleTheme, chartTheme,
-    overviewXMode, setOverviewXMode, effectiveXMode, hasDistance, overviewChartRef,
+    overviewXMode, setOverviewXMode, effectiveXMode, hasDistance, overviewChartRef, chartXAxis,
     // channels / metrics
     searchQuery, setSearchQuery, sortOption, setSortOption, showEmptyPIDs, setShowEmptyPIDs,
     filteredMetrics, isEmptyPID, toggleMetric, setMetricEnabled, setEnabledMetricKeys, enabledMetrics,
@@ -709,7 +777,7 @@ export function useObdSession() {
     altitudeKey, elevationData, gpsPointCount, sessionMeta, timeAxis, healthFindings,
     selectedTempSensors, setSelectedTempSensors,
     // transmission
-    transmissionConfig, setTransmissionConfig, transmissionPresets, autoDetection, applyTransmissionGears,
+    transmissionConfig, setTransmissionConfig, transmissionPresets, autoDetection, applyTransmission,
     DEFAULT_TRANSMISSION,
     // sharing
     isSharing, shareDialogOpen, setShareDialogOpen, shareUrl, shareExpiresAt, shareCopied,

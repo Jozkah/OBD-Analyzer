@@ -13,7 +13,8 @@ import { Sparkline } from "@/components/telemetry/sparkline"
 import { tooltipFormatter, formatValue } from "@/lib/format"
 import { computeChannelStat, type ChannelStatus } from "@/lib/channel-stats"
 import { categoryOf, labelForCategory, CHANNEL_CATEGORIES } from "@/lib/channel-categories"
-import type { ChartTheme } from "@/lib/chart-theme"
+import { TELEMETRY, type ChartTheme } from "@/lib/chart-theme"
+import type { ChartXAxis } from "@/lib/chart-x"
 import type { DataPoint, MetricConfig } from "@/types/obd"
 
 interface ChannelsExplorerProps {
@@ -26,6 +27,7 @@ interface ChannelsExplorerProps {
   setSelectedPIDs: (keys: string[]) => void
   idleZones: { x1: number; x2: number }[]
   chartTheme: ChartTheme
+  xAxis: ChartXAxis
   currentTime: number
   hoveredTimeKey: number | null
   setHoveredTimeKey: (v: number | null) => void
@@ -40,7 +42,7 @@ const STATUS_STYLE: Record<ChannelStatus, string> = {
 export const ChannelsExplorer = React.memo(function ChannelsExplorer(props: ChannelsExplorerProps) {
   const {
     data, finalChartData, metrics, selectedPIDs, addPID, removePID, setSelectedPIDs,
-    idleZones, chartTheme, currentTime, hoveredTimeKey, setHoveredTimeKey,
+    idleZones, chartTheme, xAxis, currentTime, hoveredTimeKey, setHoveredTimeKey,
   } = props
 
   const [query, setQuery] = useState("")
@@ -212,18 +214,22 @@ export const ChannelsExplorer = React.memo(function ChannelsExplorer(props: Chan
                         data={finalChartData}
                         margin={{ top: 5, right: 5, left: 5, bottom: 5 }}
                         syncId="channelsSync"
-                        onMouseMove={(state: { activeLabel?: string | number }) => {
-                          if (state && state.activeLabel != null) setHoveredTimeKey(Number(state.activeLabel))
+                        onMouseMove={(state) => {
+                          // Map back via the point's original sample index (payload.time), which
+                          // survives slicing and downsampling — never the x value, which is now
+                          // elapsed seconds.
+                          const idx = (state as { activePayload?: Array<{ payload?: DataPoint }> })?.activePayload?.[0]?.payload?.time
+                          if (typeof idx === "number") setHoveredTimeKey(idx)
                         }}
                         onMouseLeave={() => setHoveredTimeKey(null)}
                       >
                         <CartesianGrid strokeDasharray="3 3" stroke={grid} />
-                        <XAxis dataKey="time" stroke={axis} fontSize={10} />
+                        <XAxis dataKey={xAxis.key} type="number" domain={["dataMin", "dataMax"]} stroke={axis} fontSize={10} tickFormatter={(v) => xAxis.format(Number(v))} />
                         <YAxis stroke={axis} fontSize={10} domain={["auto", "auto"]} />
-                        <Tooltip contentStyle={tooltipContentStyle} formatter={tooltipFormatter} />
+                        <Tooltip contentStyle={tooltipContentStyle} formatter={tooltipFormatter} labelFormatter={(v: unknown) => `${xAxis.label}: ${xAxis.format(Number(v))}`} />
                         <Line dataKey={key} stroke={m.color} strokeWidth={2} dot={false} name={`${m.label} (${m.unit})`} />
                         {idleZones.map((zone, i) => (
-                          <ReferenceArea key={`idle-${i}`} x1={zone.x1} x2={zone.x2} fill="#ef4444" fillOpacity={0.08} stroke="#ef4444" strokeOpacity={0.2} strokeDasharray="4 4" />
+                          <ReferenceArea key={`idle-${i}`} x1={zone.x1} x2={zone.x2} fill={TELEMETRY.idle} fillOpacity={0.08} stroke={TELEMETRY.idle} strokeOpacity={0.2} strokeDasharray="4 4" />
                         ))}
                       </LineChart>
                     </ResponsiveContainer>

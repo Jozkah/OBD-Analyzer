@@ -72,7 +72,7 @@ export function UploadScreen({ isDragOver, onDrop, onDragOver, onDragLeave, onCh
           Several CSVs of the <em>same</em> session (same PIDs) merge in order into one timeline.
         </InfoCard>
         <InfoCard icon={<GitCompare className="h-4 w-4 text-warning" />} title="Independent sessions">
-          Logs from different drives or devices aren't time-synchronised — load them one at a time.
+          Logs from different drives or devices aren&rsquo;t time-synchronised — load them one at a time.
         </InfoCard>
       </div>
     </div>

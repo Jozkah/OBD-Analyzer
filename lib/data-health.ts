@@ -7,6 +7,7 @@
 
 import type { DataPoint, MetricConfig } from "@/types/obd"
 import type { CRUCIAL_PIDS } from "@/lib/constants"
+import { safeMax } from "@/lib/stats"
 
 export type HealthSeverity = "critical" | "warning" | "info"
 
@@ -206,7 +207,9 @@ export function analyzeDataHealth(
   }
 
   // --- Outliers (conservative) ---------------------------------------------
-  const maxRpm = Math.max(0, ...data.map((d) => (typeof d.rpm === "number" && !isNaN(d.rpm) ? d.rpm : 0)))
+  // Use the reduce-based safeMax (never Math.max(...bigArray), which overflows the call
+  // stack on large logs). data is non-empty here (early return above guards length 0).
+  const maxRpm = Math.max(0, safeMax(data.map((d) => (typeof d.rpm === "number" && !isNaN(d.rpm) ? d.rpm : 0))))
   if (maxRpm > 12000) {
     findings.push({
       id: "outlier-rpm",
@@ -217,7 +220,7 @@ export function analyzeDataHealth(
     })
   }
   const speedCap = speedUnit === "mph" ? 250 : 400
-  const maxSpeed = Math.max(0, ...data.map((d) => (typeof d.speed === "number" && !isNaN(d.speed) ? d.speed : 0)))
+  const maxSpeed = Math.max(0, safeMax(data.map((d) => (typeof d.speed === "number" && !isNaN(d.speed) ? d.speed : 0))))
   if (maxSpeed > speedCap) {
     findings.push({
       id: "outlier-speed",
