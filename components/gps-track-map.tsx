@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button"
 import type { DataPoint, MapStyle } from "@/types/obd"
 import { safeMax, safeMin } from "@/lib/stats"
 import { filterGpsFixes, gpsSpeedRange } from "@/lib/gps"
+import { getMapTheme } from "@/lib/map-theme"
 import {
   MAP_TILE_PX,
   mercatorPx,
@@ -110,6 +111,7 @@ export function GPSTrackMap({
 
     const width = rect.width
     const height = rect.height
+    const mapTheme = getMapTheme(theme, mapStyle)
 
     const lats = gpsData.map((d) => d.latitude!)
     const lngs = gpsData.map((d) => d.longitude!)
@@ -165,11 +167,11 @@ export function GPSTrackMap({
       ctx.lineJoin = "round"
       ctx.lineCap = "round"
       const path = gpsData.map((d) => toCanvas(d.latitude!, d.longitude!))
-      const neutral = mapStyle === "street" ? "#1d4ed8" : "#67e8f9"
+      const neutral = mapTheme.neutralTrack
       if (!degenerate && path.length > 1) {
         // Dark casing keeps the bright track legible over satellite imagery.
         ctx.save()
-        ctx.strokeStyle = "rgba(0,0,0,0.45)"
+        ctx.strokeStyle = mapTheme.trackCasing
         ctx.lineWidth = 8
         ctx.beginPath()
         ctx.moveTo(path[0].x, path[0].y)
@@ -200,18 +202,18 @@ export function GPSTrackMap({
       ctx.font = "bold 12px Arial"
       ctx.textAlign = "center"
       ctx.textBaseline = "middle"
-      ctx.fillStyle = "#22c55e"
+      ctx.fillStyle = mapTheme.startMarker
       ctx.beginPath()
       ctx.arc(s.x, s.y, 8, 0, 2 * Math.PI)
       ctx.fill()
-      ctx.fillStyle = "#ffffff"
+      ctx.fillStyle = mapTheme.markerText
       ctx.fillText(sameSpot ? "S/F" : "S", s.x, s.y)
       if (!sameSpot) {
-        ctx.fillStyle = "#1f2937"
+        ctx.fillStyle = mapTheme.finishMarker
         ctx.beginPath()
         ctx.arc(e.x, e.y, 8, 0, 2 * Math.PI)
         ctx.fill()
-        ctx.fillStyle = "#ffffff"
+        ctx.fillStyle = mapTheme.markerText
         ctx.fillText("F", e.x, e.y)
       }
     }
@@ -222,11 +224,11 @@ export function GPSTrackMap({
       const currentPoint = gpsData.find((p) => (p.time ?? 0) >= currentTime) ?? gpsData[gpsData.length - 1]
       if (Number.isFinite(currentPoint?.latitude) && Number.isFinite(currentPoint?.longitude)) {
         const c = toCanvas(currentPoint.latitude!, currentPoint.longitude!)
-        ctx.fillStyle = "#ef4444"
+        ctx.fillStyle = mapTheme.liveMarker
         ctx.beginPath()
         ctx.arc(c.x, c.y, 7, 0, 2 * Math.PI)
         ctx.fill()
-        ctx.strokeStyle = "#ffffff"
+        ctx.strokeStyle = mapTheme.liveMarkerRing
         ctx.lineWidth = 3
         ctx.beginPath()
         ctx.arc(c.x, c.y, 9, 0, 2 * Math.PI)
@@ -239,16 +241,11 @@ export function GPSTrackMap({
     // ---- Offline style: no network at all, just a dark backdrop + grid under the track.
     if (mapStyle === "offline") {
       const g = ctx.createLinearGradient(0, 0, 0, height)
-      if (theme === "light") {
-        g.addColorStop(0, "#eef2f8")
-        g.addColorStop(1, "#e2e8f0")
-      } else {
-        g.addColorStop(0, "#0f172a")
-        g.addColorStop(1, "#0b1222")
-      }
+      g.addColorStop(0, mapTheme.offlineGradient[0])
+      g.addColorStop(1, mapTheme.offlineGradient[1])
       ctx.fillStyle = g
       ctx.fillRect(0, 0, width, height)
-      ctx.strokeStyle = theme === "light" ? "#cbd5e1" : "#1e293b"
+      ctx.strokeStyle = mapTheme.offlineGrid
       ctx.lineWidth = 0.5
       ctx.setLineDash([2, 2])
       for (let i = 0; i <= 10; i++) {
@@ -283,7 +280,7 @@ export function GPSTrackMap({
     const y0 = Math.floor(originY / MAP_TILE_PX)
     const y1 = Math.floor((originY + height) / MAP_TILE_PX)
 
-    ctx.fillStyle = theme === "light" ? "#e2e8f0" : "#0b1222"
+    ctx.fillStyle = mapTheme.tileBackdrop
     ctx.fillRect(0, 0, width, height)
     for (let tx = x0; tx <= x1; tx++) {
       for (let ty = y0; ty <= y1; ty++) {

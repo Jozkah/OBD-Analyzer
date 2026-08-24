@@ -8,7 +8,7 @@ import { lttbDownsample } from "@/lib/downsample"
 import { buildWindowCsv, downloadCsv, determineFileOrder } from "@/lib/csv"
 import { calculateGear, detectGearRatios } from "@/lib/gear"
 import { defaultMetrics, CRUCIAL_PIDS } from "@/lib/constants"
-import { getChartTheme } from "@/lib/chart-theme"
+import { getChartTheme, TEMP_SENSORS } from "@/lib/chart-theme"
 import { mergeCSVFiles } from "@/lib/merge-csv"
 import { parseInWorker } from "@/lib/parse-worker"
 import { computeSessionMeta } from "@/lib/session-summary"
@@ -657,16 +657,12 @@ export function useObdSession() {
   const enabledMetrics = useMemo(() => metrics.filter((m) => m.enabled), [metrics])
   const currentDataPoint = data[currentTime] || null
 
-  const tempSensors = useMemo(() => {
-    const sensors: { key: string; label: string; color: string }[] = []
-    if (data.some((d) => d.coolantTemp)) sensors.push({ key: "coolantTemp", label: "Coolant", color: "#8b5cf6" })
-    if (data.some((d) => d.intakeTemp)) sensors.push({ key: "intakeTemp", label: "Intake Air", color: "#06b6d4" })
-    if (data.some((d) => d.catTemp)) sensors.push({ key: "catTemp", label: "Catalyst", color: "#f59e0b" })
-    if (data.some((d) => d.oilTemp)) sensors.push({ key: "oilTemp", label: "Oil", color: "#ef4444" })
-    if (data.some((d) => d.transTemp)) sensors.push({ key: "transTemp", label: "Transmission", color: "#84cc16" })
-    if (data.some((d) => d.exhaustTemp)) sensors.push({ key: "exhaustTemp", label: "Exhaust", color: "#ec4899" })
-    return sensors
-  }, [data])
+  // Temp-sensor colours/labels come from the central TEMP_SENSORS palette; we only keep the
+  // sensors this log actually recorded.
+  const tempSensors = useMemo(
+    () => TEMP_SENSORS.filter((s) => data.some((d) => d[s.key])),
+    [data],
+  )
 
   const stats = useMemo(() => {
     if (data.length === 0)

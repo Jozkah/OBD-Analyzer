@@ -62,3 +62,17 @@ export const TELEMETRY = {
   /** Idle-zone overlay band. */
   idle: "#ef4444",
 } as const
+
+/**
+ * Temperature-sensor series colours — the single source of truth for the multi-sensor temperature
+ * chart (each hue distinct and legible on both plot surfaces). Kept here rather than inline in the
+ * session hook so every temperature swatch/line/legend reads from one place.
+ */
+export const TEMP_SENSORS: { key: string; label: string; color: string }[] = [
+  { key: "coolantTemp", label: "Coolant", color: "#8b5cf6" },
+  { key: "intakeTemp", label: "Intake Air", color: "#06b6d4" },
+  { key: "catTemp", label: "Catalyst", color: "#f59e0b" },
+  { key: "oilTemp", label: "Oil", color: "#ef4444" },
+  { key: "transTemp", label: "Transmission", color: "#84cc16" },
+  { key: "exhaustTemp", label: "Exhaust", color: "#ec4899" },
+]
