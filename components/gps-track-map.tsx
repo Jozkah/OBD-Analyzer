@@ -522,7 +522,7 @@ export function GPSTrackMap({
       />
       {trackDegenerate && (
         <div className="pointer-events-none absolute inset-x-0 top-3 flex justify-center">
-          <div className="rounded-lg border border-border/70 bg-background/85 px-4 py-3 text-center shadow-lg shadow-black/30 backdrop-blur">
+          <div className="rounded-md border border-border bg-background/90 px-4 py-3 text-center shadow-sm backdrop-blur">
             <p className="text-sm font-medium text-foreground/90">No track to plot</p>
             <p className="mt-0.5 max-w-[17rem] text-xs text-muted-foreground">
               All GPS fixes are within ~20&nbsp;m — the vehicle was stationary, or the log has a single location.
@@ -530,7 +530,7 @@ export function GPSTrackMap({
           </div>
         </div>
       )}
-      <div className="absolute left-3 top-3 rounded-lg border border-border/70 bg-background/85 p-1 shadow-lg shadow-black/30 backdrop-blur">
+      <div className="absolute left-3 top-3 rounded-md border border-border bg-background/90 p-1 shadow-sm backdrop-blur">
         <div className="flex gap-1">
           {(["offline", "satellite", "street", "terrain"] as const).map((style) => (
             <Button
@@ -545,7 +545,7 @@ export function GPSTrackMap({
           ))}
         </div>
       </div>
-      <div className="absolute right-3 top-3 rounded-lg border border-border/70 bg-background/85 p-2.5 text-xs shadow-lg shadow-black/30 backdrop-blur">
+      <div className="absolute right-3 top-3 rounded-md border border-border bg-background/90 p-2.5 text-xs shadow-sm backdrop-blur">
         <div className="flex items-center space-x-2 mb-1">
           <div className="w-3 h-3 bg-green-500 rounded-full"></div>
           <span>Start</span>
@@ -576,18 +576,18 @@ export function GPSTrackMap({
         )}
       </div>
       {activeFix ? (
-        <div className="absolute bottom-3 left-3 rounded-lg border border-border/70 bg-background/85 px-3 py-2 shadow-lg shadow-black/30 backdrop-blur">
+        <div className="absolute bottom-3 left-3 rounded-md border border-border bg-background/90 px-3 py-2 shadow-sm backdrop-blur">
           <div className="font-mono text-base font-semibold tabular-nums text-primary">
             {Number.isFinite(activeFix.speed as number) ? `${(activeFix.speed as number).toFixed(1)} ${speedUnit}` : "Unknown"}
           </div>
-          <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+          <div className="text-[11px] font-medium text-muted-foreground">
             {activeFixIsCurrent ? "Current Speed" : "Speed at last fix"}
           </div>
         </div>
       ) : (
-        <div className="absolute bottom-3 left-3 rounded-lg border border-border/70 bg-background/85 px-3 py-2 shadow-lg shadow-black/30 backdrop-blur">
+        <div className="absolute bottom-3 left-3 rounded-md border border-border bg-background/90 px-3 py-2 shadow-sm backdrop-blur">
           <div className="font-mono text-base font-semibold tabular-nums text-muted-foreground">No fix yet</div>
-          <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Location</div>
+          <div className="text-[11px] font-medium text-muted-foreground">Location</div>
         </div>
       )}
       {mapStyle !== "offline" && (
@@ -599,7 +599,7 @@ export function GPSTrackMap({
         <Button
           size="icon"
           variant="secondary"
-          className="h-8 w-8 shadow-lg shadow-black/30"
+          className="h-8 w-8 shadow-sm"
           onClick={() => zoomByButton(1)}
           aria-label="Zoom in"
         >
@@ -608,7 +608,7 @@ export function GPSTrackMap({
         <Button
           size="icon"
           variant="secondary"
-          className="h-8 w-8 shadow-lg shadow-black/30"
+          className="h-8 w-8 shadow-sm"
           onClick={() => zoomByButton(-1)}
           aria-label="Zoom out"
         >
@@ -617,7 +617,7 @@ export function GPSTrackMap({
         <Button
           size="icon"
           variant="secondary"
-          className="h-8 w-8 shadow-lg shadow-black/30"
+          className="h-8 w-8 shadow-sm"
           onClick={() => setView(null)}
           aria-label="Fit track to view"
           title="Fit track to view"
@@ -627,7 +627,7 @@ export function GPSTrackMap({
         <Button
           size="icon"
           variant="secondary"
-          className="h-8 w-8 shadow-lg shadow-black/30"
+          className="h-8 w-8 shadow-sm"
           onClick={exportPng}
           aria-label="Save map as PNG"
           title="Save map as PNG"

@@ -78,7 +78,7 @@ export const EngineCharts = React.memo(function EngineCharts({
 
   return (
     <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-      <Card className="flex min-h-[360px] flex-col p-5">
+      <Card className="flex min-h-[360px] flex-col p-5 shadow-sm">
         <SectionHeader
           title="Engine Temperature"
           hint="Coolant, intake and any other temperature channels present in the log."
@@ -133,7 +133,7 @@ export const EngineCharts = React.memo(function EngineCharts({
         </div>
       </Card>
 
-      <Card className="flex min-h-[360px] flex-col p-5">
+      <Card className="flex min-h-[360px] flex-col p-5 shadow-sm">
         <SectionHeader title="Ignition Advance" hint="Spark timing advance in degrees." />
         <div className="min-h-[280px] flex-grow">
           {hasChannel(finalChartData, "ignitionAdvance") ? (
@@ -153,7 +153,7 @@ export const EngineCharts = React.memo(function EngineCharts({
         </div>
       </Card>
 
-      <Card className="flex min-h-[360px] flex-col p-5">
+      <Card className="flex min-h-[360px] flex-col p-5 shadow-sm">
         <SectionHeader title="Boost Pressure" hint="Manifold boost/vacuum relative to atmospheric." />
         <div className="min-h-[280px] flex-grow">
           {hasChannel(finalChartData, "boost") ? (
@@ -173,7 +173,7 @@ export const EngineCharts = React.memo(function EngineCharts({
         </div>
       </Card>
 
-      <Card className="flex min-h-[360px] flex-col p-5">
+      <Card className="flex min-h-[360px] flex-col p-5 shadow-sm">
         <SectionHeader title="Fuel Consumption" hint="Instantaneous fuel rate in litres per hour." />
         <div className="min-h-[280px] flex-grow">
           {hasChannel(finalChartData, "fuelRate") ? (
@@ -193,7 +193,7 @@ export const EngineCharts = React.memo(function EngineCharts({
         </div>
       </Card>
 
-      <Card className="flex min-h-[360px] flex-col p-5 xl:col-span-2">
+      <Card className="flex min-h-[360px] flex-col p-5 shadow-sm xl:col-span-2">
         <SectionHeader title="Throttle & Brake" hint="Pedal inputs — throttle and brake position." />
         <div className="min-h-[280px] flex-grow">
           {hasChannel(finalChartData, "throttle") || hasChannel(finalChartData, "brake") ? (

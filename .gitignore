@@ -39,5 +39,11 @@ next-env.d.ts
 # workspace and must not be committed (pnpm 9 in CI reads it as an empty workspace).
 pnpm-workspace.yaml
 
-# local screenshot output (e2e/screenshots.mjs)
+# local screenshot output (e2e/screenshots.mjs) and before/after proof captures
 /.screenshots/
+/.screenshots-before/
+/.screenshots-after/
+# isolated build output dirs used when serving an older commit for before/after proofs
+/.next-base/
+# npm cache written when the visual suite runs inside the Playwright container (HOME=/work)
+/.npm/

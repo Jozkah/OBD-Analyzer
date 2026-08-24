@@ -6,7 +6,9 @@ const Card = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElemen
   <div
     ref={ref}
     className={cn(
-      "rounded-xl border border-border/80 bg-card bg-gradient-to-b from-white/[0.025] to-transparent text-card-foreground shadow-lg shadow-black/25",
+      // Primary workspace surface: a calm, flat panel. Elevation (shadow-sm / shadow-overlay) is
+      // opted into per-use for the main workspace panel and overlays — not baked into every card.
+      "rounded-lg border border-border bg-card text-card-foreground",
       className,
     )}
     {...props}

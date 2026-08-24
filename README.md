@@ -12,17 +12,31 @@ I datalog every trip from my car's OBD-II port — but actually *reading* those 
 
 ## Screenshots
 
-The upload screen, and the analysis dashboard loaded with the bundled sample log:
+The refined upload experience in dark and light themes:
 
-![OBD Analyzer — upload screen](docs/screenshot-landing.png)
+| Dark | Light |
+|---|---|
+| ![OBD Analyzer upload screen in dark theme](docs/screenshot-landing.png) | ![OBD Analyzer upload screen in light theme](docs/screenshot-landing-light.png) |
 
-![OBD Analyzer — analysis dashboard](docs/screenshot-dashboard.png)
+The session dashboard loaded with deterministic sample telemetry:
 
-The daylight theme, and the responsive mobile layout (bottom navigation, no wrapped tabs):
+| Dark | Light |
+|---|---|
+| ![OBD Analyzer session dashboard in dark theme](docs/screenshot-dashboard.png) | ![OBD Analyzer session dashboard in light theme](docs/screenshot-overview-light.png) |
 
-![OBD Analyzer — light theme](docs/screenshot-overview-light.png)
+Focused workspaces for exploring channels and inspecting a GPS route:
 
-![OBD Analyzer — mobile](docs/screenshot-mobile.png)
+| Data Channels | Route |
+|---|---|
+| ![OBD Analyzer Data Channels inspector](docs/screenshot-channels.png) | ![OBD Analyzer GPS route workspace](docs/screenshot-route.png) |
+
+Responsive mobile import and the guided transmission configuration:
+
+| Mobile | Transmission |
+|---|---|
+| ![OBD Analyzer mobile upload screen](docs/screenshot-mobile.png) | ![OBD Analyzer transmission configuration](docs/screenshot-transmission.png) |
+
+These screenshots are generated from the same deterministic Playwright fixtures used by the visual-regression suite, so the documented interface stays aligned with the tested product.
 
 ## Features
 

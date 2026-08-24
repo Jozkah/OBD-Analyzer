@@ -59,3 +59,54 @@ jobs:
           path: playwright-report/
           retention-days: 7
           if-no-files-found: ignore
+
+  # Visual regression runs in a SEPARATE job pinned to the Playwright container image so the browser
+  # AND font stack are byte-identical to the environment the committed baselines were authored in
+  # (see docs/visual-regression.md). Running it anywhere else would fail on font-rasterisation noise
+  # rather than real visual changes.
+  visual:
+    runs-on: ubuntu-latest
+    container:
+      image: mcr.microsoft.com/playwright:v1.49.1-jammy
+      options: --ipc=host
+    steps:
+      - uses: actions/checkout@v4
+
+      # The container runs as root; mark the checkout safe so git operations don't warn/fail.
+      - name: Mark workspace safe for git
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm build
+
+      # VISUAL_ONLY makes the config expose only the `visual` project (and skips the share server),
+      # and uses the container's own matching Chromium. CI=true → Playwright starts its own server.
+      - name: Visual regression
+        run: pnpm exec playwright test
+        env:
+          VISUAL_ONLY: "1"
+
+      # On a mismatch, publish the HTML report (with side-by-side expected/actual/diff images) so a
+      # reviewer can inspect exactly what changed.
+      - name: Upload visual report and diffs
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-visual-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
+          if-no-files-found: ignore

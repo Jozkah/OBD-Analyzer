@@ -1,10 +1,10 @@
 "use client"
 
-import React, { useMemo, useState } from "react"
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceArea,
 } from "recharts"
-import { Search, Star, Plus, X, BarChart3 } from "lucide-react"
+import { Search, Star, Plus, X, BarChart3, MoveHorizontal, ArrowLeft, ArrowRight } from "lucide-react"
 import { Card } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
@@ -92,9 +92,9 @@ export const ChannelsExplorer = React.memo(function ChannelsExplorer(props: Chan
   )
 
   return (
-    <div className="grid grid-cols-1 gap-4 xl:grid-cols-12">
+    <div className="grid grid-cols-1 gap-4 xl:grid-cols-12 xl:items-start">
       {/* Explorer table */}
-      <Card className="flex flex-col p-4 xl:col-span-5">
+      <Card className="flex flex-col p-4 shadow-sm xl:col-span-5">
         <SectionHeader title="Data Channels" hint="Every detected PID with its range, live value and health status." />
         <div className="mb-3 space-y-2">
           <div className="relative">
@@ -116,17 +116,20 @@ export const ChannelsExplorer = React.memo(function ChannelsExplorer(props: Chan
           </div>
         </div>
 
-        <div className="custom-scrollbar -mx-1 max-h-[560px] overflow-auto px-1">
-          <table className="w-full border-collapse text-sm">
-            <thead className="sticky top-0 z-10 bg-card">
-              <tr className="border-b border-border/70 text-left text-[11px] uppercase tracking-wide text-muted-foreground">
-                <th className="py-2 pr-2 font-medium">Channel</th>
-                <th className="px-2 py-2 text-right font-medium">Current</th>
-                <th className="hidden px-2 py-2 text-right font-medium sm:table-cell">Min</th>
-                <th className="hidden px-2 py-2 text-right font-medium sm:table-cell">Max</th>
-                <th className="hidden px-2 py-2 font-medium md:table-cell">Trend</th>
-                <th className="px-2 py-2 font-medium">Status</th>
-                <th className="py-2 pl-2 font-medium sr-only">Actions</th>
+        <HScroll className="-mx-1 max-h-[560px] px-1">
+          {/* A comfortable minimum width keeps values from being crushed on narrow screens; when the
+              viewport is narrower than this the HScroll wrapper reveals its scroll affordance rather
+              than clipping silently. */}
+          <table className="w-full min-w-[30rem] border-collapse text-sm">
+            <thead className="sticky top-0 z-10 bg-card shadow-[0_1px_0_0_hsl(var(--border))]">
+              <tr className="text-left text-[11px] font-medium text-muted-foreground">
+                <th className="py-2.5 pr-2 font-medium">Channel</th>
+                <th className="px-2 py-2.5 text-right font-medium">Current</th>
+                <th className="hidden px-2 py-2.5 text-right font-medium sm:table-cell">Min</th>
+                <th className="hidden px-2 py-2.5 text-right font-medium sm:table-cell">Max</th>
+                <th className="hidden px-2 py-2.5 font-medium md:table-cell">Trend</th>
+                <th className="px-2 py-2.5 font-medium">Status</th>
+                <th className="py-2.5 pl-2 font-medium sr-only">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -138,6 +141,10 @@ export const ChannelsExplorer = React.memo(function ChannelsExplorer(props: Chan
                 const st = stats.get(key)
                 const selected = selectedPIDs.includes(key)
                 const cur = data[pidDisplayTimeKey]?.[key]
+                // The full original PID name (before shortening). Exposed via title + aria-label so a
+                // long name that truncates visually — or a shortened label that collides with a
+                // near-duplicate (e.g. two fuel-trim banks) — stays discoverable and distinguishable.
+                const fullName = m.originalName ?? m.label
                 return (
                   <tr key={key} className="border-b border-border/40 hover:bg-accent/40">
                     <td className="py-1.5 pr-2">
@@ -145,12 +152,12 @@ export const ChannelsExplorer = React.memo(function ChannelsExplorer(props: Chan
                         type="button"
                         onClick={() => (selected ? removePID(key) : addPID(key))}
                         className="flex items-center gap-2 text-left"
-                        aria-label={selected ? `Remove ${m.label} from charts` : `Inspect ${m.label}`}
+                        aria-label={selected ? `Remove ${fullName} from charts` : `Inspect ${fullName}`}
                       >
                         <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: m.color }} aria-hidden="true" />
-                        <span className="min-w-0">
-                          <span className="block truncate font-medium">{m.label}</span>
-                          <span className="block truncate text-[11px] text-muted-foreground">{labelForCategory(categoryOf(m))}{m.unit ? ` · ${m.unit}` : ""}</span>
+                        <span className="min-w-0 max-w-[16rem]">
+                          <span className="block truncate font-medium" title={fullName}>{m.label}</span>
+                          <span className="block truncate text-[11px] text-muted-foreground" title={fullName}>{labelForCategory(categoryOf(m))}{m.unit ? ` · ${m.unit}` : ""}</span>
                         </span>
                       </button>
                     </td>
@@ -159,14 +166,14 @@ export const ChannelsExplorer = React.memo(function ChannelsExplorer(props: Chan
                     <td className="hidden px-2 py-1.5 text-right font-mono tabular-nums text-muted-foreground sm:table-cell">{st?.max != null ? formatValue(st.max, m.unit) : "—"}</td>
                     <td className="hidden px-2 py-1.5 md:table-cell"><Sparkline values={st?.spark ?? []} color={m.color} /></td>
                     <td className="px-2 py-1.5">
-                      <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${STATUS_STYLE[st?.status ?? "empty"]}`}>{st?.status ?? "empty"}</span>
+                      <span className={`inline-flex items-center rounded px-1.5 py-0.5 text-[11px] font-medium capitalize ${STATUS_STYLE[st?.status ?? "empty"]}`}>{st?.status ?? "empty"}</span>
                     </td>
                     <td className="py-1.5 pl-2">
                       <div className="flex items-center justify-end gap-0.5">
-                        <button type="button" onClick={() => togglePin(key)} aria-label={pinned.has(key) ? `Unpin ${m.label}` : `Pin ${m.label}`} title="Pin" className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground">
+                        <button type="button" onClick={() => togglePin(key)} aria-label={pinned.has(key) ? `Unpin ${fullName}` : `Pin ${fullName}`} title="Pin" className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground">
                           <Star className={`h-3.5 w-3.5 ${pinned.has(key) ? "fill-warning text-warning" : ""}`} />
                         </button>
-                        <button type="button" onClick={() => (selected ? removePID(key) : addPID(key))} aria-label={selected ? `Remove ${m.label}` : `Add ${m.label} to charts`} title={selected ? "Remove" : "Add to charts"} className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground">
+                        <button type="button" onClick={() => (selected ? removePID(key) : addPID(key))} aria-label={selected ? `Remove ${fullName}` : `Add ${fullName} to charts`} title={selected ? "Remove" : "Add to charts"} className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground">
                           {selected ? <X className="h-3.5 w-3.5" /> : <Plus className="h-3.5 w-3.5" />}
                         </button>
                       </div>
@@ -176,21 +183,23 @@ export const ChannelsExplorer = React.memo(function ChannelsExplorer(props: Chan
               })}
             </tbody>
           </table>
-        </div>
+        </HScroll>
       </Card>
 
       {/* Detail charts */}
-      <Card className="flex flex-col p-4 xl:col-span-7">
+      <Card className="flex flex-col p-4 shadow-sm xl:col-span-7">
         <SectionHeader
           title={`Inspector${selectedPIDs.length ? ` · ${selectedPIDs.length}` : ""}`}
           hint="Selected channels plotted with synchronised hover. Add channels from the table."
           actions={selectedPIDs.length > 0 ? <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setSelectedPIDs([])}>Clear</Button> : undefined}
         />
         {selectedPIDs.length === 0 ? (
-          <div className="flex flex-1 flex-col items-center justify-center gap-2 py-16 text-center text-muted-foreground">
-            <BarChart3 className="h-10 w-10 opacity-40" aria-hidden="true" />
-            <p className="text-sm font-medium text-foreground/80">Select channels to inspect</p>
-            <p className="max-w-xs text-xs">Click a row or its + button to plot a channel here. Add several to compare with a synced cursor.</p>
+          <div className="mt-2 flex items-start gap-3 rounded-md border border-dashed border-border bg-muted/30 p-4 text-left text-muted-foreground">
+            <BarChart3 className="mt-0.5 h-5 w-5 shrink-0 opacity-50" aria-hidden="true" />
+            <div>
+              <p className="text-sm font-medium text-foreground/80">No channels selected</p>
+              <p className="mt-0.5 text-xs">Click a row or its <span className="font-medium text-foreground/70">+</span> button to plot a channel here. Add several to compare them with a synced cursor.</p>
+            </div>
           </div>
         ) : (
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -254,6 +263,70 @@ export const ChannelsExplorer = React.memo(function ChannelsExplorer(props: Chan
     </div>
   )
 })
+
+/**
+ * A horizontally + vertically scrollable viewport that reveals subtle, theme-aware edge fades ONLY
+ * while there is more content to scroll toward, plus a STATE-AWARE hint whose wording matches the
+ * scroll position: at the start it points right ("more columns"), in the middle it points both
+ * ways, and at the end it points back left ("previous columns") — so it never implies there are
+ * more columns to the right when there aren't. Each fade disappears at its own edge, and both cues
+ * vanish entirely when the content fits, so nothing ever misleads.
+ */
+function HScroll({ className, children }: { className?: string; children: React.ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null)
+  const [edges, setEdges] = useState({ start: false, end: false })
+
+  const update = useCallback(() => {
+    const el = ref.current
+    if (!el) return
+    const max = el.scrollWidth - el.clientWidth
+    // 1px tolerance absorbs sub-pixel rounding so the cue doesn't flicker at the extremes.
+    setEdges({ start: el.scrollLeft > 1, end: max > 1 && el.scrollLeft < max - 1 })
+  }, [])
+
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    update()
+    el.addEventListener("scroll", update, { passive: true })
+    // Observe both the viewport and its content so the cue re-evaluates when the width available
+    // to the table changes (responsive breakpoints) or the row set changes.
+    const ro = new ResizeObserver(update)
+    ro.observe(el)
+    if (el.firstElementChild) ro.observe(el.firstElementChild)
+    return () => {
+      el.removeEventListener("scroll", update)
+      ro.disconnect()
+    }
+  }, [update])
+
+  // Wording follows the measured edges. `data-cue-state` gives the browser test a stable hook for
+  // each state without asserting on copy alone.
+  const cue = edges.end
+    ? edges.start
+      ? { state: "both", Icon: MoveHorizontal, text: "Scroll horizontally to view more columns" }
+      : { state: "right", Icon: ArrowRight, text: "Scroll right for more columns" }
+    : edges.start
+      ? { state: "left", Icon: ArrowLeft, text: "Scroll left to view previous columns" }
+      : null
+
+  return (
+    <div className="relative">
+      <div ref={ref} data-testid="channels-scroll" className={`custom-scrollbar overflow-auto ${className ?? ""}`}>
+        {children}
+      </div>
+      {/* Left / right edge fades — pointer-events-none so they never block the scrollbar or clicks. */}
+      <div aria-hidden data-testid="channels-scroll-fade-start" className={`pointer-events-none absolute inset-y-0 left-0 w-6 bg-gradient-to-r from-card to-transparent transition-opacity duration-150 ${edges.start ? "opacity-100" : "opacity-0"}`} />
+      <div aria-hidden data-testid="channels-scroll-fade-end" className={`pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-card to-transparent transition-opacity duration-150 ${edges.end ? "opacity-100" : "opacity-0"}`} />
+      {cue && (
+        <p data-testid="channels-scroll-hint" data-cue-state={cue.state} className="mt-1.5 flex items-center gap-1 text-[11px] text-muted-foreground">
+          <cue.Icon className="h-3 w-3" aria-hidden="true" />
+          {cue.text}
+        </p>
+      )}
+    </div>
+  )
+}
 
 function FilterChip({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
   return (

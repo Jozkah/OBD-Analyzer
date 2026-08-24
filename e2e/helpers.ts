@@ -68,6 +68,109 @@ export function partialCsv(rows = 20): string {
   return lines.join("\n") + "\n"
 }
 
+/**
+ * A trustworthy log whose GPS fixes all sit within a few metres — a parked/stationary car. The
+ * route is degenerate (no path to draw) but the fixes, speed and count remain valid. Jitter stays
+ * well under the ~20 m stationary threshold (≈0.00005° ≈ 5 m).
+ */
+export function stationaryGpsCsv(rows = 30): string {
+  const headers = [
+    "Time",
+    "Engine RPM (RPM)",
+    "Vehicle speed (km/h)",
+    "Absolute throttle position (%)",
+    "Engine coolant temperature (°C)",
+    "Latitude (deg)",
+    "Longitude (deg)",
+  ]
+  const lines = [headers.join(",")]
+  for (let i = 0; i < rows; i++) {
+    const lat = 51.5 + (i % 2 === 0 ? 0.00003 : -0.00003)
+    const lng = -0.1 + (i % 3 === 0 ? 0.00003 : -0.00003)
+    lines.push([iso(i), 800 + (i % 5) * 10, 0, 0, 88, lat.toFixed(5), lng.toFixed(5)].join(","))
+  }
+  return lines.join("\n") + "\n"
+}
+
+/**
+ * A moving log where only a fraction of rows carry a location fix (the rest have blank lat/lon),
+ * so GPS coverage classifies as "sparse". The fixes that exist do move (non-degenerate).
+ */
+export function sparseGpsCsv(rows = 40, everyNth = 10): string {
+  const headers = [
+    "Time",
+    "Engine RPM (RPM)",
+    "Vehicle speed (km/h)",
+    "Absolute throttle position (%)",
+    "Engine coolant temperature (°C)",
+    "Latitude (deg)",
+    "Longitude (deg)",
+  ]
+  const lines = [headers.join(",")]
+  for (let i = 0; i < rows; i++) {
+    const hasFix = i % everyNth === 0
+    const lat = hasFix ? (51.5 + i * 0.001).toFixed(5) : ""
+    const lng = hasFix ? (-0.1 - i * 0.001).toFixed(5) : ""
+    lines.push([iso(i), 1000 + i * 50, i * 3, Math.min(100, i * 3), 85, lat, lng].join(","))
+  }
+  return lines.join("\n") + "\n"
+}
+
+// A long, ugly filename to prove header/session-identity truncation.
+export const LONG_FILE_NAME =
+  "2024-05-17_track-day_session-3_full-log_with-a-deliberately-very-long-name_export_final_v2.csv"
+
+/**
+ * A dense log with MANY channels, including long and near-duplicate PID names, and a configurable
+ * (large) row count — enough to exercise the real table + chart layout rather than the 38-row
+ * sample. Deterministic values so snapshots/assertions stay stable.
+ */
+export function densePidsCsv(rows = 1500): string {
+  const headers = [
+    "Time",
+    "Engine RPM (RPM)",
+    "Vehicle speed (km/h)",
+    "Absolute throttle position (%)",
+    "Engine coolant temperature (°C)",
+    // Long / near-duplicate names that are indistinguishable when truncated without their unit/bank.
+    "Short term fuel trim — Bank 1 (%)",
+    "Short term fuel trim — Bank 2 (%)",
+    "Long term fuel trim — Bank 1 (%)",
+    "Long term fuel trim — Bank 2 (%)",
+    "Intake manifold absolute pressure (kPa)",
+    "Mass air flow rate (g/s)",
+    "Oxygen sensor voltage — Bank 1 Sensor 1 (V)",
+    "Oxygen sensor voltage — Bank 1 Sensor 2 (V)",
+    "Ambient air temperature (°C)",
+    "Barometric pressure (kPa)",
+    "Engine oil temperature (°C)",
+    "Commanded equivalence ratio (lambda)",
+  ]
+  const lines = [headers.join(",")]
+  for (let i = 0; i < rows; i++) {
+    const rpm = 900 + ((i * 37) % 6000)
+    const speed = (i * 7) % 180
+    const throttle = (i * 3) % 100
+    const coolant = 70 + (i % 30)
+    const stftB1 = (Math.sin(i / 9) * 8).toFixed(2)
+    const stftB2 = (Math.sin(i / 9 + 0.4) * 8).toFixed(2)
+    const ltftB1 = (Math.cos(i / 14) * 5).toFixed(2)
+    const ltftB2 = (Math.cos(i / 14 + 0.3) * 5).toFixed(2)
+    const map = 20 + ((i * 11) % 200)
+    const maf = (2 + ((i * 13) % 150) / 3).toFixed(1)
+    const o2a = (0.1 + ((i % 18) / 20)).toFixed(3)
+    const o2b = (0.1 + ((i % 16) / 20)).toFixed(3)
+    const ambient = 12 + (i % 15)
+    const baro = 98 + (i % 6)
+    const oil = 70 + (i % 40)
+    const lambda = (0.9 + ((i % 20) / 100)).toFixed(3)
+    lines.push(
+      [iso(i), rpm, speed, throttle, coolant, stftB1, stftB2, ltftB1, ltftB2, map, maf, o2a, o2b, ambient, baro, oil, lambda].join(","),
+    )
+  }
+  return lines.join("\n") + "\n"
+}
+
 export const uploadInput = 'input[type="file"]'
 
 export async function uploadCsv(page: Page, name: string, content: string) {
@@ -93,4 +196,38 @@ export function primaryNav(page: Page) {
 
 export async function gotoSection(page: Page, name: RegExp) {
   await primaryNav(page).getByRole("button", { name }).click()
+}
+
+/** Force a theme deterministically (mirrors the app's pre-hydration theme script). */
+export async function applyTheme(page: Page, theme: "light" | "dark") {
+  await page.evaluate((t) => {
+    document.documentElement.classList.remove("light", "dark")
+    document.documentElement.classList.add(t)
+    try {
+      localStorage.setItem("obd-theme", t)
+    } catch {
+      /* storage may be unavailable */
+    }
+  }, theme)
+}
+
+/** Objective assertion that the PAGE itself never scrolls horizontally (internal scroll is fine). */
+export async function expectNoPageOverflow(page: Page, ctx: string) {
+  const { scrollW, innerW } = await page.evaluate(() => {
+    const el = document.scrollingElement || document.documentElement
+    return { scrollW: el.scrollWidth, innerW: window.innerWidth }
+  })
+  expect(scrollW, `horizontal overflow ${ctx}: scrollWidth ${scrollW} > innerWidth ${innerW}`).toBeLessThanOrEqual(
+    innerW + 1,
+  )
+}
+
+/** Assert a locator is visible AND fully inside the viewport (not clipped/off-screen). */
+export async function expectInViewport(page: Page, locator: ReturnType<Page["getByRole"]>, ctx: string) {
+  await expect(locator, `${ctx}: not visible`).toBeVisible()
+  const box = await locator.boundingBox()
+  const innerW = await page.evaluate(() => window.innerWidth)
+  expect(box, `${ctx}: no box`).not.toBeNull()
+  expect(box!.x, `${ctx}: off left`).toBeGreaterThanOrEqual(-1)
+  expect(box!.x + box!.width, `${ctx}: clipped right`).toBeLessThanOrEqual(innerW + 1)
 }

@@ -22,6 +22,26 @@ test("labels position as a sample index when timestamps are untrustworthy", asyn
   await expect(region.getByText(/#\d+\s*\/\s*\d+/).first()).toBeVisible()
 })
 
+test("play/pause stays the primary control in both idle and playing states", async ({ page }) => {
+  await loadTrusted(page, { rows: 40 })
+  const region = bar(page)
+  const play = region.getByRole("button", { name: /Play playback|Pause playback/i })
+  // Idle: it's the primary control (primary variant paints bg-primary). Substring match, not
+  // class-order dependent.
+  await expect(play).toHaveAttribute("aria-pressed", "false")
+  await expect(play).toHaveClass(/bg-primary/)
+  // While playing: still the SAME element (data-playing flips) and still primary — the control
+  // never drops its emphasis mid-session.
+  await play.click()
+  await expect(play).toHaveAttribute("aria-pressed", "true")
+  await expect(play).toHaveAttribute("data-playing", "true")
+  await expect(play).toHaveClass(/bg-primary/)
+  await play.click()
+  await expect(play).toHaveAttribute("aria-pressed", "false")
+  await expect(play).toHaveAttribute("data-playing", "false")
+  await expect(play).toHaveClass(/bg-primary/)
+})
+
 test("play/pause toggles and speed multiplier is selectable", async ({ page }) => {
   await loadTrusted(page, { rows: 40 })
   const region = bar(page)
