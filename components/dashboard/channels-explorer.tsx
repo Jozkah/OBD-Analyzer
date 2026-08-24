@@ -4,7 +4,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceArea,
 } from "recharts"
-import { Search, Star, Plus, X, BarChart3, MoveHorizontal } from "lucide-react"
+import { Search, Star, Plus, X, BarChart3, MoveHorizontal, ArrowLeft, ArrowRight } from "lucide-react"
 import { Card } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
@@ -265,11 +265,12 @@ export const ChannelsExplorer = React.memo(function ChannelsExplorer(props: Chan
 })
 
 /**
- * A horizontally + vertically scrollable viewport that reveals a subtle, theme-aware edge fade
- * ONLY while there is more content to scroll toward, plus a screen-reader/visible hint when the
- * content overflows horizontally. Both cues disappear at the end of the scroll (or when there is
- * no overflow at all), so they never mislead. The fade tracks both edges so the affordance is
- * honest in either scroll direction.
+ * A horizontally + vertically scrollable viewport that reveals subtle, theme-aware edge fades ONLY
+ * while there is more content to scroll toward, plus a STATE-AWARE hint whose wording matches the
+ * scroll position: at the start it points right ("more columns"), in the middle it points both
+ * ways, and at the end it points back left ("previous columns") — so it never implies there are
+ * more columns to the right when there aren't. Each fade disappears at its own edge, and both cues
+ * vanish entirely when the content fits, so nothing ever misleads.
  */
 function HScroll({ className, children }: { className?: string; children: React.ReactNode }) {
   const ref = useRef<HTMLDivElement>(null)
@@ -299,7 +300,15 @@ function HScroll({ className, children }: { className?: string; children: React.
     }
   }, [update])
 
-  const overflowing = edges.start || edges.end
+  // Wording follows the measured edges. `data-cue-state` gives the browser test a stable hook for
+  // each state without asserting on copy alone.
+  const cue = edges.end
+    ? edges.start
+      ? { state: "both", Icon: MoveHorizontal, text: "Scroll horizontally to view more columns" }
+      : { state: "right", Icon: ArrowRight, text: "Scroll right for more columns" }
+    : edges.start
+      ? { state: "left", Icon: ArrowLeft, text: "Scroll left to view previous columns" }
+      : null
 
   return (
     <div className="relative">
@@ -307,12 +316,12 @@ function HScroll({ className, children }: { className?: string; children: React.
         {children}
       </div>
       {/* Left / right edge fades — pointer-events-none so they never block the scrollbar or clicks. */}
-      <div aria-hidden className={`pointer-events-none absolute inset-y-0 left-0 w-6 bg-gradient-to-r from-card to-transparent transition-opacity duration-150 ${edges.start ? "opacity-100" : "opacity-0"}`} />
+      <div aria-hidden data-testid="channels-scroll-fade-start" className={`pointer-events-none absolute inset-y-0 left-0 w-6 bg-gradient-to-r from-card to-transparent transition-opacity duration-150 ${edges.start ? "opacity-100" : "opacity-0"}`} />
       <div aria-hidden data-testid="channels-scroll-fade-end" className={`pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-card to-transparent transition-opacity duration-150 ${edges.end ? "opacity-100" : "opacity-0"}`} />
-      {overflowing && (
-        <p data-testid="channels-scroll-hint" className="mt-1.5 flex items-center gap-1 text-[11px] text-muted-foreground">
-          <MoveHorizontal className="h-3 w-3" aria-hidden="true" />
-          Scroll horizontally for more columns
+      {cue && (
+        <p data-testid="channels-scroll-hint" data-cue-state={cue.state} className="mt-1.5 flex items-center gap-1 text-[11px] text-muted-foreground">
+          <cue.Icon className="h-3 w-3" aria-hidden="true" />
+          {cue.text}
         </p>
       )}
     </div>
