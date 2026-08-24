@@ -1,10 +1,10 @@
 "use client"
 
-import React, { useMemo, useState } from "react"
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceArea,
 } from "recharts"
-import { Search, Star, Plus, X, BarChart3 } from "lucide-react"
+import { Search, Star, Plus, X, BarChart3, MoveHorizontal } from "lucide-react"
 import { Card } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
@@ -116,8 +116,11 @@ export const ChannelsExplorer = React.memo(function ChannelsExplorer(props: Chan
           </div>
         </div>
 
-        <div className="custom-scrollbar -mx-1 max-h-[560px] overflow-auto px-1">
-          <table className="w-full border-collapse text-sm">
+        <HScroll className="-mx-1 max-h-[560px] px-1">
+          {/* A comfortable minimum width keeps values from being crushed on narrow screens; when the
+              viewport is narrower than this the HScroll wrapper reveals its scroll affordance rather
+              than clipping silently. */}
+          <table className="w-full min-w-[30rem] border-collapse text-sm">
             <thead className="sticky top-0 z-10 bg-card shadow-[0_1px_0_0_hsl(var(--border))]">
               <tr className="text-left text-[11px] font-medium text-muted-foreground">
                 <th className="py-2.5 pr-2 font-medium">Channel</th>
@@ -138,6 +141,10 @@ export const ChannelsExplorer = React.memo(function ChannelsExplorer(props: Chan
                 const st = stats.get(key)
                 const selected = selectedPIDs.includes(key)
                 const cur = data[pidDisplayTimeKey]?.[key]
+                // The full original PID name (before shortening). Exposed via title + aria-label so a
+                // long name that truncates visually — or a shortened label that collides with a
+                // near-duplicate (e.g. two fuel-trim banks) — stays discoverable and distinguishable.
+                const fullName = m.originalName ?? m.label
                 return (
                   <tr key={key} className="border-b border-border/40 hover:bg-accent/40">
                     <td className="py-1.5 pr-2">
@@ -145,12 +152,12 @@ export const ChannelsExplorer = React.memo(function ChannelsExplorer(props: Chan
                         type="button"
                         onClick={() => (selected ? removePID(key) : addPID(key))}
                         className="flex items-center gap-2 text-left"
-                        aria-label={selected ? `Remove ${m.label} from charts` : `Inspect ${m.label}`}
+                        aria-label={selected ? `Remove ${fullName} from charts` : `Inspect ${fullName}`}
                       >
                         <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: m.color }} aria-hidden="true" />
-                        <span className="min-w-0">
-                          <span className="block truncate font-medium">{m.label}</span>
-                          <span className="block truncate text-[11px] text-muted-foreground">{labelForCategory(categoryOf(m))}{m.unit ? ` · ${m.unit}` : ""}</span>
+                        <span className="min-w-0 max-w-[16rem]">
+                          <span className="block truncate font-medium" title={fullName}>{m.label}</span>
+                          <span className="block truncate text-[11px] text-muted-foreground" title={fullName}>{labelForCategory(categoryOf(m))}{m.unit ? ` · ${m.unit}` : ""}</span>
                         </span>
                       </button>
                     </td>
@@ -163,10 +170,10 @@ export const ChannelsExplorer = React.memo(function ChannelsExplorer(props: Chan
                     </td>
                     <td className="py-1.5 pl-2">
                       <div className="flex items-center justify-end gap-0.5">
-                        <button type="button" onClick={() => togglePin(key)} aria-label={pinned.has(key) ? `Unpin ${m.label}` : `Pin ${m.label}`} title="Pin" className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground">
+                        <button type="button" onClick={() => togglePin(key)} aria-label={pinned.has(key) ? `Unpin ${fullName}` : `Pin ${fullName}`} title="Pin" className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground">
                           <Star className={`h-3.5 w-3.5 ${pinned.has(key) ? "fill-warning text-warning" : ""}`} />
                         </button>
-                        <button type="button" onClick={() => (selected ? removePID(key) : addPID(key))} aria-label={selected ? `Remove ${m.label}` : `Add ${m.label} to charts`} title={selected ? "Remove" : "Add to charts"} className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground">
+                        <button type="button" onClick={() => (selected ? removePID(key) : addPID(key))} aria-label={selected ? `Remove ${fullName}` : `Add ${fullName} to charts`} title={selected ? "Remove" : "Add to charts"} className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground">
                           {selected ? <X className="h-3.5 w-3.5" /> : <Plus className="h-3.5 w-3.5" />}
                         </button>
                       </div>
@@ -176,7 +183,7 @@ export const ChannelsExplorer = React.memo(function ChannelsExplorer(props: Chan
               })}
             </tbody>
           </table>
-        </div>
+        </HScroll>
       </Card>
 
       {/* Detail charts */}
@@ -256,6 +263,61 @@ export const ChannelsExplorer = React.memo(function ChannelsExplorer(props: Chan
     </div>
   )
 })
+
+/**
+ * A horizontally + vertically scrollable viewport that reveals a subtle, theme-aware edge fade
+ * ONLY while there is more content to scroll toward, plus a screen-reader/visible hint when the
+ * content overflows horizontally. Both cues disappear at the end of the scroll (or when there is
+ * no overflow at all), so they never mislead. The fade tracks both edges so the affordance is
+ * honest in either scroll direction.
+ */
+function HScroll({ className, children }: { className?: string; children: React.ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null)
+  const [edges, setEdges] = useState({ start: false, end: false })
+
+  const update = useCallback(() => {
+    const el = ref.current
+    if (!el) return
+    const max = el.scrollWidth - el.clientWidth
+    // 1px tolerance absorbs sub-pixel rounding so the cue doesn't flicker at the extremes.
+    setEdges({ start: el.scrollLeft > 1, end: max > 1 && el.scrollLeft < max - 1 })
+  }, [])
+
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    update()
+    el.addEventListener("scroll", update, { passive: true })
+    // Observe both the viewport and its content so the cue re-evaluates when the width available
+    // to the table changes (responsive breakpoints) or the row set changes.
+    const ro = new ResizeObserver(update)
+    ro.observe(el)
+    if (el.firstElementChild) ro.observe(el.firstElementChild)
+    return () => {
+      el.removeEventListener("scroll", update)
+      ro.disconnect()
+    }
+  }, [update])
+
+  const overflowing = edges.start || edges.end
+
+  return (
+    <div className="relative">
+      <div ref={ref} data-testid="channels-scroll" className={`custom-scrollbar overflow-auto ${className ?? ""}`}>
+        {children}
+      </div>
+      {/* Left / right edge fades — pointer-events-none so they never block the scrollbar or clicks. */}
+      <div aria-hidden className={`pointer-events-none absolute inset-y-0 left-0 w-6 bg-gradient-to-r from-card to-transparent transition-opacity duration-150 ${edges.start ? "opacity-100" : "opacity-0"}`} />
+      <div aria-hidden data-testid="channels-scroll-fade-end" className={`pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-card to-transparent transition-opacity duration-150 ${edges.end ? "opacity-100" : "opacity-0"}`} />
+      {overflowing && (
+        <p data-testid="channels-scroll-hint" className="mt-1.5 flex items-center gap-1 text-[11px] text-muted-foreground">
+          <MoveHorizontal className="h-3 w-3" aria-hidden="true" />
+          Scroll horizontally for more columns
+        </p>
+      )}
+    </div>
+  )
+}
 
 function FilterChip({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
   return (

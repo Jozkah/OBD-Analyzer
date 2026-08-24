@@ -83,9 +83,14 @@ export function PlaybackBar({
               <SkipBack className="h-4 w-4" />
             </Button>
             <Button
-              variant={isPlaying ? "outline" : "default"}
+              // Play/pause is the primary transport control in BOTH states — the icon and
+              // accessible label carry the play/pause distinction, not colour. Keeping the
+              // primary variant while playing means the most important control never loses
+              // its emphasis mid-session.
+              variant="default"
               size="icon"
               className="h-9 w-9"
+              data-playing={isPlaying}
               onClick={() => setIsPlaying(!isPlaying)}
               aria-label={isPlaying ? "Pause playback" : "Play playback"}
               aria-pressed={isPlaying}
