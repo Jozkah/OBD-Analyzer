@@ -27,6 +27,25 @@ describe("lttbDownsample", () => {
     expect(xAware[xAware.length - 1]).toBe(999)
   })
 
+  it("selects different points for distance vs elapsed on variable-speed data", () => {
+    // Elapsed advances uniformly, but distance advances with speed: fast early, crawling late.
+    // So distance-aware and elapsed-aware LTTB should retain different interior points.
+    let dist = 0
+    const pts = Array.from({ length: 1000 }, (_, i) => {
+      const speed = i < 500 ? 100 : 2 // fast, then a crawl
+      dist += speed / 3600
+      return { i, elapsed: i, dist, y: Math.sin(i / 8) + (i % 11) * 0.1 }
+    })
+    const elapsedAware = lttbDownsample(pts, 200, (p) => p.y, (p) => p.elapsed).map((p) => p.i)
+    const distAware = lttbDownsample(pts, 200, (p) => p.y, (p) => p.dist).map((p) => p.i)
+    expect(distAware).not.toEqual(elapsedAware)
+    // Endpoints preserved in both modes.
+    expect(distAware[0]).toBe(0)
+    expect(distAware[distAware.length - 1]).toBe(999)
+    expect(elapsedAware[0]).toBe(0)
+    expect(elapsedAware[elapsedAware.length - 1]).toBe(999)
+  })
+
   it("returns the input unchanged below the threshold", () => {
     const pts: P[] = Array.from({ length: 10 }, (_, i) => ({ i, x: i, y: i }))
     expect(lttbDownsample(pts, 500, (p) => p.y)).toBe(pts)

@@ -18,6 +18,21 @@ interface ChangelogEntry {
 
 const changelogs: ChangelogEntry[] = [
   {
+    version: "3.0.3",
+    date: "2026-08-24",
+    title: "Final Corrections: Summary Units, Trip-Counter Safety & Rendered Coverage",
+    type: "bugfix",
+    description: [
+      "Session Summary distance now uses the same physically-correct distance helper as the charts — a miles trip channel is converted to kilometres (never relabelled), and when no trip channel exists but timestamps and speed are trustworthy the summary shows the integrated distance instead of “unavailable”",
+      "Fuel economy is computed strictly from litres and kilometres (gallons are converted); if the imported fuel or distance unit can’t support L/100km the figure is hidden rather than shown wrong",
+      "An unusable Trip Distance channel (all-zero, constant, or mostly-missing) no longer overrides a valid speed/time integration and reports zero distance for a real drive — the counter is classified first, and a genuinely stationary constant-zero counter is still trusted",
+      "Each chart is downsampled against the x-domain it actually renders (elapsed time, sample index, or cumulative distance for Overview distance mode); idle zones are detected on the full, non-downsampled data so a short idle can’t vanish",
+      "Sparse GPS: a missing speed is treated as unknown (not 0) so it can’t drag the legend or paint a fix as stopped, and the live marker holds the most recent valid fix at/before the current sample instead of jumping to a future one — marker and speed readout always describe the same sample",
+      "Removed the client-side localStorage sharing override; NEXT_PUBLIC_SHARING_ENABLED is the sole authority, and the enabled share + shared-link-loading flows are tested against a dedicated sharing-on build with the API mocked",
+      "Added rendered-interaction coverage: chart hover maps a downsampled/sliced point back to the correct original row across synced charts, the remaining playback keyboard/range paths assert exact sample positions, and the transmission dialog’s close paths plus responsive edge states are checked with real no-overflow assertions",
+    ],
+  },
+  {
     version: "3.0.2",
     date: "2026-08-24",
     title: "Correctness Pass 2: Physical Accuracy & Behavioural Tests",

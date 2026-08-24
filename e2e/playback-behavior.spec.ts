@@ -1,5 +1,5 @@
 import { test, expect, type Page } from "@playwright/test"
-import { uploadCsv, untrustedCsv } from "./helpers"
+import { uploadCsv, untrustedCsv, gotoSection } from "./helpers"
 
 // Behavioral playback tests. Playwright's fake clock (page.clock) drives performance.now() and
 // requestAnimationFrame deterministically, so we can advance virtual wall-clock time by an exact
@@ -47,6 +47,16 @@ async function loadWithClock(page: Page, csv: string) {
   await expect(page.getByRole("heading", { name: "Session Summary" })).toBeVisible()
 }
 const at = (page: Page, index: number) => expect(playhead(page)).toHaveAttribute("aria-valuenow", String(index))
+
+// The two-thumb analysis-window slider: nth(0) = start (lo), nth(1) = end (hi).
+function windowThumbs(page: Page) {
+  return bar(page).locator('[aria-label="Analysis window start and end"]').getByRole("slider")
+}
+const windowStart = (page: Page) => windowThumbs(page).nth(0)
+const windowEnd = (page: Page) => windowThumbs(page).nth(1)
+async function pressN(page: Page, key: string, n: number) {
+  for (let i = 0; i < n; i++) await page.keyboard.press(key)
+}
 
 // --- Rate scaling: index = floor(realSeconds × rate) on a 1 s/sample log ---
 for (const { rate, ms, expected } of [
@@ -142,4 +152,119 @@ test("Space toggles playback and advances real time", async ({ page }) => {
   await at(page, 2)
   await page.keyboard.press("Space")
   await expect(playButton(page)).toHaveAttribute("aria-pressed", "false")
+})
+
+// --- §7: remaining keyboard / range interaction paths (exact sample positions) ---
+
+test("ArrowLeft / ArrowRight step one sample and pause playback", async ({ page }) => {
+  await loadWithClock(page, regularCsv(60))
+  await page.locator("body").click({ position: { x: 5, y: 5 } })
+  await page.keyboard.press("ArrowRight")
+  await at(page, 1)
+  await page.keyboard.press("ArrowRight")
+  await at(page, 2)
+  await page.keyboard.press("ArrowLeft")
+  await at(page, 1)
+  // A running playback is paused by an arrow step.
+  await playButton(page).click()
+  await expect(playButton(page)).toHaveAttribute("aria-pressed", "true")
+  await page.keyboard.press("ArrowRight")
+  await expect(playButton(page)).toHaveAttribute("aria-pressed", "false")
+  await at(page, 2)
+})
+
+test("Shift+Arrow jumps by ten samples", async ({ page }) => {
+  await loadWithClock(page, regularCsv(60))
+  await page.locator("body").click({ position: { x: 5, y: 5 } })
+  await page.keyboard.press("Shift+ArrowRight")
+  await at(page, 10)
+  await page.keyboard.press("Shift+ArrowRight")
+  await at(page, 20)
+  await page.keyboard.press("Shift+ArrowLeft")
+  await at(page, 10)
+})
+
+test("Home and End jump to the window bounds", async ({ page }) => {
+  await loadWithClock(page, regularCsv(30)) // lastIndex 29
+  await page.locator("body").click({ position: { x: 5, y: 5 } })
+  await page.keyboard.press("End")
+  await at(page, 29)
+  await page.keyboard.press("Home")
+  await at(page, 0)
+})
+
+test("seeking WHILE playing continues from the sought position", async ({ page }) => {
+  await loadWithClock(page, regularCsv(60))
+  await playButton(page).click()
+  await page.clock.runFor(2100)
+  await at(page, 2)
+  await expect(playButton(page)).toHaveAttribute("aria-pressed", "true")
+  // Seek via the playhead thumb. The global shortcut handler defers to a focused slider, so this
+  // seeks WITHOUT pausing — playback stays active and then continues from the sought position.
+  await playhead(page).focus()
+  await pressN(page, "ArrowRight", 8)
+  await at(page, 10)
+  await expect(playButton(page)).toHaveAttribute("aria-pressed", "true")
+  await page.clock.runFor(2100)
+  await at(page, 12)
+})
+
+test("changing playback rate WHILE playing takes effect immediately", async ({ page }) => {
+  await loadWithClock(page, regularCsv(120))
+  await playButton(page).click()
+  await page.clock.runFor(2100) // 1× → sample 2
+  await at(page, 2)
+  await setRate(page, 4) // switch to 4× mid-playback
+  await page.clock.runFor(2100) // +8 samples at 4×
+  await at(page, 10)
+})
+
+test("a narrowed window: End reaches its custom end, rewind returns to its custom start", async ({ page }) => {
+  await loadWithClock(page, regularCsv(20)) // lastIndex 19
+  // Narrow the window to [5, 12].
+  await windowStart(page).focus()
+  await pressN(page, "ArrowRight", 5)
+  await expect(windowStart(page)).toHaveAttribute("aria-valuenow", "5")
+  await windowEnd(page).focus()
+  await pressN(page, "ArrowLeft", 7) // 19 → 12
+  await expect(windowEnd(page)).toHaveAttribute("aria-valuenow", "12")
+  // Clamping pulled the cursor up to the window start.
+  await at(page, 5)
+  // End jumps to the CUSTOM end, not the global last row.
+  await page.locator("body").click({ position: { x: 5, y: 5 } })
+  await page.keyboard.press("End")
+  await at(page, 12)
+  // Playing past the window end stops and rewinds to the CUSTOM start (5), not global row 0.
+  await page.keyboard.press("Home")
+  await at(page, 5)
+  await setRate(page, 4)
+  await playButton(page).click()
+  await page.clock.runFor(4000) // 16 virtual s ≫ the 7-sample window
+  await at(page, 5)
+  await expect(playButton(page)).toHaveAttribute("aria-pressed", "false")
+})
+
+test("changing the analysis window WHILE playing clamps the cursor into the new range", async ({ page }) => {
+  await loadWithClock(page, regularCsv(30))
+  await playButton(page).click()
+  await page.clock.runFor(2100)
+  await at(page, 2)
+  // Raise the window start above the current cursor while playing → cursor clamps up to it.
+  await windowStart(page).focus()
+  await pressN(page, "ArrowRight", 8) // lo → 8
+  await expect(windowStart(page)).toHaveAttribute("aria-valuenow", "8")
+  await at(page, 8)
+})
+
+test("playback keyboard shortcuts are ignored while typing in an input", async ({ page }) => {
+  await loadWithClock(page, regularCsv(60))
+  // The Channels section always renders a "Search channels" text field.
+  await gotoSection(page, /Channels/i)
+  const search = page.getByRole("textbox", { name: "Search channels", exact: true })
+  await search.click()
+  await page.keyboard.press("Space") // must type a space, not toggle playback
+  await page.keyboard.press("ArrowRight") // must move the caret, not the playhead
+  await expect(playButton(page)).toHaveAttribute("aria-pressed", "false")
+  await at(page, 0)
+  await expect(search).toBeFocused()
 })

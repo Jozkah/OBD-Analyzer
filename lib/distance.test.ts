@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { computeCumulativeDistanceKm } from "./distance"
+import { computeCumulativeDistanceKm, classifyTripDistance } from "./distance"
 
 const elapsedAt = (n: number, step: number) => Array.from({ length: n }, (_, i) => i * step)
 
@@ -75,5 +75,88 @@ describe("computeCumulativeDistanceKm — trip distance channel", () => {
     })
     // 0→1.0 (+1.0), reset to 0 (skip), 0→0.4 (+0.4) = 1.4 km
     expect(r.dist[3]).toBeCloseTo(1.4, 3)
+  })
+
+  it("skips a baseline shift / implausibly large jump", () => {
+    const r = computeCumulativeDistanceKm({
+      speeds: [0, 0, 0, 0], speedUnit: "km/h", elapsed: [0, 1, 2, 3], trustedTime: true,
+      tripDistance: [0, 0.5, 500, 500.5], tripDistanceUnit: "km",
+    })
+    // 0→0.5 (+0.5), 0.5→500 (jump ≥2, skip), 500→500.5 (+0.5) = 1.0 km
+    expect(r.source).toBe("trip")
+    expect(r.dist[3]).toBeCloseTo(1.0, 3)
+  })
+})
+
+describe("computeCumulativeDistanceKm — unusable trip counter must not override integration", () => {
+  // A real drive: 36 km/h for 100 s → 1 km integrated.
+  const movingSpeeds = new Array(101).fill(36)
+  const movingElapsed = Array.from({ length: 101 }, (_, i) => i)
+
+  it("prefers integration when the trip counter is all-zero but the vehicle moved", () => {
+    const r = computeCumulativeDistanceKm({
+      speeds: movingSpeeds, speedUnit: "km/h", elapsed: movingElapsed, trustedTime: true,
+      tripDistance: new Array(101).fill(0), tripDistanceUnit: "km",
+    })
+    expect(r.source).toBe("integrated")
+    expect(r.dist[100]).toBeCloseTo(1.0, 2)
+  })
+
+  it("prefers integration when the trip counter is constant non-zero but the vehicle moved", () => {
+    const r = computeCumulativeDistanceKm({
+      speeds: movingSpeeds, speedUnit: "km/h", elapsed: movingElapsed, trustedTime: true,
+      tripDistance: new Array(101).fill(42), tripDistanceUnit: "km",
+    })
+    expect(r.source).toBe("integrated")
+    expect(r.dist[100]).toBeCloseTo(1.0, 2)
+  })
+
+  it("prefers integration when the trip counter is too sparse", () => {
+    // Only 2 of 101 samples carry a value → below MIN_TRIP_COVERAGE.
+    const sparse: (number | null)[] = new Array(101).fill(null)
+    sparse[0] = 0
+    sparse[100] = 0.3
+    const r = computeCumulativeDistanceKm({
+      speeds: movingSpeeds, speedUnit: "km/h", elapsed: movingElapsed, trustedTime: true,
+      tripDistance: sparse, tripDistanceUnit: "km",
+    })
+    expect(r.source).toBe("integrated")
+    expect(r.dist[100]).toBeCloseTo(1.0, 2)
+  })
+
+  it("is unavailable when the trip counter is too sparse and time is untrustworthy", () => {
+    const sparse: (number | null)[] = new Array(101).fill(null)
+    sparse[0] = 0
+    sparse[100] = 0.3
+    const r = computeCumulativeDistanceKm({
+      speeds: movingSpeeds, speedUnit: "km/h", elapsed: movingElapsed, trustedTime: false,
+      tripDistance: sparse, tripDistanceUnit: "km",
+    })
+    expect(r.available).toBe(false)
+    expect(r.source).toBe("none")
+  })
+
+  it("trusts a constant-zero counter when the vehicle was genuinely stationary", () => {
+    const stoppedSpeeds = new Array(101).fill(0)
+    const r = computeCumulativeDistanceKm({
+      speeds: stoppedSpeeds, speedUnit: "km/h", elapsed: movingElapsed, trustedTime: true,
+      tripDistance: new Array(101).fill(0), tripDistanceUnit: "km",
+    })
+    expect(r.available).toBe(true)
+    expect(r.source).toBe("trip")
+    expect(r.dist[100]).toBe(0)
+  })
+})
+
+describe("classifyTripDistance", () => {
+  it("flags a moving-distance counter as usable", () => {
+    expect(classifyTripDistance(1.5, 1)).toBe("usable")
+  })
+  it("flags a zero/constant counter as no-travel", () => {
+    expect(classifyTripDistance(0, 1)).toBe("no-travel")
+    expect(classifyTripDistance(0.01, 1)).toBe("no-travel")
+  })
+  it("flags a mostly-missing counter as too-sparse", () => {
+    expect(classifyTripDistance(5, 0.1)).toBe("too-sparse")
   })
 })

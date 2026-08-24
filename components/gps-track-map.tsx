@@ -7,7 +7,7 @@ import { Map, Plus, Minus, Maximize2, Download } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import type { DataPoint, MapStyle } from "@/types/obd"
 import { safeMax, safeMin } from "@/lib/stats"
-import { filterGpsFixes, gpsSpeedRange } from "@/lib/gps"
+import { filterGpsFixes, gpsSpeedRange, activeGpsFixIndex } from "@/lib/gps"
 import { getMapTheme } from "@/lib/map-theme"
 import {
   MAP_TILE_PX,
@@ -81,6 +81,13 @@ export function GPSTrackMap({
     () => filterGpsFixes(data),
     [data],
   )
+
+  // The active GPS sample for the readout: the most recent valid fix at or before the current
+  // playback sample. Marker position AND the speed readout both derive from THIS sample, so they
+  // always describe the same moment (rather than a marker fix + a speed from a different row).
+  const activeFixIdx = useMemo(() => activeGpsFixIndex(gpsData, currentTime), [gpsData, currentTime])
+  const activeFix = activeFixIdx >= 0 ? gpsData[activeFixIdx] : null
+  const activeFixIsCurrent = activeFix != null && (activeFix.time ?? -1) === currentTime
 
   // Reset to the auto-fit view whenever a different log is loaded.
   useEffect(() => {
@@ -179,10 +186,12 @@ export function GPSTrackMap({
         ctx.stroke()
         ctx.restore()
 
-        // Per-segment hue by speed (blue = slow → red = fast).
+        // Per-segment hue by speed (blue = slow → red = fast). A segment whose speed is UNKNOWN
+        // (missing/non-finite) is drawn neutral rather than being treated as 0 (slow/blue).
         for (let i = 0; i < path.length - 1; i++) {
-          if (speedVaries) {
-            const r = ((gpsData[i].speed || 0) - minSpeed) / speedSpan
+          const segSpeed = gpsData[i].speed
+          if (speedVaries && Number.isFinite(segSpeed as number)) {
+            const r = ((segSpeed as number) - minSpeed) / speedSpan
             ctx.strokeStyle = `hsl(${(1 - r) * 240}, 90%, 58%)`
           } else {
             ctx.strokeStyle = neutral
@@ -219,9 +228,13 @@ export function GPSTrackMap({
     }
 
     // The live position marker — the ONLY element that changes on a 100 ms playback tick.
-    // Drawn on top of the (cached) static scene every frame.
+    // Drawn on top of the (cached) static scene every frame. Marker policy for sparse GPS: the most
+    // recent valid fix at or before the current sample (never a jump forward to a future fix). Before
+    // the first fix there is no marker.
     const drawMarker = () => {
-      const currentPoint = gpsData.find((p) => (p.time ?? 0) >= currentTime) ?? gpsData[gpsData.length - 1]
+      const idx = activeGpsFixIndex(gpsData, currentTime)
+      if (idx < 0) return
+      const currentPoint = gpsData[idx]
       if (Number.isFinite(currentPoint?.latitude) && Number.isFinite(currentPoint?.longitude)) {
         const c = toCanvas(currentPoint.latitude!, currentPoint.longitude!)
         ctx.fillStyle = mapTheme.liveMarker
@@ -562,10 +575,19 @@ export function GPSTrackMap({
           <div className="text-muted-foreground mt-2">GPS track</div>
         )}
       </div>
-      {data[currentTime] && (
+      {activeFix ? (
         <div className="absolute bottom-3 left-3 rounded-lg border border-border/70 bg-background/85 px-3 py-2 shadow-lg shadow-black/30 backdrop-blur">
-          <div className="font-mono text-base font-semibold tabular-nums text-primary">{data[currentTime].speed?.toFixed(1)} {speedUnit}</div>
-          <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Current Speed</div>
+          <div className="font-mono text-base font-semibold tabular-nums text-primary">
+            {Number.isFinite(activeFix.speed as number) ? `${(activeFix.speed as number).toFixed(1)} ${speedUnit}` : "Unknown"}
+          </div>
+          <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+            {activeFixIsCurrent ? "Current Speed" : "Speed at last fix"}
+          </div>
+        </div>
+      ) : (
+        <div className="absolute bottom-3 left-3 rounded-lg border border-border/70 bg-background/85 px-3 py-2 shadow-lg shadow-black/30 backdrop-blur">
+          <div className="font-mono text-base font-semibold tabular-nums text-muted-foreground">No fix yet</div>
+          <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Location</div>
         </div>
       )}
       {mapStyle !== "offline" && (

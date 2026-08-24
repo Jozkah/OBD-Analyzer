@@ -23,13 +23,39 @@ export default defineConfig({
     launchOptions: executablePath ? { executablePath } : {},
   },
   projects: [
-    { name: "desktop", use: { ...devices["Desktop Chrome"], viewport: { width: 1440, height: 900 } } },
-    { name: "mobile", use: { ...devices["Pixel 5"] } },
+    // Default build ships with sharing OFF, so the share specs can't run here — they need a build
+    // with NEXT_PUBLIC_SHARING_ENABLED=true (the "share-enabled" project below).
+    {
+      name: "desktop",
+      testIgnore: ["**/share.spec.ts", "**/shared-link.spec.ts"],
+      use: { ...devices["Desktop Chrome"], viewport: { width: 1440, height: 900 } },
+    },
+    {
+      name: "mobile",
+      testIgnore: ["**/share.spec.ts", "**/shared-link.spec.ts"],
+      use: { ...devices["Pixel 5"] },
+    },
+    // Sharing turned ON via a dedicated dev server (env flag baked in at start), against a separate
+    // output dir so it never collides with the production build the other projects serve. /api/share
+    // is still mocked in the specs — no live backend dependency.
+    {
+      name: "share-enabled",
+      testMatch: ["**/share.spec.ts", "**/shared-link.spec.ts"],
+      use: { ...devices["Desktop Chrome"], viewport: { width: 1440, height: 900 }, baseURL: "http://localhost:3211" },
+    },
   ],
-  webServer: {
-    command: "pnpm start",
-    url: "http://localhost:3210",
-    reuseExistingServer: !isCI,
-    timeout: 120_000,
-  },
+  webServer: [
+    {
+      command: "pnpm start",
+      url: "http://localhost:3210",
+      reuseExistingServer: !isCI,
+      timeout: 120_000,
+    },
+    {
+      command: "NEXT_PUBLIC_SHARING_ENABLED=true NEXT_DIST_DIR=.next-share pnpm exec next dev -p 3211",
+      url: "http://localhost:3211",
+      reuseExistingServer: !isCI,
+      timeout: 120_000,
+    },
+  ],
 })

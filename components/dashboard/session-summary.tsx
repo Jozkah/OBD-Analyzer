@@ -14,8 +14,10 @@ interface Stats {
 }
 interface TripTotals {
   distance: number | null
+  distanceSource?: "trip" | "integrated" | "none"
   duration: number | null
   fuel: number | null
+  fuelUnit?: string
   fuelEconomy: number | null
 }
 
@@ -31,6 +33,12 @@ interface SessionSummaryProps {
 export function SessionSummary({ meta, stats, tripTotals, speedUnit, importedFileNames, transmissionConfig }: SessionSummaryProps) {
   const duration = meta.durationSeconds != null ? formatDuration(meta.durationSeconds) : null
   const distance = tripTotals.distance != null ? `${formatValue(tripTotals.distance)}` : null
+  const distanceHint =
+    tripTotals.distance == null
+      ? "No trip-distance channel and no reliable timestamps to derive it"
+      : tripTotals.distanceSource === "integrated"
+        ? "Estimated from speed and elapsed time"
+        : undefined
   const range = (r: { min: number; max: number } | null, unit: string) =>
     r ? `${Math.round(r.min)}–${Math.round(r.max)} ${unit}` : "—"
 
@@ -39,7 +47,7 @@ export function SessionSummary({ meta, stats, tripTotals, speedUnit, importedFil
       <SectionHeader title="Session Summary" hint="A quick read on this drive before you dig into the charts." />
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
         <StatCard label="Duration" value={duration ?? "—"} accentClassName="text-primary" hint={duration ? undefined : "No reliable timestamps in this log"} />
-        <StatCard label="Distance" value={distance ?? "—"} unit={distance ? "km" : undefined} />
+        <StatCard label="Distance" value={distance ?? "—"} unit={distance ? "km" : undefined} hint={distanceHint} />
         <StatCard label="Max Speed" value={formatValue(stats.maxSpeed, speedUnit)} unit={speedUnit} accentClassName="text-success" />
         <StatCard label="Max RPM" value={formatValue(stats.maxRPM, "RPM")} accentClassName="text-danger" />
         <StatCard label="Avg Speed" value={formatValue(stats.avgSpeed, speedUnit)} unit={speedUnit} />

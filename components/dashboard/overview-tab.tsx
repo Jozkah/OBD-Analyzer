@@ -24,7 +24,8 @@ interface OverviewTabProps {
   importedFileNames: string[]
   transmissionConfig: TransmissionConfig
   healthFindings: HealthFinding[]
-  finalChartData: DataPoint[]
+  /** Overview-specific dataset: downsampled against the active x-domain (distance in distance mode). */
+  overviewChartData: DataPoint[]
   enabledMetrics: MetricConfig[]
   metrics: MetricConfig[]
   idleZones: { x1: number; x2: number }[]
@@ -47,7 +48,7 @@ interface OverviewTabProps {
 export const OverviewTab = React.memo(function OverviewTab(props: OverviewTabProps) {
   const {
     meta, stats, tripTotals, speedUnit, importedFileNames, transmissionConfig, healthFindings,
-    finalChartData, enabledMetrics, metrics, idleZones, effectiveXMode, hasDistance, overviewXMode,
+    overviewChartData, enabledMetrics, metrics, idleZones, effectiveXMode, hasDistance, overviewXMode,
     setOverviewXMode, chartTheme, xAxis, isEmptyPID, setMetricEnabled, setEnabledMetricKeys, overviewChartRef,
     onExportChart, accelRuns, gpsPointCount, onGoToRoute,
   } = props
@@ -115,7 +116,7 @@ export const OverviewTab = React.memo(function OverviewTab(props: OverviewTabPro
             </div>
             <div ref={overviewChartRef} className="min-h-[300px] flex-grow">
               <OverviewChart
-                finalChartData={finalChartData}
+                finalChartData={overviewChartData}
                 enabledMetrics={enabledMetrics}
                 idleZones={idleZones}
                 effectiveXMode={effectiveXMode}

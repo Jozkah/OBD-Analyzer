@@ -75,17 +75,36 @@ export interface SpeedRange {
   max: number
   /** True when the speed values vary enough to justify a colour gradient. */
   varies: boolean
+  /** How many valid fixes actually carried a finite speed value. */
+  finiteCount: number
 }
 
 /**
- * Min/max speed across the valid fixes (missing speeds count as 0), plus whether they vary.
- * The numbers are in the log's own speed unit — no conversion is applied.
+ * Min/max speed across the valid fixes, considering only FINITE speed values — a missing speed is
+ * UNKNOWN, not zero, so it never drags the legend down to 0 or paints a fix as "stopped". The
+ * numbers are in the log's own speed unit — no conversion is applied. `varies` is false (and the
+ * caller should draw a neutral track) when fewer than two finite speeds exist or they don't differ.
  */
 export function gpsSpeedRange(points: GpsSample[], epsilon = 0.001): SpeedRange {
   const fixes = filterGpsFixes(points)
-  if (fixes.length === 0) return { min: 0, max: 0, varies: false }
-  const speeds = fixes.map((d) => (Number.isFinite(d.speed as number) ? (d.speed as number) : 0))
+  const speeds = fixes.map((d) => d.speed).filter((s): s is number => Number.isFinite(s as number))
+  if (speeds.length === 0) return { min: 0, max: 0, varies: false, finiteCount: 0 }
   const min = safeMin(speeds)
   const max = safeMax(speeds)
-  return { min, max, varies: max - min > epsilon }
+  return { min, max, varies: speeds.length >= 2 && max - min > epsilon, finiteCount: speeds.length }
+}
+
+/**
+ * Index (into `fixes`, assumed chronological by `time`) of the most recent valid fix at or before
+ * `currentTime`, or -1 when playback is before the first fix. This is the marker policy for sparse
+ * GPS: hold the last known position rather than jumping forward to a future fix.
+ */
+export function activeGpsFixIndex<T extends GpsSample & { time?: number }>(fixes: T[], currentTime: number): number {
+  let idx = -1
+  for (let i = 0; i < fixes.length; i++) {
+    const t = fixes[i].time ?? i
+    if (t <= currentTime) idx = i
+    else break
+  }
+  return idx
 }

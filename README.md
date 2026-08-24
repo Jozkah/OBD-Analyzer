@@ -78,24 +78,35 @@ pnpm build
 pnpm test:e2e        # Playwright (runs against a production build)
 ```
 
-The pure logic has a [Vitest](https://vitest.dev) suite (~157 tests) covering number/CSV
+The pure logic has a [Vitest](https://vitest.dev) suite (188 tests) covering number/CSV
 parsing, acceleration-run detection, session summary, **sampling-rate math**, data health
 (including a 200k-row stack-safety regression), **timestamp trust/quality analysis**,
-**physically-correct distance integration**, **elapsed-time & playback stepping**, x-domain-aware
-LTTB downsampling, chart x-axis selection, channel stats/categories, multi-file merge (including
-quoted headers), **GPS numeric helpers** (km/h & mph, coverage, degenerate tracks),
-**transmission validation & import parsing**, and **gear shift logic + indicator view**.
+**physically-correct distance integration** (with **trip-counter usability classification** so an
+all-zero/constant/sparse counter can't override valid speed-time integration), **unit-safe fuel
+economy** (L/100km only from litres & km), **elapsed-time & playback stepping**, x-domain-aware
+LTTB downsampling, **idle-zone detection on the full pre-downsampled data**, the **hover→original-row
+resolver** (mapping a sliced/downsampled point back to its raw row), chart x-axis selection, channel
+stats/categories, multi-file merge (including quoted headers), **GPS numeric helpers** (km/h & mph,
+unknown-speed handling, last-valid-fix marker policy, coverage, degenerate tracks), **transmission
+validation & import parsing**, and **gear shift logic + indicator view**.
 
 End-to-end tests use [Playwright](https://playwright.dev) across **desktop and mobile** viewports
-(~56 distinct scenarios, 112 executions): real file upload, malformed / header-only / partial logs,
+(plus a dedicated **`share-enabled`** project whose dev server is built with
+`NEXT_PUBLIC_SHARING_ENABLED=true`): real file upload, malformed / header-only / partial logs,
 sequential multi-file merge (continuous trusted timeline) and overlapping / incompatible-file
-handling, **behavioural playback driven by a fake clock** (rate scaling, irregular sampling,
-duplicate timestamps, capped gaps, untrusted-cadence fallback, pause/resume, seek, range-end
-rewind), chart axis labels, the transmission draft form (field-level validation, preset / import /
-auto-detect as draft-only), CSV & PNG export, the **mocked share flow** (payload, link, expiry,
-copy, failure) plus its disabled state, GPS numeric readouts in km/h and mph, keyboard shortcuts,
-the semantic shift indicator, collapsed-nav accessible names, a 20k-row render smoke test, and a
-**CI-enforced no-horizontal-overflow check** across 320–1440 px in both themes. CI
+handling, **behavioural playback driven by a fake clock** (rate scaling incl. changing rate
+mid-play, irregular sampling, duplicate timestamps, capped gaps, untrusted-cadence fallback,
+pause/resume, seek-while-playing, arrow/shift-arrow/Home/End steps, custom-window end & rewind,
+shortcuts ignored while typing in an input), chart axis labels, the **rendered synced inspector**
+resolving a downsampled/sliced position back to the correct original row, the transmission draft
+form (field-level validation, preset / import / auto-detect as draft-only) and its **close paths**
+(X / backdrop / Cancel / Escape, focus-return and focus-trap), CSV & PNG export, the **mocked share
+flow** (payload, link, expiry, copy, failure) **and shared-link loading** (success, expired, corrupt,
+no accidental upload) plus the disabled state, GPS numeric readouts in km/h and mph, keyboard
+shortcuts, the semantic shift indicator, collapsed-nav accessible names, a 20k-row render smoke test,
+and **CI-enforced no-horizontal-overflow checks** — the main sections and the transmission dialog's
+clean/dirty/invalid/reset/discard states — across 320–1440 px in both themes. The share UI is gated
+solely by the build-time `NEXT_PUBLIC_SHARING_ENABLED` flag (no client-side override). CI
 (`.github/workflows/ci.yml`) runs lint, type-check, unit tests, the production build and the
 Playwright suite on every push and PR.
 

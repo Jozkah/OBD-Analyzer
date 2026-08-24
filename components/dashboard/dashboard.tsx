@@ -135,7 +135,7 @@ export function Dashboard() {
                     importedFileNames={s.importedFileNames}
                     transmissionConfig={s.transmissionConfig}
                     healthFindings={s.healthFindings}
-                    finalChartData={s.finalChartData}
+                    overviewChartData={s.overviewChartData}
                     enabledMetrics={s.enabledMetrics}
                     metrics={s.metrics}
                     idleZones={s.idleZones}

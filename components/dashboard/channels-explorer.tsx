@@ -14,6 +14,7 @@ import { tooltipFormatter, formatValue } from "@/lib/format"
 import { computeChannelStat, type ChannelStatus } from "@/lib/channel-stats"
 import { categoryOf, labelForCategory, CHANNEL_CATEGORIES } from "@/lib/channel-categories"
 import { TELEMETRY, type ChartTheme } from "@/lib/chart-theme"
+import { resolveHoverIndex } from "@/lib/hover-map"
 import type { ChartXAxis } from "@/lib/chart-x"
 import type { DataPoint, MetricConfig } from "@/types/obd"
 
@@ -198,7 +199,7 @@ export const ChannelsExplorer = React.memo(function ChannelsExplorer(props: Chan
               if (!m) return null
               const cur = data[pidDisplayTimeKey]?.[key]
               return (
-                <div key={key} className="flex flex-col rounded-lg border border-border/70 bg-secondary/30 p-3">
+                <div key={key} data-testid={`inspector-chart-${key}`} className="flex flex-col rounded-lg border border-border/70 bg-secondary/30 p-3">
                   <div className="mb-2 flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: m.color }} aria-hidden="true" />
@@ -215,12 +216,15 @@ export const ChannelsExplorer = React.memo(function ChannelsExplorer(props: Chan
                         margin={{ top: 5, right: 5, left: 5, bottom: 5 }}
                         syncId="channelsSync"
                         onMouseMove={(state) => {
-                          // Map back via the point's explicit original row index, which survives
-                          // slicing and downsampling — never the x value, which is now elapsed
-                          // seconds. Falls back to `time` (also the original index) for safety.
-                          const p = (state as { activePayload?: Array<{ payload?: DataPoint }> })?.activePayload?.[0]?.payload
-                          const idx = (p?.originalIndex ?? p?.time) as number | undefined
-                          if (typeof idx === "number") setHoveredTimeKey(idx)
+                          // Map back via the point's explicit original row index (preserved through
+                          // slicing + downsampling) — never the x value, which is now elapsed seconds.
+                          // The resolver is unit-tested in lib/hover-map.test.ts.
+                          const s = state as {
+                            activePayload?: Array<{ payload?: DataPoint }>
+                            activeTooltipIndex?: number
+                          }
+                          const idx = resolveHoverIndex(s?.activePayload, s?.activeTooltipIndex, finalChartData)
+                          if (idx !== null) setHoveredTimeKey(idx)
                         }}
                         onMouseLeave={() => setHoveredTimeKey(null)}
                       >
@@ -236,7 +240,7 @@ export const ChannelsExplorer = React.memo(function ChannelsExplorer(props: Chan
                     </ResponsiveContainer>
                   </div>
                   <div className="mt-2 text-center">
-                    <span className="text-lg font-bold" style={{ color: m.color }}>
+                    <span className="text-lg font-bold" data-testid={`inspector-value-${key}`} style={{ color: m.color }}>
                       {typeof cur === "number" ? formatValue(cur, m.unit) : "N/A"}
                     </span>
                     <span className="ml-1 text-xs text-muted-foreground">{m.unit}</span>

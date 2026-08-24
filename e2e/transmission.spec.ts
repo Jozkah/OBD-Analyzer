@@ -63,6 +63,105 @@ test("closing a dirty dialog asks before discarding", async ({ page }) => {
   await expect(finalDrive(page)).toHaveValue("6")
 })
 
+const dialog = (page: Page) => page.getByRole("dialog", { name: /Transmission Configuration/i })
+
+test("dirty close via the X button confirms; Keep Editing preserves the draft", async ({ page }) => {
+  await loadTrusted(page, { rows: 30 })
+  await openTransmission(page)
+  await finalDrive(page).fill("6")
+  await page.getByRole("button", { name: /Close transmission configuration/i }).click()
+  await expect(page.getByRole("alertdialog").getByText(/discard unsaved changes/i)).toBeVisible()
+  await page.getByRole("button", { name: /keep editing/i }).click()
+  await expect(dialog(page)).toBeVisible()
+  await expect(finalDrive(page)).toHaveValue("6")
+})
+
+test("dirty close via the X button — Discard changes closes and drops the edit", async ({ page }) => {
+  await loadTrusted(page, { rows: 30 })
+  await openTransmission(page)
+  const original = await finalDrive(page).inputValue()
+  await finalDrive(page).fill("6")
+  await page.getByRole("button", { name: /Close transmission configuration/i }).click()
+  await page.getByRole("button", { name: /discard changes/i }).click()
+  await expect(dialog(page)).toHaveCount(0)
+  await openTransmission(page)
+  await expect(finalDrive(page)).toHaveValue(original)
+})
+
+test("dirty close via a real backdrop click confirms; Discard drops the edit", async ({ page }) => {
+  await loadTrusted(page, { rows: 30 })
+  await openTransmission(page)
+  const original = await finalDrive(page).inputValue()
+  await finalDrive(page).fill("6")
+  // Click the modal backdrop (top-left of the full-viewport dialog element, outside the card).
+  await dialog(page).click({ position: { x: 4, y: 4 } })
+  await expect(page.getByRole("alertdialog").getByText(/discard unsaved changes/i)).toBeVisible()
+  await page.getByRole("button", { name: /discard changes/i }).click()
+  await expect(dialog(page)).toHaveCount(0)
+  await openTransmission(page)
+  await expect(finalDrive(page)).toHaveValue(original)
+})
+
+test("a clean backdrop click closes directly (no confirm)", async ({ page }) => {
+  await loadTrusted(page, { rows: 30 })
+  await openTransmission(page)
+  await dialog(page).click({ position: { x: 4, y: 4 } })
+  await expect(page.getByRole("alertdialog")).toHaveCount(0)
+  await expect(dialog(page)).toHaveCount(0)
+})
+
+test("Cancel discards directly without a confirm prompt", async ({ page }) => {
+  await loadTrusted(page, { rows: 30 })
+  await openTransmission(page)
+  await finalDrive(page).fill("6")
+  await page.getByRole("button", { name: "Cancel", exact: true }).click()
+  await expect(page.getByRole("alertdialog")).toHaveCount(0)
+  await expect(dialog(page)).toHaveCount(0)
+})
+
+test("focus returns to the opener after the dialog closes", async ({ page }) => {
+  await loadTrusted(page, { rows: 30 })
+  await openTransmission(page)
+  await page.getByRole("button", { name: "Cancel", exact: true }).click()
+  await expect(dialog(page)).toHaveCount(0)
+  await expect(page.getByRole("button", { name: "More actions" })).toBeFocused()
+})
+
+test("keyboard focus is trapped at the dialog boundaries (wraps instead of escaping)", async ({ page }) => {
+  await loadTrusted(page, { rows: 30 })
+  await openTransmission(page)
+  const insideDialog = () =>
+    page.evaluate(() => {
+      const d = document.querySelector('[role="dialog"][aria-modal="true"]')
+      return !!(d && document.activeElement && d !== document.activeElement && d.contains(document.activeElement))
+    })
+  // Focus the first control (the close button). Shift+Tab must WRAP to the last focusable inside the
+  // dialog, not escape backwards to the dashboard behind it.
+  await page.getByRole("button", { name: /Close transmission configuration/i }).focus()
+  await page.keyboard.press("Shift+Tab")
+  expect(await insideDialog()).toBe(true)
+  // And Tabbing forward from there stays inside too.
+  await page.keyboard.press("Tab")
+  expect(await insideDialog()).toBe(true)
+})
+
+test("the nested discard-confirmation dialog traps focus too", async ({ page }) => {
+  await loadTrusted(page, { rows: 30 })
+  await openTransmission(page)
+  await finalDrive(page).fill("6")
+  await page.keyboard.press("Escape")
+  const confirm = page.getByRole("alertdialog")
+  await expect(confirm).toBeVisible()
+  for (let i = 0; i < 6; i++) {
+    await page.keyboard.press("Tab")
+    const inside = await page.evaluate(() => {
+      const d = document.querySelector('[role="alertdialog"]')
+      return !!(d && document.activeElement && d.contains(document.activeElement))
+    })
+    expect(inside).toBe(true)
+  }
+})
+
 test("blank/invalid input is shown, not coerced, and blocks Apply with a field-level error", async ({ page }) => {
   await loadTrusted(page, { rows: 30 })
   await openTransmission(page)

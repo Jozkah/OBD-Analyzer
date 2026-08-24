@@ -7,6 +7,7 @@ import {
   trackDiagonalMetres,
   isDegenerateTrack,
   gpsSpeedRange,
+  activeGpsFixIndex,
 } from "./gps"
 
 type Pt = { latitude?: number | null; longitude?: number | null; speed?: number | null }
@@ -85,7 +86,7 @@ describe("gpsSpeedRange (unit-agnostic numeric range)", () => {
 
   it("returns the raw min/max of the speed column for a km/h log", () => {
     const r = gpsSpeedRange(track([0, 30, 60, 45, 90]))
-    expect(r).toEqual({ min: 0, max: 90, varies: true })
+    expect(r).toEqual({ min: 0, max: 90, varies: true, finiteCount: 5 })
   })
 
   it("returns the SAME numbers for an mph log (no conversion is applied)", () => {
@@ -93,7 +94,7 @@ describe("gpsSpeedRange (unit-agnostic numeric range)", () => {
     const kmh = gpsSpeedRange(track([10, 20, 55]))
     const mph = gpsSpeedRange(track([10, 20, 55]))
     expect(mph).toEqual(kmh)
-    expect(mph).toEqual({ min: 10, max: 55, varies: true })
+    expect(mph).toEqual({ min: 10, max: 55, varies: true, finiteCount: 3 })
   })
 
   it("reports no variation for a constant-speed track (single-colour, no gradient)", () => {
@@ -103,15 +104,61 @@ describe("gpsSpeedRange (unit-agnostic numeric range)", () => {
     expect(r.max).toBe(42)
   })
 
-  it("treats missing speeds as 0", () => {
+  it("treats missing speeds as UNKNOWN, not 0 — the legend uses only finite values", () => {
+    const pts: Pt[] = [
+      { latitude: 51.5, longitude: -0.1, speed: undefined }, // unknown, must NOT count as 0
+      { latitude: 51.6, longitude: -0.1, speed: 50 },
+      { latitude: 51.7, longitude: -0.1, speed: 80 },
+    ]
+    // Min is 50 (the lowest FINITE speed), not 0 — a missing speed no longer drags it down.
+    expect(gpsSpeedRange(pts)).toEqual({ min: 50, max: 80, varies: true, finiteCount: 2 })
+  })
+
+  it("does not vary when only one finite speed is present", () => {
     const pts: Pt[] = [
       { latitude: 51.5, longitude: -0.1, speed: undefined },
       { latitude: 51.6, longitude: -0.1, speed: 50 },
     ]
-    expect(gpsSpeedRange(pts)).toEqual({ min: 0, max: 50, varies: true })
+    const r = gpsSpeedRange(pts)
+    expect(r).toEqual({ min: 50, max: 50, varies: false, finiteCount: 1 })
   })
 
-  it("returns a zero range when there are no fixes", () => {
-    expect(gpsSpeedRange([{ latitude: 0, longitude: 0, speed: 10 }])).toEqual({ min: 0, max: 0, varies: false })
+  it("returns a zero range with no finite speeds", () => {
+    expect(gpsSpeedRange([{ latitude: 0, longitude: 0, speed: 10 }])).toEqual({
+      min: 0, max: 0, varies: false, finiteCount: 0,
+    })
+    const noSpeeds: Pt[] = [
+      { latitude: 51.5, longitude: -0.1, speed: undefined },
+      { latitude: 51.6, longitude: -0.1, speed: null },
+    ]
+    expect(gpsSpeedRange(noSpeeds)).toEqual({ min: 0, max: 0, varies: false, finiteCount: 0 })
+  })
+})
+
+describe("activeGpsFixIndex — sparse-GPS marker policy (last fix at/before current sample)", () => {
+  // Fixes carrying their original row index in `time`. Rows 2 and 5 have no GPS (not in this list).
+  const fixes = [
+    { latitude: 1, longitude: 1, time: 0, speed: 10 },
+    { latitude: 1, longitude: 1, time: 1, speed: 20 },
+    { latitude: 1, longitude: 1, time: 3, speed: 30 },
+    { latitude: 1, longitude: 1, time: 6, speed: 40 },
+  ]
+
+  it("returns -1 before the first fix", () => {
+    expect(activeGpsFixIndex([{ latitude: 1, longitude: 1, time: 4 }], 2)).toBe(-1)
+  })
+
+  it("holds the most recent fix when the current row has no GPS", () => {
+    // Current row 4 has no fix; the last fix at/before it is the one at time 3 (index 2).
+    expect(activeGpsFixIndex(fixes, 4)).toBe(2)
+  })
+
+  it("returns the exact fix when the current row has one", () => {
+    expect(activeGpsFixIndex(fixes, 3)).toBe(2)
+    expect(activeGpsFixIndex(fixes, 1)).toBe(1)
+  })
+
+  it("holds the last fix after the final one (never past the end)", () => {
+    expect(activeGpsFixIndex(fixes, 999)).toBe(3)
   })
 })

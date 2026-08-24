@@ -15,7 +15,9 @@ import { computeSessionMeta } from "@/lib/session-summary"
 import { advancePlayback } from "@/lib/playback"
 import { computeTimeAxis } from "@/lib/elapsed-time"
 import { buildChartXAxis } from "@/lib/chart-x"
+import { computeIdleZones } from "@/lib/idle-zones"
 import { computeCumulativeDistanceKm } from "@/lib/distance"
+import { fuelToLitres, computeFuelEconomyL100km } from "@/lib/fuel"
 import { analyzeDataHealth } from "@/lib/data-health"
 import { TRANSMISSION_PRESETS } from "@/lib/transmission-presets"
 import { normalizeTransmissionConfig } from "@/lib/transmission"
@@ -29,21 +31,12 @@ const DEFAULT_TRANSMISSION: TransmissionConfig = {
   numberOfGears: 6,
 }
 
-// Client gate for the optional share UI. Enabled by the build-time env flag, or — on a build where
-// the flag is off — by a per-browser "preview" opt-in (localStorage "obd.sharingPreview" = "1").
-// The preview only reveals the UI; the server still governs real availability and returns 501 when
-// sharing isn't configured. The share button lives inside the client-rendered dashboard (shown only
-// after a log loads), so reading localStorage here causes no SSR hydration mismatch.
-function sharingPreviewOptIn(): boolean {
-  try {
-    return typeof window !== "undefined" && window.localStorage.getItem("obd.sharingPreview") === "1"
-  } catch {
-    return false
-  }
-}
-
-export const SHARING_ENABLED =
-  process.env.NEXT_PUBLIC_SHARING_ENABLED === "true" || sharingPreviewOptIn()
+// Client gate for the optional share UI. The build-time env flag is the SINGLE source of truth:
+// a product decision to keep sharing off must not be bypassable from the browser (e.g. a DevTools
+// localStorage flag), even when the server backend happens to be configured. Tests exercise the
+// enabled flow through a dedicated build with NEXT_PUBLIC_SHARING_ENABLED=true (see the "share-enabled"
+// Playwright project), never a client override.
+export const SHARING_ENABLED = process.env.NEXT_PUBLIC_SHARING_ENABLED === "true"
 
 export function useObdSession() {
   const [data, setData] = useState<DataPoint[]>([])
@@ -572,6 +565,15 @@ export function useObdSession() {
     return m?.unit
   }, [metrics])
 
+  // Unit of an imported "Trip Fuel" channel (litres vs gallons), so fuel economy is dimensionally
+  // correct. Excludes "Trip Fuel Economy" columns, which are a rate, not a quantity.
+  const tripFuelUnit = useMemo(() => {
+    const m = metrics.find(
+      (mc) => /trip\s*fuel/i.test(mc.originalName || mc.label) && !/econom/i.test(mc.originalName || mc.label),
+    )
+    return m?.unit
+  }, [metrics])
+
   // Cumulative distance for the current window, computed by the pure helper (real Δt integration,
   // unit-correct, trip-channel aware). `available` gates distance mode; `approximate` labels it.
   const distanceResult = useMemo(
@@ -587,8 +589,27 @@ export function useObdSession() {
     [filteredData, speedUnit, timeAxis, tripDistanceUnit],
   )
 
-  const finalChartData = useMemo(() => {
-    const processed = filteredData.map((point, i) => {
+  // FULL-session distance (whole log, not the current window) — this is what the Session Summary
+  // reports. It uses the SAME pure policy as the chart/window result, so units are correct and an
+  // unusable trip counter can't override valid speed/time integration.
+  const summaryDistanceResult = useMemo(
+    () =>
+      computeCumulativeDistanceKm({
+        speeds: data.map((p) => (typeof p.speed === "number" && !isNaN(p.speed) ? p.speed : 0)),
+        speedUnit,
+        elapsed: data.map((p) => timeAxis.elapsed[p.time] ?? p.time),
+        trustedTime: timeAxis.trustworthy,
+        tripDistance: data.map((p) => p.tripDistance),
+        tripDistanceUnit,
+      }),
+    [data, speedUnit, timeAxis, tripDistanceUnit],
+  )
+
+  // Full per-sample chart rows (numeric-coerced metrics + dist/elapsed/originalIndex), NOT
+  // downsampled. This is the single source of truth for every display dataset AND for idle-zone
+  // detection, so idle zones are computed before any downsampling can drop a short idle period.
+  const processedData = useMemo(() => {
+    return filteredData.map((point, i) => {
       const chartPoint: DataPoint = { ...point }
       metrics.forEach((metricConfig) => {
         const key = metricConfig.key as string
@@ -602,39 +623,58 @@ export function useObdSession() {
       chartPoint.originalIndex = point.time
       return chartPoint
     })
-    if (processed.length > 500) {
-      // Downsample against the SAME x-domain the charts plot (elapsed when trusted, else index),
-      // so point selection matches the rendered spacing on irregular logs.
-      const getX = timeAxis.trustworthy ? (p: DataPoint) => (p.elapsed as number) : (_p: DataPoint, i: number) => i
-      return lttbDownsample(processed, 500, (p) => p.rpm || p.speed || 0, getX)
-    }
-    return processed
   }, [filteredData, metrics, timeAxis, distanceResult])
 
-  // Distance mode is offered only when distance is actually available (a trip channel or trusted
-  // time) and the vehicle covered ground — never guessed from an unknown cadence.
+  // Time-domain dataset (elapsed seconds when timestamps are trusted, else sample index) used by
+  // Performance / Engine / Channels and by Overview in time mode. Downsampled against the SAME
+  // x-domain those charts plot, so point selection matches the rendered spacing on irregular logs.
+  const finalChartData = useMemo(() => {
+    if (processedData.length <= 500) return processedData
+    const getX = timeAxis.trustworthy ? (p: DataPoint) => (p.elapsed as number) : (_p: DataPoint, i: number) => i
+    return lttbDownsample(processedData, 500, (p) => p.rpm || p.speed || 0, getX)
+  }, [processedData, timeAxis])
+
+  // Distance mode is offered only when distance is actually available (a usable trip channel or
+  // trusted time) and the vehicle covered ground — never guessed from an unknown cadence.
   const hasDistance = useMemo(
     () =>
       distanceResult.available &&
-      finalChartData.length > 1 &&
-      (finalChartData[finalChartData.length - 1].dist ?? 0) > 0.05,
-    [finalChartData, distanceResult],
+      processedData.length > 1 &&
+      (processedData[processedData.length - 1].dist ?? 0) > 0.05,
+    [processedData, distanceResult],
   )
   const effectiveXMode: "time" | "distance" = overviewXMode === "distance" && hasDistance ? "distance" : "time"
 
+  // Overview dataset: in DISTANCE mode, downsample against cumulative distance so the retained
+  // points match the rendered (distance) spacing rather than the time spacing. Otherwise reuse the
+  // time-domain dataset.
+  const overviewChartData = useMemo(() => {
+    if (effectiveXMode !== "distance") return finalChartData
+    if (processedData.length <= 500) return processedData
+    return lttbDownsample(processedData, 500, (p) => p.rpm || p.speed || 0, (p) => (p.dist as number))
+  }, [effectiveXMode, finalChartData, processedData])
+
   const elevationData = useMemo(() => {
     if (!altitudeKey || !distanceResult.available) return []
-    const pts = finalChartData
+    // Elevation plots against distance, so select points against the distance domain too.
+    const base =
+      processedData.length > 500
+        ? lttbDownsample(
+            processedData,
+            500,
+            (p) => Number((p as Record<string, unknown>)[altitudeKey]) || 0,
+            (p) => (p.dist as number),
+          )
+        : processedData
+    const pts = base
       .map((p) => ({ dist: p.dist ?? 0, time: p.time, altitude: Number((p as Record<string, unknown>)[altitudeKey]) }))
       .filter((p) => Number.isFinite(p.altitude))
     if (pts.length < 2) return []
-    // pts derives from finalChartData (downsampled to ≤500), but use the bounded reducers
-    // for consistency and to stay safe if that cap ever changes.
     const alts = pts.map((p) => p.altitude)
     const min = safeMin(alts)
     const max = safeMax(alts)
     return max - min < 1 ? [] : pts
-  }, [finalChartData, altitudeKey, distanceResult])
+  }, [processedData, altitudeKey, distanceResult])
 
   const accelRuns = useMemo(() => {
     if (data.length < 3) return []
@@ -645,28 +685,13 @@ export function useObdSession() {
     return detectAccelRuns(times, speedsKmh)
   }, [data, speedUnit])
 
-  const idleZones = useMemo(() => {
-    if (!ignoreIdle || finalChartData.length === 0) return []
-    // Zone bounds are expressed in the SAME x domain the charts plot (elapsed seconds when
-    // timestamps are trustworthy, else sample index), so ReferenceArea bands line up.
-    const xk = chartXAxis.key
-    const xOf = (p: DataPoint) => (p[xk] as number) ?? p.time
-    const zones: { x1: number; x2: number }[] = []
-    let zoneStart: number | null = null
-    for (let i = 0; i < finalChartData.length; i++) {
-      const isIdle = (finalChartData[i].speed || 0) === 0
-      if (isIdle && zoneStart === null) {
-        zoneStart = xOf(finalChartData[i])
-      } else if (!isIdle && zoneStart !== null) {
-        zones.push({ x1: zoneStart, x2: xOf(finalChartData[i]) })
-        zoneStart = null
-      }
-    }
-    if (zoneStart !== null) {
-      zones.push({ x1: zoneStart, x2: xOf(finalChartData[finalChartData.length - 1]) })
-    }
-    return zones
-  }, [finalChartData, ignoreIdle, chartXAxis])
+  // Idle intervals are detected on the FULL (non-downsampled) data so a short idle period between
+  // two retained points can't be dropped or shifted by downsampling. Bounds are in the same time
+  // x-domain the charts plot (elapsed seconds when trusted, else sample index).
+  const idleZones = useMemo(
+    () => (ignoreIdle ? computeIdleZones(processedData, chartXAxis.key) : []),
+    [processedData, ignoreIdle, chartXAxis],
+  )
 
   const enabledMetrics = useMemo(() => metrics.filter((m) => m.enabled), [metrics])
   const currentDataPoint = data[currentTime] || null
@@ -724,8 +749,13 @@ export function useObdSession() {
       }
       return seen ? total : null
     }
-    const distance = sumWithResets("tripDistance")
-    const fuel = sumWithResets("tripFuel")
+    // Distance comes from the physically-correct full-session helper (km, unit-normalised), NOT the
+    // raw Trip Distance column — which may be miles and was previously mislabelled as km.
+    const distanceKm = summaryDistanceResult.available
+      ? summaryDistanceResult.dist[summaryDistanceResult.dist.length - 1] ?? null
+      : null
+    const rawFuel = sumWithResets("tripFuel")
+    const fuel = rawFuel // kept in the log's own unit for the "Fuel" readout
     const rawDuration = sumWithResets("tripDuration")
     const durationUnit = tripDurationUnit.toLowerCase()
     const durationMinutes =
@@ -736,9 +766,18 @@ export function useObdSession() {
           : /^(h|hr|hour)/.test(durationUnit)
             ? rawDuration * 60
             : rawDuration
-    const fuelEconomy = fuel != null && distance != null && distance > 0 ? (fuel / distance) * 100 : null
-    return { distance, fuel, duration: durationMinutes, fuelEconomy }
-  }, [data, tripDurationUnit])
+    // L/100km strictly from litres and kilometres; null (hidden) when units can't support it.
+    const litres = rawFuel != null ? fuelToLitres(rawFuel, tripFuelUnit) : null
+    const fuelEconomy = computeFuelEconomyL100km(litres, distanceKm)
+    return {
+      distance: distanceKm,
+      distanceSource: summaryDistanceResult.source,
+      fuel,
+      fuelUnit: tripFuelUnit ?? "L",
+      duration: durationMinutes,
+      fuelEconomy,
+    }
+  }, [data, tripDurationUnit, summaryDistanceResult, tripFuelUnit])
 
   const autoDetection = useMemo(() => (data.length > 100 ? detectGearRatios(data, speedUnit) : null), [data, speedUnit])
 
@@ -803,7 +842,7 @@ export function useObdSession() {
     filteredMetrics, isEmptyPID, toggleMetric, setMetricEnabled, setEnabledMetricKeys, enabledMetrics,
     selectedPIDs, addPID, removePID, setSelectedPIDs, pidAnalysisHoveredTimeKey, setPidAnalysisHoveredTimeKey,
     // derived data
-    filteredData, finalChartData, stats, tripTotals, accelRuns, idleZones, tempSensors, gearDistribution,
+    filteredData, finalChartData, overviewChartData, stats, tripTotals, accelRuns, idleZones, tempSensors, gearDistribution,
     altitudeKey, elevationData, gpsPointCount, sessionMeta, timeAxis, healthFindings,
     selectedTempSensors, setSelectedTempSensors,
     // transmission

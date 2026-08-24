@@ -1,20 +1,11 @@
 import { test, expect, type Page } from "@playwright/test"
 import { loadTrusted } from "./helpers"
 
-// Enabled share flow. The build ships with sharing off by default, so we opt this browser into the
-// share UI (the same per-browser preview flag a self-hoster would use) and MOCK /api/share — no live
-// backend dependency. Then we drive the full flow: open the UI, verify the request payload, and the
-// success (link + expiry + copy) and failure branches.
-
-async function enableSharing(page: Page) {
-  await page.addInitScript(() => {
-    try {
-      window.localStorage.setItem("obd.sharingPreview", "1")
-    } catch {
-      /* ignore */
-    }
-  })
-}
+// Enabled share flow. These specs run ONLY under the "share-enabled" Playwright project, whose dev
+// server is started with NEXT_PUBLIC_SHARING_ENABLED=true — the same authoritative build-time flag a
+// self-hoster would set. There is NO client-side override: the removed localStorage bypass must not
+// come back. /api/share is MOCKED, so there's no live backend dependency; we drive the full flow and
+// assert the request payload plus the success (link + expiry + copy) and failure branches.
 
 async function openShare(page: Page) {
   await page.getByRole("button", { name: "More actions" }).click()
@@ -23,7 +14,6 @@ async function openShare(page: Page) {
 
 test("shares a log: sends the CSV, shows the link + expiry, and copies it", async ({ page, context }) => {
   await context.grantPermissions(["clipboard-read", "clipboard-write"])
-  await enableSharing(page)
 
   const expiresAt = "2030-01-02T03:04:05.000Z"
   let postedBody: unknown = null
@@ -58,7 +48,6 @@ test("shares a log: sends the CSV, shows the link + expiry, and copies it", asyn
 })
 
 test("surfaces a friendly error when the share request fails", async ({ page }) => {
-  await enableSharing(page)
   await page.route("**/api/share", (route) => route.fulfill({ status: 500, body: "boom" }))
 
   await loadTrusted(page, { rows: 20 })
@@ -70,7 +59,6 @@ test("surfaces a friendly error when the share request fails", async ({ page }) 
 })
 
 test("reports when the instance has sharing unconfigured (501)", async ({ page }) => {
-  await enableSharing(page)
   await page.route("**/api/share", (route) => route.fulfill({ status: 501, body: "not configured" }))
 
   await loadTrusted(page, { rows: 20 })
