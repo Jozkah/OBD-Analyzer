@@ -1,11 +1,13 @@
 // Time semantics for playback and axes.
 //
-// A log's per-sample "time" field is just the row INDEX, not a clock. Real elapsed time is only
-// available when the timestamp column parses to a monotonic, sanely-spaced series (the same
-// definition acceleration timing already relies on). This module centralises that distinction so
-// the UI never labels a sample index as "time".
+// A log's per-sample "time" field is just the row INDEX, not a clock. Real elapsed time is
+// available whenever the timestamp column reads as a forward-moving wall clock — see
+// lib/timestamps.ts, which owns the trust decision. Crucially this is SEPARATE from the stricter
+// continuity check acceleration timing uses: duplicate timestamps and large recording gaps keep
+// a trusted elapsed axis (they only produce Data Health findings), and a valid two-sample log is
+// trusted too. This module centralises the distinction so the UI never labels an index as "time".
 
-import { parseLogTimeSeconds } from "@/lib/accel-runs"
+import { analyzeTimestamps } from "@/lib/timestamps"
 
 export interface TimeAxis {
   /** True when the log carries trustworthy per-sample clock timestamps. */
@@ -17,17 +19,13 @@ export interface TimeAxis {
   totalSeconds: number | null
 }
 
-export function computeTimeAxis(timestamps: Array<string | undefined | null>): TimeAxis {
-  const elapsed = parseLogTimeSeconds(timestamps)
-  if (elapsed) {
-    return { trustworthy: true, elapsed, totalSeconds: elapsed[elapsed.length - 1] }
+export function computeTimeAxis(timestamps: Array<string | number | undefined | null>): TimeAxis {
+  const a = analyzeTimestamps(timestamps)
+  if (a.trusted) {
+    return { trustworthy: true, elapsed: a.elapsed, totalSeconds: a.spanSeconds }
   }
   // Fallback: index-as-position. Not real time — callers show "sample N" labels instead.
-  return {
-    trustworthy: false,
-    elapsed: timestamps.map((_, i) => i),
-    totalSeconds: null,
-  }
+  return { trustworthy: false, elapsed: a.elapsed, totalSeconds: null }
 }
 
 function pad(n: number): string {

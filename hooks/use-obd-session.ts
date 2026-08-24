@@ -15,6 +15,7 @@ import { computeSessionMeta } from "@/lib/session-summary"
 import { advancePlayback } from "@/lib/playback"
 import { computeTimeAxis } from "@/lib/elapsed-time"
 import { buildChartXAxis } from "@/lib/chart-x"
+import { computeCumulativeDistanceKm } from "@/lib/distance"
 import { analyzeDataHealth } from "@/lib/data-health"
 import { TRANSMISSION_PRESETS } from "@/lib/transmission-presets"
 
@@ -542,54 +543,64 @@ export function useObdSession() {
   const timeAxis = useMemo(() => computeTimeAxis(data.map((d) => d.timestamp)), [data])
   const chartXAxis = useMemo(() => buildChartXAxis(timeAxis), [timeAxis])
 
+  // Unit of an imported "Trip Distance" channel, so miles aren't mislabelled as km.
+  const tripDistanceUnit = useMemo(() => {
+    const m = metrics.find((mc) => /trip\s*distance/i.test(mc.originalName || mc.label))
+    return m?.unit
+  }, [metrics])
+
+  // Cumulative distance for the current window, computed by the pure helper (real Δt integration,
+  // unit-correct, trip-channel aware). `available` gates distance mode; `approximate` labels it.
+  const distanceResult = useMemo(
+    () =>
+      computeCumulativeDistanceKm({
+        speeds: filteredData.map((p) => (typeof p.speed === "number" && !isNaN(p.speed) ? p.speed : 0)),
+        speedUnit,
+        elapsed: filteredData.map((p) => timeAxis.elapsed[p.time] ?? p.time),
+        trustedTime: timeAxis.trustworthy,
+        tripDistance: filteredData.map((p) => p.tripDistance),
+        tripDistanceUnit,
+      }),
+    [filteredData, speedUnit, timeAxis, tripDistanceUnit],
+  )
+
   const finalChartData = useMemo(() => {
-    const hasTripDistance = filteredData.some(
-      (p) => typeof p.tripDistance === "number" && !isNaN(p.tripDistance as number),
-    )
-    let cumDist = 0
-    let prevTrip: number | null = null
-    const processed = filteredData.map((point) => {
+    const processed = filteredData.map((point, i) => {
       const chartPoint: DataPoint = { ...point }
       metrics.forEach((metricConfig) => {
         const key = metricConfig.key as string
         const value = (point as Record<string, unknown>)[key]
         chartPoint[key] = typeof value === "number" && !isNaN(value) ? value : 0
       })
-      if (hasTripDistance) {
-        const td =
-          typeof point.tripDistance === "number" && !isNaN(point.tripDistance as number)
-            ? (point.tripDistance as number)
-            : prevTrip ?? 0
-        if (prevTrip !== null) {
-          const delta = td - prevTrip
-          if (delta >= 0 && delta < 2) cumDist += delta
-        }
-        prevTrip = td
-      } else {
-        const spd = typeof point.speed === "number" && !isNaN(point.speed) ? point.speed : 0
-        cumDist += spd / 3600
-      }
-      chartPoint.dist = Math.round(cumDist * 1000) / 1000
-      // Real elapsed seconds for this sample (keyed by its ORIGINAL index in the full log, which
-      // `time` preserves through slicing and downsampling). Falls back to the index when the log
-      // has no trustworthy timestamps.
+      chartPoint.dist = distanceResult.dist[i] ?? 0
+      // Real elapsed seconds for this sample (keyed by its ORIGINAL index in the full log).
       chartPoint.elapsed = timeAxis.trustworthy ? timeAxis.elapsed[point.time] ?? point.time : point.time
+      // Explicit original-row index, preserved through downsampling for hover/selection mapping.
+      chartPoint.originalIndex = point.time
       return chartPoint
     })
     if (processed.length > 500) {
-      return lttbDownsample(processed, 500, (p) => p.rpm || p.speed || 0)
+      // Downsample against the SAME x-domain the charts plot (elapsed when trusted, else index),
+      // so point selection matches the rendered spacing on irregular logs.
+      const getX = timeAxis.trustworthy ? (p: DataPoint) => (p.elapsed as number) : (_p: DataPoint, i: number) => i
+      return lttbDownsample(processed, 500, (p) => p.rpm || p.speed || 0, getX)
     }
     return processed
-  }, [filteredData, metrics, timeAxis])
+  }, [filteredData, metrics, timeAxis, distanceResult])
 
+  // Distance mode is offered only when distance is actually available (a trip channel or trusted
+  // time) and the vehicle covered ground — never guessed from an unknown cadence.
   const hasDistance = useMemo(
-    () => finalChartData.length > 1 && (finalChartData[finalChartData.length - 1].dist ?? 0) > 0.05,
-    [finalChartData],
+    () =>
+      distanceResult.available &&
+      finalChartData.length > 1 &&
+      (finalChartData[finalChartData.length - 1].dist ?? 0) > 0.05,
+    [finalChartData, distanceResult],
   )
   const effectiveXMode: "time" | "distance" = overviewXMode === "distance" && hasDistance ? "distance" : "time"
 
   const elevationData = useMemo(() => {
-    if (!altitudeKey) return []
+    if (!altitudeKey || !distanceResult.available) return []
     const pts = finalChartData
       .map((p) => ({ dist: p.dist ?? 0, time: p.time, altitude: Number((p as Record<string, unknown>)[altitudeKey]) }))
       .filter((p) => Number.isFinite(p.altitude))
@@ -600,7 +611,7 @@ export function useObdSession() {
     const min = safeMin(alts)
     const max = safeMax(alts)
     return max - min < 1 ? [] : pts
-  }, [finalChartData, altitudeKey])
+  }, [finalChartData, altitudeKey, distanceResult])
 
   const accelRuns = useMemo(() => {
     if (data.length < 3) return []

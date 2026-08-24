@@ -215,10 +215,11 @@ export const ChannelsExplorer = React.memo(function ChannelsExplorer(props: Chan
                         margin={{ top: 5, right: 5, left: 5, bottom: 5 }}
                         syncId="channelsSync"
                         onMouseMove={(state) => {
-                          // Map back via the point's original sample index (payload.time), which
-                          // survives slicing and downsampling — never the x value, which is now
-                          // elapsed seconds.
-                          const idx = (state as { activePayload?: Array<{ payload?: DataPoint }> })?.activePayload?.[0]?.payload?.time
+                          // Map back via the point's explicit original row index, which survives
+                          // slicing and downsampling — never the x value, which is now elapsed
+                          // seconds. Falls back to `time` (also the original index) for safety.
+                          const p = (state as { activePayload?: Array<{ payload?: DataPoint }> })?.activePayload?.[0]?.payload
+                          const idx = (p?.originalIndex ?? p?.time) as number | undefined
                           if (typeof idx === "number") setHoveredTimeKey(idx)
                         }}
                         onMouseLeave={() => setHoveredTimeKey(null)}

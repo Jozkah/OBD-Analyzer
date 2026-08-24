@@ -97,6 +97,23 @@ describe("analyzeDataHealth", () => {
     expect(rpmOutlier!.detail).toContain("13500")
   })
 
+  it("reports duplicate timestamps even when the elapsed axis stays trusted", () => {
+    const t = (s: number) => new Date(Date.UTC(2024, 0, 1, 0, 0, 0) + s * 1000).toISOString()
+    const data = [row(0, { timestamp: t(0) }), row(1, { timestamp: t(0) }), row(2, { timestamp: t(1) }), row(3, { timestamp: t(2) })]
+    const findings = analyzeDataHealth(data, metrics, noMissing)
+    // Trusted (no "no reliable timestamps") but the duplicate is surfaced.
+    expect(findings.some((f) => f.id === "timestamps-unparseable")).toBe(false)
+    expect(findings.some((f) => f.id === "timestamps-duplicate")).toBe(true)
+  })
+
+  it("reports a large gap while keeping a trusted axis (no 'no reliable timestamps')", () => {
+    const t = (s: number) => new Date(Date.UTC(2024, 0, 1, 0, 0, 0) + s * 1000).toISOString()
+    const data = [t(0), t(1), t(2), t(63), t(64)].map((ts, i) => row(i, { timestamp: ts }))
+    const findings = analyzeDataHealth(data, metrics, noMissing)
+    expect(findings.some((f) => f.id === "timestamps-unparseable")).toBe(false)
+    expect(findings.some((f) => f.id === "timestamps-gaps")).toBe(true)
+  })
+
   it("summarizeHealth counts by severity", () => {
     const data = [row(0, { timestamp: "x" }), row(1, { timestamp: "y" }), row(2, { timestamp: "z" })]
     const s = summarizeHealth(analyzeDataHealth(data, metrics, noMissing))

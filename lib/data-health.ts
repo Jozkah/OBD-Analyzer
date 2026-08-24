@@ -8,6 +8,8 @@
 import type { DataPoint, MetricConfig } from "@/types/obd"
 import type { CRUCIAL_PIDS } from "@/lib/constants"
 import { safeMax } from "@/lib/stats"
+import { analyzeTimestamps } from "@/lib/timestamps"
+import { MAX_GAP_SECONDS } from "@/lib/playback"
 
 export type HealthSeverity = "critical" | "warning" | "info"
 
@@ -25,69 +27,6 @@ export interface HealthFinding {
 export interface MissingPidsResult {
   missing: typeof CRUCIAL_PIDS
   hasCriticalMissing: boolean
-}
-
-interface TimestampStats {
-  parsed: boolean // every row parsed to a finite time
-  /** Real clock timestamps at a plausible logging cadence (not index placeholders). */
-  reliable: boolean
-  monotonic: boolean
-  duplicateCount: number
-  gapCount: number // gaps noticeably larger than the median cadence
-  largestGapSeconds: number
-  medianDtSeconds: number | null
-}
-
-function analyzeTimestamps(data: DataPoint[]): TimestampStats {
-  const times: number[] = []
-  for (const d of data) {
-    const t = typeof d.timestamp === "string" ? new Date(d.timestamp).getTime() : NaN
-    if (!Number.isFinite(t)) {
-      return {
-        parsed: false,
-        reliable: false,
-        monotonic: false,
-        duplicateCount: 0,
-        gapCount: 0,
-        largestGapSeconds: 0,
-        medianDtSeconds: null,
-      }
-    }
-    times.push(t)
-  }
-  let monotonic = true
-  let duplicateCount = 0
-  const dts: number[] = []
-  for (let i = 1; i < times.length; i++) {
-    const dt = times[i] - times[i - 1]
-    if (dt < 0) monotonic = false
-    else if (dt === 0) duplicateCount++
-    else dts.push(dt / 1000)
-  }
-  const sorted = [...dts].sort((a, b) => a - b)
-  const medianDt = sorted.length ? sorted[Math.floor(sorted.length / 2)] : null
-  let gapCount = 0
-  let largestGap = 0
-  if (medianDt && medianDt > 0) {
-    const threshold = Math.max(medianDt * 4, medianDt + 2)
-    for (const dt of dts) {
-      if (dt > threshold) gapCount++
-      if (dt > largestGap) largestGap = dt
-    }
-  }
-  // Reliable = real clock times at a plausible logging cadence. Index-like values (e.g. "0",
-  // "1" which JS parses as years apart) or huge/absent cadences are treated as unreliable.
-  const reliable = medianDt != null && medianDt > 0 && medianDt <= 30
-
-  return {
-    parsed: true,
-    reliable,
-    monotonic,
-    duplicateCount,
-    gapCount,
-    largestGapSeconds: largestGap,
-    medianDtSeconds: medianDt,
-  }
 }
 
 /** Classify each metric column as empty (all zero/absent) or constant (present but unchanging). */
@@ -145,8 +84,10 @@ export function analyzeDataHealth(
   }
 
   // --- Timestamps -----------------------------------------------------------
-  const ts = analyzeTimestamps(data)
-  if (!ts.reliable) {
+  // Trust, quality and continuity are separate concerns (see lib/timestamps.ts). Duplicate and
+  // gap findings are reported even when the elapsed axis stays trusted.
+  const ts = analyzeTimestamps(data.map((d) => d.timestamp))
+  if (!ts.parseable || ts.allBareNumbers) {
     findings.push({
       id: "timestamps-unparseable",
       severity: "warning",
@@ -155,22 +96,23 @@ export function analyzeDataHealth(
       affects: "Elapsed time, acceleration timing",
       action: "Enable timestamp logging in your app for accurate timing.",
     })
-  } else {
-    if (!ts.monotonic) {
-      findings.push({
-        id: "timestamps-nonmonotonic",
-        severity: "warning",
-        title: "Timestamps go backwards",
-        detail: "Some rows have an earlier timestamp than the one before them.",
-        affects: "Elapsed time, acceleration timing",
-      })
-    }
+  } else if (!ts.monotonic) {
+    findings.push({
+      id: "timestamps-nonmonotonic",
+      severity: "warning",
+      title: "Timestamps go backwards",
+      detail: "Some rows have an earlier timestamp than the one before them, so elapsed time isn't reliable.",
+      affects: "Elapsed time, acceleration timing",
+    })
+  }
+  // Quality findings apply whenever timestamps parsed, trusted or not.
+  if (ts.parseable && !ts.allBareNumbers) {
     if (ts.duplicateCount > 0) {
       findings.push({
         id: "timestamps-duplicate",
         severity: "info",
         title: `${ts.duplicateCount} duplicate timestamp${ts.duplicateCount > 1 ? "s" : ""}`,
-        detail: "Multiple samples share the same timestamp — the effective sampling rate may be uneven.",
+        detail: "Multiple samples share the same timestamp — playback advances across them instantly and the effective sampling rate is uneven.",
         affects: "Sampling rate accuracy",
       })
     }
@@ -179,8 +121,8 @@ export function analyzeDataHealth(
         id: "timestamps-gaps",
         severity: "warning",
         title: `${ts.gapCount} recording gap${ts.gapCount > 1 ? "s" : ""}`,
-        detail: `Largest gap ~${ts.largestGapSeconds.toFixed(1)}s versus a typical ${ts.medianDtSeconds?.toFixed(2)}s cadence.`,
-        affects: "Charts and distance may skip across gaps",
+        detail: `Largest gap ~${ts.largestGapSeconds.toFixed(1)}s versus a typical ${ts.medianDtSeconds?.toFixed(2)}s cadence. Playback skips across gaps longer than ${MAX_GAP_SECONDS}s so it never appears frozen.`,
+        affects: "Charts and distance skip across gaps",
       })
     }
   }
